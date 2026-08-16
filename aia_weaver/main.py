@@ -1,10 +1,11 @@
+import argparse
 import asyncio
 import hashlib
 import logging
 import os
+from pathlib import Path
 import signal
 import sys
-from pathlib import Path
 
 from indexer.embedder import LocalEmbedder
 from indexer.parser import extract_explicit_links
@@ -22,16 +23,18 @@ logger = logging.getLogger("aia_weaver")
 
 class WeaverDaemon:
     def __init__(
-        self, 
-        target_directories: list[str], 
+        self,
+        target_directories: list[str],
         db_path: str | None = None,
         enable_semantic_edges: bool = False,
         semantic_distance_threshold: float = 0.35,
+        temporal_window_minutes: int = 15,
     ):
         self._shutdown_event = asyncio.Event()
-        self.target_directories = target_directories
+        self.target_directories = [str(Path(d).expanduser().resolve()) for d in target_directories]
         self.enable_semantic_edges = enable_semantic_edges
         self.semantic_distance_threshold = semantic_distance_threshold
+        self.temporal_window_minutes = temporal_window_minutes
 
         if db_path is None:
             config_dir = Path.home() / ".config" / "aether"
@@ -39,19 +42,22 @@ class WeaverDaemon:
             os.chmod(config_dir, 0o700)
             self.db_path = str(config_dir / "weaver_graph.db")
         else:
-            self.db_path = db_path
+            self.db_path = str(Path(db_path).expanduser().resolve())
 
         self.event_queue: asyncio.Queue = asyncio.Queue()
         self.db = DatabaseManager(self.db_path)
         self.embedder = LocalEmbedder()
+        self.watcher = FileWatcher(
+            target_dirs=self.target_directories,
+            event_queue=self.event_queue,
+        )
         self.ipc = IPCServer(
             search_handler=self.handle_semantic_search,
             neighbors_handler=self.handle_get_neighbors,
+            all_nodes_handler=self.db.get_all_nodes,
             allowed_directories=[Path(d) for d in self.target_directories],
         )
-                # Register get_stats
-        self.ipc.stats_handler = self.handle_get_stats  # or map in _dispatch_rpc
-    
+
     async def handle_semantic_search(self, query_text: str, limit: int = 5) -> list:
         """Handler for JSON-RPC search queries over IPC."""
         logger.info(f"IPC Search Request received: '{query_text}'")
@@ -64,9 +70,31 @@ class WeaverDaemon:
         logger.info(f"IPC Neighbors Request received for Node #{node_id}")
         return await self.db.get_node_neighbors(node_id)
 
+    async def _initial_workspace_scan(self) -> None:
+        """Scans configured workspace directories on boot and queues initial indexing events."""
+        logger.info(f"Performing initial workspace scan on: {self.target_directories}")
+        scanned_count = 0
+
+        for target in self.target_directories:
+            target_path = Path(target)
+            if not target_path.exists() or not target_path.is_dir():
+                logger.warning(f"Target directory does not exist or is not a directory: {target_path}")
+                continue
+
+            for path in target_path.rglob("*"):
+                if path.is_file() and not self.watcher._should_ignore(str(path)):
+                    await self.event_queue.put({
+                        "action": "created",
+                        "file_path": str(path.resolve()),
+                        "timestamp": asyncio.get_running_loop().time(),
+                    })
+                    scanned_count += 1
+
+        logger.info(f"Initial workspace scan enqueued {scanned_count} file(s) for indexing.")
+
     async def start(self) -> None:
         """Starts daemon engines, background workers, IPC server, and signal handlers."""
-        logger.info("Initializing aia_weaver hardened engine...")
+        logger.info("Initializing aia_weaver engine...")
 
         await self.db.initialize()
         await self.ipc.start()
@@ -80,18 +108,18 @@ class WeaverDaemon:
             except NotImplementedError:
                 pass
 
-        watcher = FileWatcher(
-            target_dirs=self.target_directories,
-            event_queue=self.event_queue,
-        )
-
-        watcher_task = asyncio.create_task(watcher.watch_loop())
+        # 1. Start background tasks
+        watcher_task = asyncio.create_task(self.watcher.watch_loop())
         processor_task = asyncio.create_task(self._process_event_queue())
+
+        # 2. Run initial workspace bootstrap scan
+        await self._initial_workspace_scan()
 
         logger.info("aia_weaver fully ACTIVE with hardened IPC socket enabled.")
 
         await self._shutdown_event.wait()
 
+        # Teardown sequence
         logger.info("Stopping all background services...")
         watcher_task.cancel()
         processor_task.cancel()
@@ -116,10 +144,9 @@ class WeaverDaemon:
                 if action in ("created", "modified") and path.exists() and path.is_file():
                     file_bytes = await asyncio.to_thread(path.read_bytes)
                     file_hash = hashlib.sha256(file_bytes).hexdigest()
-
                     embedding = await self.embedder.embed_file(file_path_str)
 
-                    # Upsert Source Node
+                    # Upsert Node
                     source_id = await self.db.upsert_node(
                         file_path=file_path_str,
                         file_hash=file_hash,
@@ -128,7 +155,7 @@ class WeaverDaemon:
                         embedding=embedding,
                     )
                     logger.info(f"Indexed Node #{source_id} [{action.upper()}] -> {path.name}")
-                    
+
                     # --- SEMANTIC ENGINE ---
                     if self.enable_semantic_edges and embedding is not None:
                         created_semantic = await self.db.create_semantic_edges(
@@ -143,13 +170,15 @@ class WeaverDaemon:
 
                     # --- TEMPORAL ENGINE ---
                     await self.db.log_session_event(source_id, event_type=action)
-                    temporal_links = await self.db.create_temporal_edges(source_id, window_minutes=15)
+                    temporal_links = await self.db.create_temporal_edges(
+                        source_id, window_minutes=self.temporal_window_minutes
+                    )
                     if temporal_links > 0:
                         logger.info(
                             f"Linked {temporal_links} Temporal Edge(s) to recent activity for Node #{source_id}"
                         )
-                    
-                    # --- EXPLICIT ENGINE ---
+
+                    # --- EXPLICIT [[WikiLink]] ENGINE ---
                     if path.suffix.lower() in (".md", ".markdown", ".txt"):
                         try:
                             await self.db.reconcile_explicit_edges(source_id)
@@ -181,6 +210,7 @@ class WeaverDaemon:
                         except Exception as parse_err:
                             logger.error(f"Error parsing links in {path.name}: {parse_err}")
 
+                    # Broadcast update event over IPC
                     await self.ipc.broadcast_event(
                         "node_updated", {"node_id": source_id, "file_path": file_path_str}
                     )
@@ -203,29 +233,74 @@ class WeaverDaemon:
                 continue
             except Exception as e:
                 logger.error(f"Error processing pipeline event: {e}", exc_info=True)
-    
-    async def handle_get_stats(self) -> dict:
-        """RPC handler returning live daemon telemetry."""
-        stats = await self.db.get_stats()
-        stats["daemon"] = {
-            "queue_depth": self.event_queue.qsize(),
-            "semantic_lever": self.enable_semantic_edges,
-            "targets": self.target_directories,
-        }
-        return stats
 
     async def shutdown(self) -> None:
         logger.info("Shutdown signal received. Stopping aia_weaver...")
         self._shutdown_event.set()
 
 
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Aether Weaver (aia_weaver): Knowledge Fabric & Spatial Graph Daemon"
+    )
+    parser.add_argument(
+        "-w",
+        "--workspace",
+        action="append",
+        dest="workspaces",
+        help="Workspace directory to watch and index (can be specified multiple times)",
+    )
+    parser.add_argument(
+        "--db-path",
+        type=str,
+        default=None,
+        help="Path to SQLite knowledge graph ledger (default: ~/.config/aether/weaver_graph.db)",
+    )
+    parser.add_argument(
+        "--enable-semantic",
+        action="store_true",
+        default=True,
+        help="Enable semantic KNN vector edge linking (default: True)",
+    )
+    parser.add_argument(
+        "--semantic-threshold",
+        type=float,
+        default=0.35,
+        help="Cosine distance threshold for semantic edges (default: 0.35)",
+    )
+    parser.add_argument(
+        "--temporal-window",
+        type=int,
+        default=15,
+        help="Sliding time window in minutes for temporal activity edges (default: 15)",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    TEST_TARGETS = ["./sandbox"]
+    args = parse_arguments()
+
+    # Determine target workspace directories:
+    # 1. CLI arguments (-w / --workspace)
+    # 2. Environment variable AETHER_WORKSPACE_DIR
+    # 3. Default fallback to ./sandbox
+    if args.workspaces:
+        target_dirs = args.workspaces
+    elif os.environ.get("AETHER_WORKSPACE_DIR"):
+        env_dirs = os.environ.get("AETHER_WORKSPACE_DIR", "")
+        # Support colon or comma separated paths
+        target_dirs = [d.strip() for d in env_dirs.replace(":", ",").split(",") if d.strip()]
+    else:
+        target_dirs = ["./sandbox"]
 
     daemon = WeaverDaemon(
-        target_directories=TEST_TARGETS,
-        enable_semantic_edges=False,  # Keep semantic edges off by default until tuning
+        target_directories=target_dirs,
+        db_path=args.db_path,
+        enable_semantic_edges=args.enable_semantic,
+        semantic_distance_threshold=args.semantic_threshold,
+        temporal_window_minutes=args.temporal_window,
     )
+
     try:
         asyncio.run(daemon.start())
     except KeyboardInterrupt:

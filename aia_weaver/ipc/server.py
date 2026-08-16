@@ -8,7 +8,6 @@ from utils.security import is_safe_path
 
 logger = logging.getLogger("aia_weaver.ipc")
 
-# Security Hardening: Cap maximum IPC message size to 64 KB to prevent OOM / DoS
 MAX_PAYLOAD_BYTES = 64 * 1024
 
 
@@ -18,6 +17,7 @@ class IPCServer:
         socket_path: str | None = None,
         search_handler: Callable[[str, int], Awaitable[list]] = None,
         neighbors_handler: Callable[[int], Awaitable[dict]] = None,
+        all_nodes_handler: Callable[[], Awaitable[list]] = None,
         allowed_directories: list[Path] | None = None,
     ):
         if socket_path is None:
@@ -31,12 +31,12 @@ class IPCServer:
 
         self.search_handler = search_handler
         self.neighbors_handler = neighbors_handler
+        self.all_nodes_handler = all_nodes_handler
         self.allowed_directories = allowed_directories or []
         self.server: asyncio.Server | None = None
         self._clients: set[asyncio.StreamWriter] = set()
 
     async def start(self) -> None:
-        """Removes stale sockets and starts the hardened UNIX socket server."""
         if self.socket_path.exists():
             self.socket_path.unlink()
 
@@ -55,7 +55,6 @@ class IPCServer:
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
-        """Handles incoming JSON-RPC connections with payload length guards."""
         self._clients.add(writer)
         logger.info("New IPC client connected.")
 
@@ -64,7 +63,7 @@ class IPCServer:
                 try:
                     data = await reader.readline()
                     if not data:
-                        break  # Client disconnected cleanly
+                        break
 
                     message = data.decode("utf-8").strip()
                     if not message:
@@ -75,15 +74,10 @@ class IPCServer:
                     await writer.drain()
 
                 except asyncio.LimitOverrunError:
-                    logger.warning(
-                        "Security Warning: IPC client sent payload exceeding 64 KB limit! Dropping connection."
-                    )
+                    logger.warning("Security Warning: Payload exceeds 64 KB size limit.")
                     err_response = {
                         "jsonrpc": "2.0",
-                        "error": {
-                            "code": -32600,
-                            "message": "Invalid Request: Payload exceeds 64 KB size limit.",
-                        },
+                        "error": {"code": -32600, "message": "Payload exceeds limit."},
                         "id": None,
                     }
                     writer.write((json.dumps(err_response) + "\n").encode("utf-8"))
@@ -101,33 +95,27 @@ class IPCServer:
             logger.info("IPC client disconnected.")
 
     async def _dispatch_rpc(self, raw_message: str) -> Dict[str, Any]:
-        """Parses JSON-RPC requests and routes them to internal handlers."""
         try:
             req = json.loads(raw_message)
             method = req.get("method")
             params = req.get("params", {})
             req_id = req.get("id")
 
-            # --- Path Traversal Guard for path parameters ---
             requested_path = params.get("file_path") or params.get("path")
             if requested_path:
                 if not is_safe_path(requested_path, self.allowed_directories):
                     return {
                         "jsonrpc": "2.0",
-                        "error": {
-                            "code": -32602,
-                            "message": "Access Denied: Requested path falls outside allowed workspace boundaries.",
-                        },
+                        "error": {"code": -32602, "message": "Access Denied."},
                         "id": req_id,
                     }
 
-            # --- Method Dispatching ---
             if method == "get_neighbors":
                 node_id = params.get("node_id")
                 if node_id is None or not isinstance(node_id, int):
                     return {
                         "jsonrpc": "2.0",
-                        "error": {"code": -32602, "message": "Invalid params: 'node_id' (integer) required"},
+                        "error": {"code": -32602, "message": "Invalid params: 'node_id' required"},
                         "id": req_id,
                     }
 
@@ -149,6 +137,12 @@ class IPCServer:
                     "id": req_id,
                 }
 
+            elif method == "get_all_nodes":
+                if self.all_nodes_handler:
+                    results = await self.all_nodes_handler()
+                    return {"jsonrpc": "2.0", "result": results, "id": req_id}
+                return {"jsonrpc": "2.0", "result": [], "id": req_id}
+
             elif method == "ping":
                 return {"jsonrpc": "2.0", "result": "pong", "id": req_id}
 
@@ -167,7 +161,6 @@ class IPCServer:
             }
 
     async def broadcast_event(self, event_type: str, payload: dict) -> None:
-        """Broadcasting real-time graph events to connected canvas subscribers."""
         if not self._clients:
             return
 
@@ -190,7 +183,6 @@ class IPCServer:
                 self._clients.remove(writer)
 
     async def stop(self) -> None:
-        """Gracefully shuts down socket server and cleans up socket file."""
         if self.server:
             self.server.close()
             await self.server.wait_closed()

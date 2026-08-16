@@ -64,20 +64,16 @@ class DatabaseManager:
         """Connects to SQLite, loads sqlite-vec extension, and executes DDL schema."""
         logger.info(f"Initializing SQLite database ledger at: {self.db_path}")
 
-        # Connect to SQLite file
         self._conn = await aiosqlite.connect(self.db_path)
         self._conn.row_factory = aiosqlite.Row
 
-        # Enable extensions and load sqlite-vec
         await self._conn.enable_load_extension(True)
         await self._conn.load_extension(sqlite_vec.loadable_path())
         await self._conn.enable_load_extension(False)
 
-        # Enable WAL (Write-Ahead Logging) mode for fast concurrent reads/writes
         await self._conn.execute("PRAGMA journal_mode=WAL;")
         await self._conn.execute("PRAGMA foreign_keys=ON;")
 
-        # Create standard tables and vector virtual table
         async with self._conn.cursor() as cursor:
             await cursor.executescript(SCHEMA_SQL)
             await cursor.execute(VEC_TABLE_SQL)
@@ -93,7 +89,6 @@ class DatabaseManager:
             raise RuntimeError("Database not initialized.")
 
         async with self._conn.cursor() as cursor:
-            # Upsert Node metadata
             await cursor.execute(
                 """
                 INSERT INTO nodes (file_path, file_hash, extension, size_bytes, updated_at)
@@ -109,19 +104,30 @@ class DatabaseManager:
             row = await cursor.fetchone()
             node_id = row[0]
 
-            # Upsert Vector Embedding if present
             if embedding is not None:
-                serialized_vec = sqlite_vec.serialize_float32(embedding)
                 await cursor.execute(
-                    """
-                    INSERT OR REPLACE INTO node_embeddings(node_id, embedding)
-                    VALUES (?, ?);
-                    """,
-                    (node_id, serialized_vec),
+                    "DELETE FROM node_embeddings WHERE node_id = ?",
+                    (node_id,)
+                )
+                await cursor.execute(
+                    "INSERT INTO node_embeddings (node_id, embedding) VALUES (?, ?)",
+                    (node_id, sqlite_vec.serialize_float32(embedding))
                 )
 
             await self._conn.commit()
             return node_id
+
+    async def get_all_nodes(self) -> list[dict]:
+        """Returns all indexed file nodes in the database for initial canvas sync."""
+        if not self._conn:
+            raise RuntimeError("Database not initialized.")
+
+        async with self._conn.cursor() as cursor:
+            await cursor.execute(
+                "SELECT id, file_path, extension, size_bytes, updated_at FROM nodes ORDER BY id ASC;"
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
 
     async def upsert_edge(
         self,
@@ -130,7 +136,6 @@ class DatabaseManager:
         edge_type: str,
         weight: float = 1.0,
     ) -> None:
-        """Inserts or updates a graph edge connection between two nodes."""
         if not self._conn:
             raise RuntimeError("Database not initialized.")
 
@@ -147,7 +152,6 @@ class DatabaseManager:
             await self._conn.commit()
 
     async def search_similar_nodes(self, query_vector: list[float], limit: int = 5) -> list[dict]:
-        """Performs vector KNN search using sqlite-vec MATCH."""
         if not self._conn:
             raise RuntimeError("Database not initialized.")
 
@@ -175,7 +179,6 @@ class DatabaseManager:
         distance_threshold: float = 0.35,
         limit: int = 5,
     ) -> int:
-        """Finds semantically similar nodes and links them with weighted edges."""
         if not self._conn or embedding is None:
             return 0
 
@@ -183,7 +186,6 @@ class DatabaseManager:
         created_count = 0
 
         async with self._conn.cursor() as cursor:
-            # Find nearest neighbors excluding the node itself
             query = """
                 SELECT n.id, v.distance 
                 FROM node_embeddings v
@@ -199,7 +201,6 @@ class DatabaseManager:
                 dist = match["distance"]
 
                 if dist <= distance_threshold:
-                    # Convert distance to normalized weight (closer = higher weight)
                     weight = max(0.0, min(1.0, 1.0 - (dist / distance_threshold)))
                     await self.upsert_edge(
                         source_id=node_id,
@@ -212,18 +213,15 @@ class DatabaseManager:
         return created_count
 
     async def get_node_neighbors(self, node_id: int) -> dict:
-        """Fetches a node and all its inbound/outbound connected edges."""
         if not self._conn:
             raise RuntimeError("Database not initialized.")
 
         async with self._conn.cursor() as cursor:
-            # 1. Fetch Node
             await cursor.execute("SELECT * FROM nodes WHERE id = ?", (node_id,))
             node = await cursor.fetchone()
             if not node:
                 return {"error": "Node not found"}
 
-            # 2. Fetch Connected Edges (both incoming and outgoing)
             query = """
                 SELECT 
                     e.source_id, 
@@ -246,15 +244,10 @@ class DatabaseManager:
             }
     
     async def delete_node_by_path(self, file_path: str) -> int | None:
-        """
-        Deletes a file node, purges its vector embeddings from sqlite-vec,
-        and relies on foreign key cascades to remove all associated edges.
-        """
         if not self._conn:
             raise RuntimeError("Database not initialized.")
 
         async with self._conn.cursor() as cursor:
-            # 1. Look up node ID
             await cursor.execute("SELECT id FROM nodes WHERE file_path = ?", (file_path,))
             row = await cursor.fetchone()
             if not row:
@@ -262,20 +255,17 @@ class DatabaseManager:
 
             node_id = row[0]
 
-            # 2. Clean up virtual vector table (virtual tables do not support foreign key cascades)
             try:
                 await cursor.execute("DELETE FROM node_embeddings WHERE node_id = ?", (node_id,))
             except Exception as e:
                 logger.warning(f"Could not purge vector for Node #{node_id}: {e}")
 
-            # 3. Delete from nodes (Foreign Key CASCADE automatically removes edges & session logs)
             await cursor.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
             await self._conn.commit()
 
             return node_id
 
     async def reconcile_explicit_edges(self, source_id: int) -> None:
-        """Clears existing explicit outbound edges before applying fresh link parses."""
         if not self._conn:
             return
         async with self._conn.cursor() as cursor:
@@ -286,7 +276,6 @@ class DatabaseManager:
             await self._conn.commit()
 
     async def log_session_event(self, node_id: int, event_type: str = "modified") -> None:
-        """Records an activity event into the session log."""
         if not self._conn:
             return
 
@@ -305,10 +294,6 @@ class DatabaseManager:
         node_id: int,
         window_minutes: int = 15,
     ) -> int:
-        """
-        Discovers files modified within the sliding time window and
-        establishes time-decayed temporal edges between them.
-        """
         if not self._conn:
             return 0
 
@@ -316,7 +301,6 @@ class DatabaseManager:
         created_count = 0
 
         async with self._conn.cursor() as cursor:
-            # Find distinct nodes active within the time window (excluding current node)
             query = """
                 SELECT 
                     node_id,
@@ -333,11 +317,9 @@ class DatabaseManager:
                 target_id = record["node_id"]
                 delta_sec = max(0, record["delta_seconds"])
 
-                # Weight scales from 1.0 (instantaneous) down to 0.1 at window edge
                 decay_ratio = delta_sec / window_seconds
                 weight = max(0.1, min(1.0, 1.0 - (0.9 * decay_ratio)))
 
-                # Upsert temporal edge in the graph
                 await self.upsert_edge(
                     source_id=node_id,
                     target_id=target_id,
@@ -349,50 +331,36 @@ class DatabaseManager:
         return created_count    
     
     async def get_stats(self) -> dict:
-        """Collects operational metrics: node/edge distributions, log volume, and DB size."""
         if not self._conn:
             return {"status": "uninitialized"}
 
         async with self._conn.cursor() as cursor:
-            # 1. Total Nodes & Extensions
             await cursor.execute("SELECT COUNT(*), COUNT(DISTINCT extension) FROM nodes;")
             node_count, ext_count = await cursor.fetchone()
 
-            # 2. Edge Breakdown by Type
             await cursor.execute("SELECT edge_type, COUNT(*) FROM edges GROUP BY edge_type;")
             edge_rows = await cursor.fetchall()
             edges_by_type = {row[0]: row[1] for row in edge_rows}
 
-            # 3. Vector Embeddings Count
             await cursor.execute("SELECT COUNT(*) FROM node_embeddings;")
             vec_count = (await cursor.fetchone())[0]
 
-            # 4. Activity Logs Count
             await cursor.execute("SELECT COUNT(*) FROM session_logs;")
             log_count = (await cursor.fetchone())[0]
 
         db_size_kb = round(self.db_path.stat().st_size / 1024, 2) if self.db_path.exists() else 0.0
 
         return {
-            "database": {
-                "path": str(self.db_path),
-                "size_kb": db_size_kb,
-            },
-            "nodes": {
-                "total": node_count,
-                "unique_extensions": ext_count,
-                "vectorized": vec_count,
-            },
+            "database": {"path": str(self.db_path), "size_kb": db_size_kb},
+            "nodes": {"total": node_count, "unique_extensions": ext_count, "vectorized": vec_count},
             "edges": edges_by_type,
             "session_logs_retained": log_count,
         }
             
     async def run_maintenance(self, session_ttl_days: int = 30) -> None:
-        """Cleans orphaned pending nodes, prunes old session logs, and optimizes SQLite."""
         if not self._conn:
             return
 
-        # 1. Run cleanup queries inside transaction
         async with self._conn.cursor() as cursor:
             await cursor.execute(
                 """
@@ -407,21 +375,16 @@ class DatabaseManager:
             )
             await cursor.execute("PRAGMA optimize;")
 
-        # 2. COMMIT FIRST so SQLite releases all write locks!
         await self._conn.commit()
 
-        # 3. Checkpoint WAL file cleanly now that the transaction is closed
         try:
             await self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
         except Exception as e:
             logger.debug(f"WAL checkpoint skipped: {e}")
 
-        logger.info(
-            "Database maintenance complete (Orphans pruned, logs trimmed, WAL checkpointed)."
-        )
+        logger.info("Database maintenance complete.")
 
     async def close(self) -> None:
-        """Gracefully closes SQLite connection."""
         if self._conn:
             await self._conn.close()
             logger.info("Database connection closed.")

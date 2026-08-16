@@ -1,21 +1,20 @@
 """
-Aether Canvas - IPC Client for aia_weaver
-Handles asynchronous UNIX domain socket communication and secure JSON-RPC 2.0 validation.
+Aether Canvas - IPC Client
+Asynchronous UNIX domain socket client for JSON-RPC 2.0 communication with aia_weaver.
 """
 
 import os
 import json
 import asyncio
-import threading
 import logging
+import threading
 from pathlib import Path
-from typing import Optional, Dict, Any, Callable
-
+from typing import Dict, Any, Callable, Optional
 from PyQt6.QtCore import QObject, pyqtSignal
 
 logger = logging.getLogger("aia_canvas.ipc")
 
-MAX_PAYLOAD_BYTES = 64 * 1024  # 64 KB safety buffer
+MAX_PAYLOAD_BYTES = 64 * 1024
 
 
 class WeaverIPCClient(QObject):
@@ -23,37 +22,31 @@ class WeaverIPCClient(QObject):
     disconnected = pyqtSignal()
     nodeUpdated = pyqtSignal(dict)
     nodeDeleted = pyqtSignal(dict)
-    errorOccurred = pyqtSignal(str)
+    rpcResponseReceived = pyqtSignal(int, object, str)  # req_id, result, error
 
     def __init__(self, socket_path: Optional[str] = None):
         super().__init__()
-        self.socket_path = socket_path or self._resolve_socket_path()
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        if socket_path is None:
+            runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
+            self.socket_path = str(Path(runtime_dir) / "aia_weaver" / "aia_weaver.sock")
+        else:
+            self.socket_path = socket_path
+
+        self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
-        self._pending_requests: Dict[int, asyncio.Future] = {}
-        self._request_counter = 0
-        self._running = False
 
-    @staticmethod
-    def _resolve_socket_path() -> str:
-        xdg_runtime = os.environ.get("XDG_RUNTIME_DIR")
-        if xdg_runtime:
-            return str(Path(xdg_runtime) / "aia_weaver" / "aia_weaver.sock")
-        return f"/run/user/{os.getuid()}/aia_weaver/aia_weaver.sock"
+        self._req_id = 0
+        self._pending_callbacks: Dict[int, Callable[[Any, Optional[str]], None]] = {}
+        self.rpcResponseReceived.connect(self._dispatch_rpc_callback)
 
     def start(self):
-        if self._running:
-            return
+        """Starts the background asyncio worker thread."""
         self._running = True
         self._thread = threading.Thread(target=self._run_event_loop, daemon=True)
         self._thread.start()
-
-    def stop(self):
-        self._running = False
-        if self._loop and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(self._cleanup(), self._loop)
 
     def _run_event_loop(self):
         self._loop = asyncio.new_event_loop()
@@ -64,7 +57,7 @@ class WeaverIPCClient(QObject):
         while self._running:
             try:
                 if not Path(self.socket_path).exists():
-                    await asyncio.sleep(2.0)
+                    await asyncio.sleep(1.5)
                     continue
 
                 self._reader, self._writer = await asyncio.open_unix_connection(
@@ -75,25 +68,11 @@ class WeaverIPCClient(QObject):
                 await self._listen_stream()
 
             except (ConnectionRefusedError, FileNotFoundError, asyncio.IncompleteReadError):
-                # Throttle error spam if weaver isn't running yet
-                if hasattr(self, '_last_warned') and not self._last_warned:
-                    logger.warning("IPC unavailable or disconnected. Retrying in background...")
-                    self._last_warned = True
                 self.disconnected.emit()
+                await asyncio.sleep(2.0)
             except Exception as e:
                 logger.error(f"IPC socket fault: {e}")
                 self.disconnected.emit()
-
-            if self._writer:
-                try:
-                    self._writer.close()
-                    await self._writer.wait_closed()
-                except Exception:
-                    pass
-                self._writer = None
-                self._reader = None
-
-            if self._running:
                 await asyncio.sleep(2.0)
 
     async def _listen_stream(self):
@@ -101,91 +80,69 @@ class WeaverIPCClient(QObject):
             line = await self._reader.readline()
             if not line:
                 break
-                
+
             frame_size = len(line)
             if frame_size > (MAX_PAYLOAD_BYTES * 0.8):
-                logger.warning(f"High IPC payload saturation: {frame_size} bytes ({(frame_size/MAX_PAYLOAD_BYTES)*100:.1f}%)")
+                logger.warning(f"High IPC payload saturation: {frame_size} bytes")
 
             try:
                 message = json.loads(line.decode("utf-8").strip())
                 if not isinstance(message, dict) or "jsonrpc" not in message:
-                    continue  
+                    continue
                 self._handle_incoming_message(message)
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
                 logger.error(f"Corrupt IPC frame dropped: {e}")
                 continue
 
-    def _handle_incoming_message(self, message: dict):
-        msg_id = message.get("id")
-        if msg_id in self._pending_requests:
-            future = self._pending_requests.pop(msg_id)
-            if not future.done():
-                future.set_result(message)
-            return
-
-        method = message.get("method")
-        if method == "graph_event":
-            params = message.get("params", {})
+    def _handle_incoming_message(self, msg: dict):
+        # 1. Handle Real-Time Broadcast Events
+        if msg.get("method") == "graph_event":
+            params = msg.get("params", {})
             event_type = params.get("type")
             data = params.get("data", {})
-
-            if not isinstance(data, dict):
-                return
-
             if event_type == "node_updated":
                 self.nodeUpdated.emit(data)
             elif event_type == "node_deleted":
                 self.nodeDeleted.emit(data)
 
-    async def _send_rpc(self, method: str, params: Optional[dict] = None) -> dict:
-        if not self._writer:
-            raise ConnectionError("Socket is not connected")
+        # 2. Handle RPC Responses (Matched by ID)
+        elif "id" in msg and msg["id"] is not None:
+            req_id = int(msg["id"])
+            result = msg.get("result")
+            error = msg.get("error", {}).get("message") if "error" in msg else ""
+            self.rpcResponseReceived.emit(req_id, result, error)
 
-        self._request_counter += 1
-        req_id = self._request_counter
+    def _dispatch_rpc_callback(self, req_id: int, result: Any, error: str):
+        callback = self._pending_callbacks.pop(req_id, None)
+        if callback:
+            callback(result, error if error else None)
+
+    def call_rpc_sync(self, method: str, params: dict, callback: Optional[Callable] = None):
+        """Dispatches an asynchronous RPC request from Qt without blocking the UI thread."""
+        if not self._running or not self._loop or not self._writer:
+            if callback:
+                callback(None, "IPC socket not connected")
+            return
+
+        self._req_id += 1
+        req_id = self._req_id
+        if callback:
+            self._pending_callbacks[req_id] = callback
+
         payload = {
             "jsonrpc": "2.0",
             "method": method,
-            "params": params or {},
+            "params": params,
             "id": req_id,
         }
 
-        future = self._loop.create_future()
-        self._pending_requests[req_id] = future
+        asyncio.run_coroutine_threadsafe(self._send_payload(payload), self._loop)
 
-        frame = json.dumps(payload).encode("utf-8") + b"\n"
-        if len(frame) > MAX_PAYLOAD_BYTES:
-            self._pending_requests.pop(req_id, None)
-            raise ValueError("Payload exceeds 64KB framing limit")
-
-        self._writer.write(frame)
-        await self._writer.drain()
-
-        return await asyncio.wait_for(future, timeout=5.0)
-
-    def call_rpc_sync(self, method: str, params: Optional[dict] = None, callback: Optional[Callable] = None):
-        if not self._loop or not self._loop.is_running():
-            return
-
-        async def _runner():
-            try:
-                res = await self._send_rpc(method, params)
-                if callback:
-                    callback(res.get("result"), None)
-            except Exception as e:
-                if callback:
-                    callback(None, str(e))
-
-        asyncio.run_coroutine_threadsafe(_runner(), self._loop)
-
-    async def _cleanup(self):
-        for fut in self._pending_requests.values():
-            if not fut.done():
-                fut.cancel()
-        self._pending_requests.clear()
+    async def _send_payload(self, payload: dict):
         if self._writer:
             try:
-                self._writer.close()
-                await self._writer.wait_closed()
-            except Exception:
-                pass
+                line = json.dumps(payload) + "\n"
+                self._writer.write(line.encode("utf-8"))
+                await self._writer.drain()
+            except Exception as e:
+                logger.error(f"Failed to send IPC request: {e}")
