@@ -16,25 +16,30 @@ The Aether framework is structured as a decoupled ecosystem of specialized daemo
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           AETHER ECOSYSTEM                              │
 │                                                                         │
-│   ┌──────────────────┐    Gaze Vectors     ┌────────────────────────┐   │
-│   │   aia_saccade    │────────────────────►│       aia_canvas       │   │
-│   │ (Ocular Sensor)  │                     │   (Spatial UI Shell)   │   │
-│   └──────────────────┘                     └───────────▲────────────┘   │
-│                                                        │                │
-│                                             JSON-RPC   │ Graph Updates  │
-│                                             UNIX IPC   │ & Vector KNN   │
-│                                                        ▼                │
-│                                            ┌────────────────────────┐   │
-│                                            │       aia_weaver       │   │
-│                                            │   (Knowledge Fabric)   │   │
-│                                            └────────────────────────┘   │
+│   ┌──────────────────┐  Passive Gaze / Intent                           │
+│   │   aia_saccade    │·························┐                        │
+│   │ (Optional Assist)│                         ▼                        │
+│   └──────────────────┘               ┌──────────────────┐               │
+│                                      │    aia_canvas    │               │
+│   ┌──────────────────┐  Keyboard /   │(Spatial UI Shell)│               │
+│   │  Standard Input  │──────────────►│                  │               │
+│   │ (Mouse / Keys)   │  Active Nav   └─────────▲────────┘               │
+│   └──────────────────┘                         │                        │
+│                                     JSON-RPC   │ Graph Updates          │
+│                                     UNIX IPC   │ & Vector KNN           │
+│                                                ▼                        │
+│                                      ┌──────────────────┐               │
+│                                      │    aia_weaver    │               │
+│                                      │(Knowledge Fabric)│               │
+│                                      └──────────────────┘               │
 └─────────────────────────────────────────────────────────────────────────┘
+
 ```
 
 | Component | Role | Description |
 | :--- | :--- | :--- |
 | **`aia_canvas`** | Presentation Layer | Hardware-accelerated spatial canvas rendering borderless text lenses, dynamic bezier tendrils, and particle horizons. |
-| **`aia_saccade`** | Biological Sensor | Predicts gaze vectors, fixations, and intent to warm up targets and eliminate input fatigue. |
+| **`aia_saccade`** | Biological Sensor | Optional sensor module predicting gaze vectors to pre-warm focal targets and guide cursor gravity wells. |
 | **`aia_weaver`** | Relational Daemon | Ingests workspaces, parses explicit links, calculates dense vector embeddings, and builds a real-time graph. |
 | **`aia_charter.md`** | System Manifesto | The core architectural ethos, design rules, and interaction guidelines. |
 
