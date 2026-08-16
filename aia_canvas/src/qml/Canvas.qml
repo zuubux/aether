@@ -1,0 +1,286 @@
+import QtQuick
+import QtQuick.Controls
+
+Window {
+    id: root
+    width: 2560
+    height: 1440
+    visibility: Window.Maximized
+    visible: true
+    title: "Aether Canvas"
+    color: "#07080b"
+    property bool showDiagnostics: false
+
+    // Global Escape Key to Clear Focus and Return to Ambient State
+    Shortcut {
+        sequence: "Esc"
+        onActivated: {
+            if (canvasBridge) {
+                canvasBridge.select_node(0)
+            }
+        }
+    }
+    Shortcut {
+        sequence: "F3"
+        onActivated: showDiagnostics = !showDiagnostics
+    }
+    Component.onCompleted: {
+        if (canvasBridge) {
+            canvasBridge.update_viewport_dimensions(root.width, root.height)
+        }
+    }
+    onWidthChanged: {
+        if (canvasBridge) {
+            canvasBridge.update_viewport_dimensions(root.width, root.height)
+        }
+    }
+    onHeightChanged: {
+        if (canvasBridge) {
+            canvasBridge.update_viewport_dimensions(root.width, root.height)
+        }
+    }
+
+    Item {
+        id: canvasSpace
+        anchors.fill: parent
+
+        // Void Click & Aperture Scroll Controller
+        MouseArea {
+            id: voidArea
+            anchors.fill: parent
+
+            onClicked: function(mouse) {
+                if (canvasBridge) {
+                    canvasBridge.select_node(0)
+                }
+            }
+
+            onWheel: function(wheel) {
+                if (canvasBridge) {
+                    var delta = wheel.angleDelta.y > 0 ? 0.06 : -0.06
+                    canvasBridge.adjust_aperture(delta)
+                }
+            }
+        }
+
+        Item {
+            id: canvasViewport
+            anchors.fill: parent
+
+            property var nodeRegistry: ({})
+            property int registryEpoch: 0
+
+            function registerNode(id, item) {
+                nodeRegistry[id] = item
+                registryEpoch++
+            }
+
+            function unregisterNode(id) {
+                delete nodeRegistry[id]
+                registryEpoch++
+            }
+
+            function getNode(id) {
+                var _dummy = registryEpoch
+                return nodeRegistry[id] || null
+            }
+            
+            // Atmospheric Cluster Halos (Background Depth Layer)
+            Repeater {
+                model: canvasBridge ? canvasBridge.clusterHalos : []
+
+                ClusterHalo {
+                    required property var modelData
+
+                    centerX: modelData.centerX
+                    centerY: modelData.centerY
+                    haloRadius: modelData.radius
+                    haloColor: modelData.color
+                    isFocalCluster: modelData.isFocalCluster
+                    nodeCount: modelData.nodeCount
+                    currentAperture: canvasBridge ? canvasBridge.aperture : 1.0
+                }
+            }
+
+            // Dynamic Tendrils
+            Repeater {
+                model: canvasBridge ? canvasBridge.edges : []
+
+                Tendril {
+                    required property var modelData
+
+                    sourceId: modelData.sourceId
+                    targetId: modelData.targetId
+                    selectedNodeId: canvasBridge ? canvasBridge.selectedNodeId : 0
+                    hoveredNodeId: canvasBridge ? canvasBridge.hoveredNodeId : 0
+                    sourceNode: canvasViewport.getNode(modelData.sourceId)
+                    targetNode: canvasViewport.getNode(modelData.targetId)
+                    edgeType: modelData.edgeType
+                    weight: modelData.weight
+                }
+            }
+
+            // Cards & Constellations
+            Repeater {
+                model: canvasBridge ? canvasBridge.nodes : []
+
+                Node {
+                    id: nodeItem
+                    required property var modelData
+
+                    bridge: canvasBridge
+                    viewportContainer: canvasViewport
+                    nodeModel: modelData
+
+                    Component.onCompleted: {
+                        canvasViewport.registerNode(modelData.id, nodeItem)
+                    }
+                    Component.onDestruction: {
+                        canvasViewport.unregisterNode(modelData.id)
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Bottom Controls (IPC Status & Aperture Gauge) ---
+    Row {
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.margins: 20
+        spacing: 12
+
+        // IPC Status
+        Rectangle {
+            width: 130
+            height: 30
+            radius: 15
+            color: "#0e1117"
+            border.color: (canvasBridge && canvasBridge.isConnected) ? "#10b981" : "#475569"
+            border.width: 1
+            opacity: 0.85
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 8
+
+                Rectangle {
+                    width: 7
+                    height: 7
+                    radius: 3.5
+                    color: (canvasBridge && canvasBridge.isConnected) ? "#10b981" : "#64748b"
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    SequentialAnimation on opacity {
+                        running: canvasBridge ? canvasBridge.isConnected : false
+                        loops: Animation.Infinite
+                        PropertyAnimation { to: 0.4; duration: 1200; easing.type: Easing.InOutSine }
+                        PropertyAnimation { to: 1.0; duration: 1200; easing.type: Easing.InOutSine }
+                    }
+                }
+
+                Text {
+                    text: (canvasBridge && canvasBridge.isConnected) ? "Weaver Live" : "Standalone"
+                    color: (canvasBridge && canvasBridge.isConnected) ? "#e2e8f0" : "#94a3b8"
+                    font.family: "Monospace"
+                    font.pixelSize: 10
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+        }
+
+        // Aperture Gauge
+        Rectangle {
+            width: 140
+            height: 30
+            radius: 15
+            color: "#0e1117"
+            border.color: "#1e293b"
+            border.width: 1
+            opacity: 0.85
+
+            Row {
+                anchors.centerIn: parent
+                spacing: 8
+
+                Text {
+                    text: "Aperture"
+                    color: "#64748b"
+                    font.family: "Monospace"
+                    font.pixelSize: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Text {
+                    text: Math.round((canvasBridge ? canvasBridge.aperture : 1.0) * 100) + "%"
+                    color: "#38bdf8"
+                    font.family: "Monospace"
+                    font.pixelSize: 11
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+        }
+    } // <--- END OF THE BOTTOM ROW CONTROLS
+
+    // =========================================================================
+    // Diagnostic HUD (F3 to Toggle) - Must be outside the Row!
+    // =========================================================================
+    Rectangle {
+        visible: root.showDiagnostics
+        width: 260
+        height: 160
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 20
+        color: "#0a0c10"
+        border.color: "#334155"
+        border.width: 1
+        radius: 8
+        opacity: 0.85
+        z: 9000
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 14
+            spacing: 10
+
+            Text {
+                text: "AIA CANVAS SRE HUD"
+                color: "#f8fafc"
+                font.family: "Monospace"
+                font.pixelSize: 12
+                font.bold: true
+            }
+
+            Rectangle { width: parent.width; height: 1; color: "#1e293b" }
+
+            Grid {
+                columns: 2
+                spacing: 8
+                rowSpacing: 10
+
+                Text { text: "Nodes:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
+                Text { text: canvasBridge ? canvasBridge.activeNodeCount : 0; color: "#38bdf8"; font.family: "Monospace"; font.pixelSize: 11; font.bold: true }
+
+                Text { text: "Edges:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
+                Text { text: canvasBridge ? canvasBridge.activeEdgeCount : 0; color: "#fbbf24"; font.family: "Monospace"; font.pixelSize: 11; font.bold: true }
+
+                Text { text: "Physics Step:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
+                Text { 
+                    text: canvasBridge ? canvasBridge.physicsFrametime.toFixed(2) + " ms" : "0.00 ms"
+                    color: (canvasBridge && canvasBridge.physicsFrametime > 6.5) ? "#ef4444" : "#10b981" 
+                    font.family: "Monospace"; font.pixelSize: 11; font.bold: true 
+                }
+
+                Text { text: "Backend Socket:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
+                Text { 
+                    text: (canvasBridge && canvasBridge.isConnected) ? "CONNECTED" : "OFFLINE" 
+                    color: (canvasBridge && canvasBridge.isConnected) ? "#10b981" : "#ef4444"
+                    font.family: "Monospace"; font.pixelSize: 11; font.bold: true 
+                }
+            }
+        }
+    }
+}

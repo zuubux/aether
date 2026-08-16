@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.sock
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.tmp
+.env

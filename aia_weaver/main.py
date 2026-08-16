@@ -1,0 +1,233 @@
+import asyncio
+import hashlib
+import logging
+import os
+import signal
+import sys
+from pathlib import Path
+
+from indexer.embedder import LocalEmbedder
+from indexer.parser import extract_explicit_links
+from ipc.server import IPCServer
+from storage.db import DatabaseManager
+from watcher.fs_events import FileWatcher
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("aia_weaver")
+
+
+class WeaverDaemon:
+    def __init__(
+        self, 
+        target_directories: list[str], 
+        db_path: str | None = None,
+        enable_semantic_edges: bool = False,
+        semantic_distance_threshold: float = 0.35,
+    ):
+        self._shutdown_event = asyncio.Event()
+        self.target_directories = target_directories
+        self.enable_semantic_edges = enable_semantic_edges
+        self.semantic_distance_threshold = semantic_distance_threshold
+
+        if db_path is None:
+            config_dir = Path.home() / ".config" / "aether"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            os.chmod(config_dir, 0o700)
+            self.db_path = str(config_dir / "weaver_graph.db")
+        else:
+            self.db_path = db_path
+
+        self.event_queue: asyncio.Queue = asyncio.Queue()
+        self.db = DatabaseManager(self.db_path)
+        self.embedder = LocalEmbedder()
+        self.ipc = IPCServer(
+            search_handler=self.handle_semantic_search,
+            neighbors_handler=self.handle_get_neighbors,
+            allowed_directories=[Path(d) for d in self.target_directories],
+        )
+                # Register get_stats
+        self.ipc.stats_handler = self.handle_get_stats  # or map in _dispatch_rpc
+    
+    async def handle_semantic_search(self, query_text: str, limit: int = 5) -> list:
+        """Handler for JSON-RPC search queries over IPC."""
+        logger.info(f"IPC Search Request received: '{query_text}'")
+        query_vec = await self.embedder.embed_text(query_text)
+        results = await self.db.search_similar_nodes(query_vec, limit=limit)
+        return results
+
+    async def handle_get_neighbors(self, node_id: int) -> dict:
+        """Handler for JSON-RPC neighborhood requests over IPC."""
+        logger.info(f"IPC Neighbors Request received for Node #{node_id}")
+        return await self.db.get_node_neighbors(node_id)
+
+    async def start(self) -> None:
+        """Starts daemon engines, background workers, IPC server, and signal handlers."""
+        logger.info("Initializing aia_weaver hardened engine...")
+
+        await self.db.initialize()
+        await self.ipc.start()
+
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(
+                    sig, lambda: asyncio.create_task(self.shutdown())
+                )
+            except NotImplementedError:
+                pass
+
+        watcher = FileWatcher(
+            target_dirs=self.target_directories,
+            event_queue=self.event_queue,
+        )
+
+        watcher_task = asyncio.create_task(watcher.watch_loop())
+        processor_task = asyncio.create_task(self._process_event_queue())
+
+        logger.info("aia_weaver fully ACTIVE with hardened IPC socket enabled.")
+
+        await self._shutdown_event.wait()
+
+        logger.info("Stopping all background services...")
+        watcher_task.cancel()
+        processor_task.cancel()
+        await asyncio.gather(watcher_task, processor_task, return_exceptions=True)
+
+        await self.ipc.stop()
+        self.embedder.close()
+        await self.db.run_maintenance()
+        await self.db.close()
+        logger.info("aia_weaver shutdown complete.")
+
+    async def _process_event_queue(self) -> None:
+        """Consumes file events, updates DB nodes & edges, and broadcasts IPC events."""
+        while not self._shutdown_event.is_set():
+            try:
+                event = await asyncio.wait_for(self.event_queue.get(), timeout=1.0)
+                file_path_str = event["file_path"]
+                action = event["action"]
+                path = Path(file_path_str)
+
+                # --- 1. HANDLE CREATED & MODIFIED ---
+                if action in ("created", "modified") and path.exists() and path.is_file():
+                    file_bytes = await asyncio.to_thread(path.read_bytes)
+                    file_hash = hashlib.sha256(file_bytes).hexdigest()
+
+                    embedding = await self.embedder.embed_file(file_path_str)
+
+                    # Upsert Source Node
+                    source_id = await self.db.upsert_node(
+                        file_path=file_path_str,
+                        file_hash=file_hash,
+                        extension=path.suffix,
+                        size_bytes=path.stat().st_size,
+                        embedding=embedding,
+                    )
+                    logger.info(f"Indexed Node #{source_id} [{action.upper()}] -> {path.name}")
+                    
+                    # --- SEMANTIC ENGINE ---
+                    if self.enable_semantic_edges and embedding is not None:
+                        created_semantic = await self.db.create_semantic_edges(
+                            node_id=source_id,
+                            embedding=embedding,
+                            distance_threshold=self.semantic_distance_threshold,
+                        )
+                        if created_semantic > 0:
+                            logger.info(
+                                f"Linked {created_semantic} Semantic Edge(s) for Node #{source_id}"
+                            )
+
+                    # --- TEMPORAL ENGINE ---
+                    await self.db.log_session_event(source_id, event_type=action)
+                    temporal_links = await self.db.create_temporal_edges(source_id, window_minutes=15)
+                    if temporal_links > 0:
+                        logger.info(
+                            f"Linked {temporal_links} Temporal Edge(s) to recent activity for Node #{source_id}"
+                        )
+                    
+                    # --- EXPLICIT ENGINE ---
+                    if path.suffix.lower() in (".md", ".markdown", ".txt"):
+                        try:
+                            await self.db.reconcile_explicit_edges(source_id)
+
+                            content = file_bytes.decode("utf-8", errors="ignore")
+                            wiki_targets = extract_explicit_links(content)
+
+                            for target in wiki_targets:
+                                target_file = target if target.endswith(".md") else f"{target}.md"
+                                resolved_target_path = str((path.parent / target_file).resolve())
+
+                                target_id = await self.db.upsert_node(
+                                    file_path=resolved_target_path,
+                                    file_hash="pending",
+                                    extension=".md",
+                                    size_bytes=0,
+                                    embedding=None,
+                                )
+
+                                await self.db.upsert_edge(
+                                    source_id=source_id,
+                                    target_id=target_id,
+                                    edge_type="explicit",
+                                    weight=1.0,
+                                )
+                                logger.info(
+                                    f"Linked Explicit Edge: Node #{source_id} -> Node #{target_id} ([[ {target} ]])"
+                                )
+                        except Exception as parse_err:
+                            logger.error(f"Error parsing links in {path.name}: {parse_err}")
+
+                    await self.ipc.broadcast_event(
+                        "node_updated", {"node_id": source_id, "file_path": file_path_str}
+                    )
+
+                # --- 2. HANDLE DELETED ---
+                elif action == "deleted":
+                    deleted_node_id = await self.db.delete_node_by_path(file_path_str)
+                    if deleted_node_id:
+                        logger.info(
+                            f"Pruned Node #{deleted_node_id} [DELETED] -> {Path(file_path_str).name}"
+                        )
+                        await self.ipc.broadcast_event(
+                            "node_deleted",
+                            {"node_id": deleted_node_id, "file_path": file_path_str},
+                        )
+
+                self.event_queue.task_done()
+
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                logger.error(f"Error processing pipeline event: {e}", exc_info=True)
+    
+    async def handle_get_stats(self) -> dict:
+        """RPC handler returning live daemon telemetry."""
+        stats = await self.db.get_stats()
+        stats["daemon"] = {
+            "queue_depth": self.event_queue.qsize(),
+            "semantic_lever": self.enable_semantic_edges,
+            "targets": self.target_directories,
+        }
+        return stats
+
+    async def shutdown(self) -> None:
+        logger.info("Shutdown signal received. Stopping aia_weaver...")
+        self._shutdown_event.set()
+
+
+if __name__ == "__main__":
+    TEST_TARGETS = ["./sandbox"]
+
+    daemon = WeaverDaemon(
+        target_directories=TEST_TARGETS,
+        enable_semantic_edges=False,  # Keep semantic edges off by default until tuning
+    )
+    try:
+        asyncio.run(daemon.start())
+    except KeyboardInterrupt:
+        logger.info("Daemon stopped by user.")
+    sys.exit(0)
