@@ -38,8 +38,8 @@ The Aether framework is structured as a decoupled ecosystem of specialized daemo
 | Component | Role | Description |
 | :--- | :--- | :--- |
 | **`aia_canvas`** | Presentation Layer | Hardware-accelerated spatial canvas rendering borderless text lenses, dynamic bezier tendrils, and particle horizons. |
-| **`aia_saccade`** | Biological Sensor | Optional sensor module predicting gaze vectors to pre-warm focal targets and guide cursor gravity wells. |
 | **`aia_weaver`** | Relational Daemon | Ingests workspaces, parses explicit links, calculates dense vector embeddings, and builds a real-time graph. |
+| **`aia_saccade`** | Ambient Biometrics | Optional sensor module predicting gaze vectors to pre-warm focal targets and guide cursor gravity wells. |
 | **`aia_charter.md`** | System Manifesto | The core architectural ethos, design rules, and interaction guidelines. |
 
 ---
