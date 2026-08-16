@@ -11,18 +11,37 @@ Item {
     property int nodeCount: 3
     property real currentAperture: 1.0
 
-    x: centerX - width / 2
-    y: centerY - height / 2
-    width: haloRadius * 2
-    height: haloRadius * 2
+    // =========================================================================
+    // 2.5D Panoramic Projection Math
+    // =========================================================================
+    readonly property real vpX: parent ? parent.width / 2 : 1280
+    readonly property real vpY: parent ? parent.height * 0.20 : 280
+
+    readonly property real depthZ: Math.max(0.0, Math.min(1.0, 1.0 - (centerY / (parent ? parent.height : 1440))))
+    readonly property real pScale: 1.0 / (1.0 + depthZ * 1.25)
+    readonly property real xSpreadFactor: 0.85 + 0.15 * pScale
+
+    readonly property real projX: vpX + (centerX - vpX) * xSpreadFactor
+    readonly property real projY: vpY + (centerY - vpY) * pScale
+    readonly property real projRadius: Math.max(28.0, haloRadius * pScale)
+
+    // Dynamic Horizon Geometry
+    x: projX - width / 2
+    y: projY - height / 2
+    width: projRadius * 2
+    height: projRadius * 2
 
     Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutSine } }
     Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutSine } }
     Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
     Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
-    z: 10
+    // Depth Stacking (Distant nebulae render behind foreground elements)
+    z: Math.round((1.0 - depthZ) * 200)
 
+    // =========================================================================
+    // Aperture & Density Gating with Atmospheric Depth Attenuation
+    // =========================================================================
     // Macro Gating: Smooth ramp between 40% and 25% zoom
     readonly property real apertureRamp: {
         if (isFocalCluster || currentAperture > 0.40) return 0.0
@@ -32,7 +51,10 @@ Item {
     // Population Scaling: Soft whisper for 3 nodes, rich celestial nebula for 8+
     readonly property real populationWeight: Math.min(1.0, Math.max(0.40, rootHalo.nodeCount / 8.0))
 
-    opacity: apertureRamp * populationWeight
+    // Atmospheric Haze Factor
+    readonly property real depthAttenuation: 1.0 - (depthZ * 0.35)
+
+    opacity: apertureRamp * populationWeight * depthAttenuation
     visible: opacity > 0.005
 
     Behavior on opacity {
@@ -56,8 +78,8 @@ Item {
     // 2. Outer Resonant Aura
     Rectangle {
         anchors.centerIn: parent
-        width: parent.width + 12
-        height: parent.height + 12
+        width: parent.width + 12 * rootHalo.pScale
+        height: parent.height + 12 * rootHalo.pScale
         radius: width / 2
         color: "transparent"
         border.color: rootHalo.haloColor
@@ -73,7 +95,7 @@ Item {
         radius: width / 2
         color: "transparent"
         border.color: rootHalo.haloColor
-        border.width: 1.0
-        opacity: 0.28
+        border.width: rootHalo.isFocalCluster ? 1.5 : 1.0
+        opacity: rootHalo.isFocalCluster ? 0.45 : 0.28
     }
 }

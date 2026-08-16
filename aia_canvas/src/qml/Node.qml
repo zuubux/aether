@@ -57,6 +57,25 @@ Item {
     // Downstream Connection Count
     readonly property int downstreamCount: bridge ? bridge.get_downstream_count(nodeId) : 0
 
+    // =========================================================================
+    // 2.5D Panoramic Horizon Projection (Decoupled X/Y Spread)
+    // =========================================================================
+    readonly property real vpX: viewportContainer ? viewportContainer.width / 2 : 1280
+    readonly property real vpY: viewportContainer ? viewportContainer.height * 0.20 : 280
+    readonly property real rawPhysicsX: nodeModel ? nodeModel.x : 0
+    readonly property real rawPhysicsY: nodeModel ? nodeModel.y : 0
+
+    // Depth: z=0 foreground (bottom), z=1 horizon (top)
+    readonly property real depthZ: {
+        var normalizedY = Math.max(0.0, Math.min(1.0, 1.0 - (rawPhysicsY / (viewportContainer ? viewportContainer.height : 1440))))
+        return isSelected ? 0.0 : normalizedY * (1.0 - focusWeight * 0.5)
+    }
+
+    readonly property real perspectiveScale: 1.0 / (1.0 + depthZ * 1.25)
+    readonly property real xSpreadFactor: 0.85 + 0.15 * perspectiveScale
+    readonly property real projectedX: vpX + (rawPhysicsX - vpX) * xSpreadFactor
+    readonly property real projectedY: vpY + (rawPhysicsY - vpY) * perspectiveScale
+
     // Target Dimensions
     readonly property real targetWidth: {
         if (isSelected) return bridge ? bridge.workbenchWidth : 1400
@@ -88,9 +107,9 @@ Item {
     readonly property real cardCenterX: x
     readonly property real cardCenterY: y
 
-    // Direct Physics Drive with Selective Glide on Selection
-    x: nodeModel ? nodeModel.x : 0
-    y: nodeModel ? nodeModel.y : 0
+    // Projected Coordinate Anchors
+    x: projectedX
+    y: projectedY
     width: 0
     height: 0
 
@@ -103,14 +122,17 @@ Item {
         NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
     }
 
-    scale: isHoverBloomed ? 1.15 : (isHovered ? 1.05 : 1.0)
+    // Composite Scale (Perspective * Interaction Zoom)
+    scale: (isHoverBloomed ? 1.15 : (isHovered ? 1.05 : 1.0)) * perspectiveScale
     Behavior on scale {
         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
     }
 
-    z: isSelected ? 400 : (isHoverBloomed ? 350 : (isHovered ? 300 : Math.round(focusWeight * 100)))
+    // Depth Stacking (Foreground renders above horizon)
+    z: isSelected ? 9000 : (isHoverBloomed ? 8000 : (isHovered ? 7000 : Math.round((1.0 - depthZ) * 1000 + focusWeight * 100)))
 
-    opacity: isHovered ? 1.0 : Math.max(0.25, focusWeight)
+    // Atmospheric Haze Attenuation
+    opacity: isSelected ? 1.0 : (isHovered ? 1.0 : Math.max(0.25, focusWeight * (1.0 - depthZ * 0.35)))
     Behavior on opacity {
         NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
     }
@@ -493,16 +515,23 @@ Item {
                 }
 
                 onPositionChanged: function(mouse) {
-                    if (isResizing && rootItem.bridge) {
-                        var globalPt = mapToItem(null, mouse.x, mouse.y)
-                        var deltaX = (globalPt.x - startMouseX) * 2.0
-                        var deltaY = (globalPt.y - startMouseY) * 2.0
-                        rootItem.bridge.set_workbench_dimensions(
-                            Math.max(700, startW + deltaX),
-                            Math.max(450, startH + deltaY)
-                        )
+                if (isDragging && rootItem.bridge) {
+                    var dx = Math.abs(mouse.x - pressStartX)
+                    var dy = Math.abs(mouse.y - pressStartY)
+                    if (dx > 6 || dy > 6) {
+                        isDragMoved = true
                     }
+
+                    var container = rootItem.viewportContainer || rootItem.parent
+                    var posInParent = mapToItem(container, mouse.x, mouse.y)
+                    
+                    // Unproject drag position back to physics space using panoramic spread
+                    var unprojX = rootItem.vpX + (posInParent.x - dragOffsetX - rootItem.vpX) / rootItem.xSpreadFactor
+                    var unprojY = rootItem.vpY + (posInParent.y - dragOffsetY - rootItem.vpY) / rootItem.perspectiveScale
+
+                    rootItem.bridge.update_drag_pos(rootItem.nodeId, unprojX, unprojY)
                 }
+            }
 
                 onReleased: { isResizing = false }
                 onCanceled: { isResizing = false }
@@ -553,10 +582,10 @@ Item {
 
                 var container = rootItem.viewportContainer || rootItem.parent
                 var posInParent = mapToItem(container, mouse.x, mouse.y)
-                var centerAnchorX = rootItem.nodeModel ? rootItem.nodeModel.x : rootItem.x
-                var centerAnchorY = rootItem.nodeModel ? rootItem.nodeModel.y : rootItem.y
-                dragOffsetX = posInParent.x - centerAnchorX
-                dragOffsetY = posInParent.y - centerAnchorY
+                var centerAnchorX = rootItem.rawPhysicsX
+                var centerAnchorY = rootItem.rawPhysicsY
+                dragOffsetX = posInParent.x - rootItem.projectedX
+                dragOffsetY = posInParent.y - rootItem.projectedY
 
                 if (rootItem.bridge) {
                     rootItem.bridge.pin_node(rootItem.nodeId, centerAnchorX, centerAnchorY)
@@ -573,11 +602,12 @@ Item {
 
                     var container = rootItem.viewportContainer || rootItem.parent
                     var posInParent = mapToItem(container, mouse.x, mouse.y)
-                    rootItem.bridge.update_drag_pos(
-                        rootItem.nodeId,
-                        posInParent.x - dragOffsetX,
-                        posInParent.y - dragOffsetY
-                    )
+                    
+                    // Unproject drag position back to physics coordinate space
+                    var unprojX = rootItem.vpX + (posInParent.x - dragOffsetX - rootItem.vpX) / rootItem.perspectiveScale
+                    var unprojY = rootItem.vpY + (posInParent.y - dragOffsetY - rootItem.vpY) / rootItem.perspectiveScale
+
+                    rootItem.bridge.update_drag_pos(rootItem.nodeId, unprojX, unprojY)
                 }
             }
 

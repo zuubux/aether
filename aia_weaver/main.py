@@ -73,18 +73,25 @@ class WeaverDaemon:
         """Logs active UI focus/interaction and recalculates temporal edges."""
         logger.info(f"IPC Touch Request: Node #{node_id} (event: {event_type})")
         await self.db.log_session_event(node_id, event_type=event_type)
-        edges_created = await self.db.create_temporal_edges(
+        temporal_edges = await self.db.create_temporal_edges(
             node_id, window_minutes=self.temporal_window_minutes
         )
-        if edges_created > 0:
-            logger.info(f"Linked {edges_created} Temporal Edge(s) via UI focus for Node #{node_id}")
+        
+        if temporal_edges:
+            logger.info(f"Linked {len(temporal_edges)} Temporal Edge(s) via UI focus for Node #{node_id}")
             await self.ipc.broadcast_event(
-                "node_updated", {"node_id": node_id, "reason": "temporal_link"}
+                "node_updated", {
+                    "node_id": node_id,
+                    "reason": "temporal_link",
+                    "temporal_edges": temporal_edges,
+                }
             )
+            
         return {
             "node_id": node_id,
             "event_type": event_type,
-            "temporal_edges_created": edges_created,
+            "temporal_edges_created": len(temporal_edges),
+            "temporal_edges": temporal_edges,
         }
 
     async def _initial_workspace_scan(self) -> None:
@@ -186,9 +193,9 @@ class WeaverDaemon:
                         temporal_links = await self.db.create_temporal_edges(
                             source_id, window_minutes=self.temporal_window_minutes
                         )
-                        if temporal_links > 0:
+                        if temporal_links:
                             logger.info(
-                                f"Linked {temporal_links} Temporal Edge(s) to recent activity for Node #{source_id}"
+                                f"Linked {len(temporal_links)} Temporal Edge(s) to recent activity for Node #{source_id}"
                             )
 
                     if path.suffix.lower() in (".md", ".markdown", ".txt"):

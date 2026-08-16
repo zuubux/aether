@@ -25,7 +25,7 @@ Item {
     }
     readonly property bool isVoidMode: selectedNodeId <= 0
 
-    // Intra-Cluster Detection (Safely accesses nodeModel.clusterId)
+    // Intra-Cluster Detection
     readonly property int sourceClusterId: {
         if (!sourceNode) return -1
         if (sourceNode.nodeModel && sourceNode.nodeModel.clusterId !== undefined) return sourceNode.nodeModel.clusterId
@@ -40,7 +40,7 @@ Item {
     }
     readonly property bool isIntraCluster: (sourceClusterId >= 0 && targetClusterId >= 0 && sourceClusterId === targetClusterId)
 
-    // Strictly cull intra-cluster tendrils during macro zoom (<= 45%) unless hovered or focused
+    // Cull intra-cluster tendrils during macro zoom (<= 48%) unless hovered or focused
     readonly property bool shouldCullIntra: isIntraCluster && isVoidMode && !isHoverBloomed && (currentAperture <= 0.48)
 
     // Dynamic Endpoints & Geometry
@@ -96,42 +96,56 @@ Item {
     readonly property real cp2Y: endPt.y + gravitationalSlack
 
     // =========================================================================
-    // Bioluminescent Respiration
+    // Deep Bioluminescent Respiration
     // =========================================================================
-    property real pulsePhase: 0.35
+    property real pulsePhase: 0.0
 
     SequentialAnimation on pulsePhase {
         loops: Animation.Infinite
         running: rootTendril.isVoidMode
 
-        NumberAnimation { to: 1.0; duration: 4000; easing.type: Easing.InOutSine }
+        PauseAnimation { duration: ((rootTendril.sourceId * 149 + rootTendril.targetId * 97) % 5000) + 1000 }
+        NumberAnimation { to: 1.0; duration: 4500; easing.type: Easing.InOutSine }
         PauseAnimation { duration: 800 }
-        NumberAnimation { to: 0.20; duration: 5000; easing.type: Easing.InOutSine }
-        PauseAnimation { duration: 2000 }
+        NumberAnimation { to: 0.0; duration: 5500; easing.type: Easing.InOutSine }
+        PauseAnimation { duration: 2500 }
     }
 
-    readonly property real ambientSpanLimit: 750.0
+    // =========================================================================
+    // Strict Local Neighborhood Horizon (Max 550px)
+    // =========================================================================
+    readonly property real ambientSpanLimit: 550.0
 
     readonly property real proximityFactor: {
         if (!isVoidMode) {
             return (spanDist >= 2200.0) ? 0.25 : (1.0 - ((spanDist - 400.0) / 1800.0) * 0.75)
         }
+        // Hard cutoff: Any ambient line longer than 550px is instantly culled
         if (spanDist >= ambientSpanLimit) return 0.0
-        if (spanDist <= 280.0) return 1.0
-        return (ambientSpanLimit - spanDist) / (ambientSpanLimit - 280.0)
+        if (spanDist <= 240.0) return 1.0
+        return 1.0 - ((spanDist - 240.0) / (ambientSpanLimit - 240.0))
     }
+
+    readonly property real avgDepth: {
+        var sDepth = (sourceNode && sourceNode.depthZ !== undefined) ? sourceNode.depthZ : 0.5
+        var tDepth = (targetNode && targetNode.depthZ !== undefined) ? targetNode.depthZ : 0.5
+        return (sDepth + tDepth) / 2.0
+    }
+
+    readonly property real depthAttenuation: 1.0 - (avgDepth * 0.50)
 
     readonly property real ambientOpacity: {
         if (!isVoidMode || proximityFactor <= 0.001 || shouldCullIntra) return 0.0
 
+        var base = 0.0
         if (edgeType === "explicit") {
-            return (0.18 + 0.16 * pulsePhase) * proximityFactor * Math.max(0.6, weight)
+            base = (0.10 + 0.15 * pulsePhase) * proximityFactor * Math.max(0.5, weight)
         } else if (edgeType === "temporal") {
-            // Immediate resting baseline (0.35) + breathing swell up to 0.70
-            return (0.35 + 0.35 * pulsePhase) * proximityFactor * Math.max(0.6, weight)
+            base = (pulsePhase * 0.45 * Math.max(0.5, weight)) * proximityFactor
         } else {
-            return (0.10 + 0.25 * pulsePhase) * proximityFactor * Math.max(0.4, weight)
+            base = (0.05 + 0.20 * pulsePhase) * proximityFactor * Math.max(0.4, weight)
         }
+        return base * depthAttenuation
     }
 
     readonly property real targetOpacity: {
@@ -166,6 +180,7 @@ Item {
         return "#a78bfa"
     }
 
+    // Core Synaptic Filament
     Shape {
         anchors.fill: parent
         asynchronous: true
@@ -174,7 +189,7 @@ Item {
 
         ShapePath {
             strokeColor: rootTendril.filamentColor
-            strokeWidth: (rootTendril.isFirstDegree || rootTendril.isHoverBloomed) ? Math.max(1.8, rootTendril.weight * 2.2) : (rootTendril.edgeType === "temporal" ? 1.4 : 1.0)
+            strokeWidth: (rootTendril.isFirstDegree || rootTendril.isHoverBloomed) ? Math.max(1.8, rootTendril.weight * 2.2) : (rootTendril.edgeType === "temporal" ? 1.3 : 1.0)
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
 
@@ -192,10 +207,11 @@ Item {
         }
     }
 
+    // Outer Glow Halo
     Shape {
         anchors.fill: parent
-        visible: rootTendril.isFirstDegree || rootTendril.isHoverBloomed || (rootTendril.isVoidMode && rootTendril.edgeType === "temporal")
-        opacity: rootTendril.isHoverBloomed ? 0.55 : (rootTendril.isVoidMode ? 0.20 : Math.max(0.18, rootTendril.weight * 0.35))
+        visible: rootTendril.isFirstDegree || rootTendril.isHoverBloomed || (rootTendril.isVoidMode && rootTendril.pulsePhase > 0.8)
+        opacity: rootTendril.isHoverBloomed ? 0.55 : (rootTendril.isVoidMode ? 0.15 : Math.max(0.18, rootTendril.weight * 0.35))
 
         ShapePath {
             strokeColor: rootTendril.filamentColor

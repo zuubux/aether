@@ -40,6 +40,9 @@ Window {
         id: canvasSpace
         anchors.fill: parent
 
+        // Background Horizon Plane & Iso-lines
+        HorizonGrid {}
+
         // Void Click & Aperture Scroll Controller
         MouseArea {
             id: voidArea

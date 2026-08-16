@@ -293,42 +293,57 @@ class DatabaseManager:
         self,
         node_id: int,
         window_minutes: int = 15,
-    ) -> int:
+    ) -> list[dict]:
+        """
+        Discovers files modified/focused within the sliding time window,
+        establishes time-decayed temporal edges between them, and returns the edge list.
+        """
         if not self._conn:
-            return 0
+            return []
 
         window_seconds = window_minutes * 60
-        created_count = 0
+        created_edges = []
 
         async with self._conn.cursor() as cursor:
             query = """
                 SELECT 
-                    node_id,
-                    (strftime('%s', 'now') - strftime('%s', MAX(timestamp))) AS delta_seconds
-                FROM session_logs
-                WHERE node_id != ?
-                  AND timestamp >= datetime('now', ?)
-                GROUP BY node_id;
+                    s.node_id,
+                    n.file_path,
+                    (strftime('%s', 'now') - strftime('%s', MAX(s.timestamp))) AS delta_seconds
+                FROM session_logs s
+                JOIN nodes n ON s.node_id = n.id
+                WHERE s.node_id != ?
+                  AND s.timestamp >= datetime('now', ?)
+                GROUP BY s.node_id;
             """
             await cursor.execute(query, (node_id, f"-{window_minutes} minutes"))
             recent_nodes = await cursor.fetchall()
 
             for record in recent_nodes:
                 target_id = record["node_id"]
+                target_path = record["file_path"]
                 delta_sec = max(0, record["delta_seconds"])
 
                 decay_ratio = delta_sec / window_seconds
                 weight = max(0.1, min(1.0, 1.0 - (0.9 * decay_ratio)))
+                weight = round(weight, 3)
 
                 await self.upsert_edge(
                     source_id=node_id,
                     target_id=target_id,
                     edge_type="temporal",
-                    weight=round(weight, 3),
+                    weight=weight,
                 )
-                created_count += 1
 
-        return created_count    
+                created_edges.append({
+                    "source_id": node_id,
+                    "target_id": target_id,
+                    "edge_type": "temporal",
+                    "weight": weight,
+                    "target_path": target_path,
+                })
+
+        return created_edges    
     
     async def get_stats(self) -> dict:
         if not self._conn:
