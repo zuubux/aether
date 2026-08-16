@@ -16,14 +16,14 @@ The Aether framework is structured as a decoupled ecosystem of specialized daemo
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           AETHER ECOSYSTEM                              │
 │                                                                         │
-│   ┌──────────────────┐  Passive Gaze / Intent                           │
+│   ┌──────────────────┐  Passive Signals / Context                       │
 │   │   aia_saccade    │·························┐                        │
-│   │ (Optional Assist)│                         ▼                        │
+│   │(Biometric Assist)│                         ▼                        │
 │   └──────────────────┘               ┌──────────────────┐               │
 │                                      │    aia_canvas    │               │
-│   ┌──────────────────┐  Keyboard /   │(Spatial UI Shell)│               │
-│   │  Standard Input  │──────────────►│                  │               │
-│   │ (Mouse / Keys)   │  Active Nav   └─────────▲────────┘               │
+│   ┌──────────────────┐  Direct       │(Spatial UI Shell)│               │
+│   │  Explicit Input  │──────────────►│                  │               │
+│   │ (Primary Driver) │  Execution    └─────────▲────────┘               │
 │   └──────────────────┘                         │                        │
 │                                     JSON-RPC   │ Graph Updates          │
 │                                     UNIX IPC   │ & Vector KNN           │
@@ -33,7 +33,6 @@ The Aether framework is structured as a decoupled ecosystem of specialized daemo
 │                                      │(Knowledge Fabric)│               │
 │                                      └──────────────────┘               │
 └─────────────────────────────────────────────────────────────────────────┘
-
 ```
 
 | Component | Role | Description |
