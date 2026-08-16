@@ -11,7 +11,7 @@ Window {
     color: "#07080b"
     property bool showDiagnostics: false
 
-    // Global Escape Key to Clear Focus and Return to Ambient State
+    // Global Hotkeys
     Shortcut {
         sequence: "Esc"
         onActivated: {
@@ -24,17 +24,13 @@ Window {
         sequence: "F3"
         onActivated: showDiagnostics = !showDiagnostics
     }
-    Component.onCompleted: {
-        if (canvasBridge) {
-            canvasBridge.update_viewport_dimensions(root.width, root.height)
-        }
-    }
-    onWidthChanged: {
-        if (canvasBridge) {
-            canvasBridge.update_viewport_dimensions(root.width, root.height)
-        }
-    }
-    onHeightChanged: {
+
+    // Viewport Dimension Sync
+    Component.onCompleted: syncViewportDimensions()
+    onWidthChanged: syncViewportDimensions()
+    onHeightChanged: syncViewportDimensions()
+
+    function syncViewportDimensions() {
         if (canvasBridge) {
             canvasBridge.update_viewport_dimensions(root.width, root.height)
         }
@@ -85,7 +81,7 @@ Window {
                 return nodeRegistry[id] || null
             }
             
-            // Atmospheric Cluster Halos (Background Depth Layer)
+            // 1. Atmospheric Cluster Halos (Background Layer)
             Repeater {
                 model: canvasBridge ? canvasBridge.clusterHalos : []
 
@@ -102,7 +98,7 @@ Window {
                 }
             }
 
-            // Dynamic Tendrils
+            // 2. Dynamic Synaptic Tendrils (Midground Layer)
             Repeater {
                 model: canvasBridge ? canvasBridge.edges : []
 
@@ -111,16 +107,17 @@ Window {
 
                     sourceId: modelData.sourceId
                     targetId: modelData.targetId
+                    edgeType: modelData.edgeType
+                    weight: modelData.weight
+                    currentAperture: canvasBridge ? canvasBridge.aperture : 1.0
                     selectedNodeId: canvasBridge ? canvasBridge.selectedNodeId : 0
                     hoveredNodeId: canvasBridge ? canvasBridge.hoveredNodeId : 0
                     sourceNode: canvasViewport.getNode(modelData.sourceId)
                     targetNode: canvasViewport.getNode(modelData.targetId)
-                    edgeType: modelData.edgeType
-                    weight: modelData.weight
                 }
             }
 
-            // Cards & Constellations
+            // 3. Cards & Constellations (Foreground Layer)
             Repeater {
                 model: canvasBridge ? canvasBridge.nodes : []
 
@@ -143,14 +140,16 @@ Window {
         }
     }
 
-    // --- Bottom Controls (IPC Status & Aperture Gauge) ---
+    // =========================================================================
+    // Bottom Controls: IPC Status & Aperture Gauge
+    // =========================================================================
     Row {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.margins: 20
         spacing: 12
 
-        // IPC Status
+        // IPC Status Pill
         Rectangle {
             width: 130
             height: 30
@@ -190,7 +189,7 @@ Window {
             }
         }
 
-        // Aperture Gauge
+        // Aperture Gauge Pill
         Rectangle {
             width: 140
             height: 30
@@ -222,15 +221,15 @@ Window {
                 }
             }
         }
-    } // <--- END OF THE BOTTOM ROW CONTROLS
+    }
 
     // =========================================================================
-    // Diagnostic HUD (F3 to Toggle) - Must be outside the Row!
+    // Diagnostic HUD (F3 Toggle)
     // =========================================================================
     Rectangle {
         visible: root.showDiagnostics
-        width: 260
-        height: 160
+        width: 270
+        height: 270
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 20
@@ -238,13 +237,13 @@ Window {
         border.color: "#334155"
         border.width: 1
         radius: 8
-        opacity: 0.85
+        opacity: 0.90
         z: 9000
 
         Column {
             anchors.fill: parent
             anchors.margins: 14
-            spacing: 10
+            spacing: 8
 
             Text {
                 text: "AIA CANVAS SRE HUD"
@@ -259,12 +258,12 @@ Window {
             Grid {
                 columns: 2
                 spacing: 8
-                rowSpacing: 10
+                rowSpacing: 6
 
                 Text { text: "Nodes:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
                 Text { text: canvasBridge ? canvasBridge.activeNodeCount : 0; color: "#38bdf8"; font.family: "Monospace"; font.pixelSize: 11; font.bold: true }
 
-                Text { text: "Edges:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
+                Text { text: "Edges (Render):"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
                 Text { text: canvasBridge ? canvasBridge.activeEdgeCount : 0; color: "#fbbf24"; font.family: "Monospace"; font.pixelSize: 11; font.bold: true }
 
                 Text { text: "Physics Step:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
@@ -279,6 +278,45 @@ Window {
                     text: (canvasBridge && canvasBridge.isConnected) ? "CONNECTED" : "OFFLINE" 
                     color: (canvasBridge && canvasBridge.isConnected) ? "#10b981" : "#ef4444"
                     font.family: "Monospace"; font.pixelSize: 11; font.bold: true 
+                }
+            }
+
+            Rectangle { width: parent.width; height: 1; color: "#1e293b" }
+
+            Text {
+                text: "TENDRIL COLOR KEY"
+                color: "#94a3b8"
+                font.family: "Monospace"
+                font.pixelSize: 10
+                font.bold: true
+            }
+
+            Column {
+                spacing: 5
+                width: parent.width
+
+                Row {
+                    spacing: 8
+                    Rectangle { width: 14; height: 3; radius: 1.5; color: "#38bdf8"; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: "Explicit ([[WikiLinks]])"; color: "#e2e8f0"; font.family: "Monospace"; font.pixelSize: 10 }
+                }
+
+                Row {
+                    spacing: 8
+                    Rectangle { width: 14; height: 3; radius: 1.5; color: "#a78bfa"; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: "Semantic (Embeddings)"; color: "#e2e8f0"; font.family: "Monospace"; font.pixelSize: 10 }
+                }
+
+                Row {
+                    spacing: 8
+                    Rectangle { width: 14; height: 3; radius: 1.5; color: "#fbbf24"; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: "Temporal (Co-edit / Session)"; color: "#e2e8f0"; font.family: "Monospace"; font.pixelSize: 10 }
+                }
+
+                Row {
+                    spacing: 8
+                    Rectangle { width: 14; height: 3; radius: 1.5; color: "#67e8f9"; anchors.verticalCenter: parent.verticalCenter }
+                    Text { text: "Hover / Active Bloom"; color: "#e2e8f0"; font.family: "Monospace"; font.pixelSize: 10 }
                 }
             }
         }

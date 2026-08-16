@@ -18,6 +18,7 @@ class IPCServer:
         search_handler: Callable[[str, int], Awaitable[list]] = None,
         neighbors_handler: Callable[[int], Awaitable[dict]] = None,
         all_nodes_handler: Callable[[], Awaitable[list]] = None,
+        touch_handler: Callable[[int, str], Awaitable[dict]] = None,
         allowed_directories: list[Path] | None = None,
     ):
         if socket_path is None:
@@ -32,6 +33,7 @@ class IPCServer:
         self.search_handler = search_handler
         self.neighbors_handler = neighbors_handler
         self.all_nodes_handler = all_nodes_handler
+        self.touch_handler = touch_handler
         self.allowed_directories = allowed_directories or []
         self.server: asyncio.Server | None = None
         self._clients: set[asyncio.StreamWriter] = set()
@@ -84,14 +86,22 @@ class IPCServer:
                     await writer.drain()
                     break
 
+        except (ConnectionError, BrokenPipeError, ConnectionResetError):
+            pass
         except asyncio.CancelledError:
             pass
         except Exception as e:
             logger.error(f"IPC client handler error: {e}")
         finally:
-            self._clients.remove(writer)
-            writer.close()
-            await writer.wait_closed()
+            if writer in self._clients:
+                self._clients.remove(writer)
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (ConnectionError, BrokenPipeError, ConnectionResetError):
+                pass
+            except Exception as close_err:
+                logger.debug(f"Suppressed socket teardown warning: {close_err}")
             logger.info("IPC client disconnected.")
 
     async def _dispatch_rpc(self, raw_message: str) -> Dict[str, Any]:
@@ -143,6 +153,21 @@ class IPCServer:
                     return {"jsonrpc": "2.0", "result": results, "id": req_id}
                 return {"jsonrpc": "2.0", "result": [], "id": req_id}
 
+            elif method == "touch_node":
+                node_id = params.get("node_id")
+                event_type = params.get("event_type", "focus")
+                if node_id is None or not isinstance(node_id, int):
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32602, "message": "Invalid params: 'node_id' required"},
+                        "id": req_id,
+                    }
+
+                if self.touch_handler:
+                    result = await self.touch_handler(node_id, event_type)
+                    return {"jsonrpc": "2.0", "result": result, "id": req_id}
+                return {"jsonrpc": "2.0", "result": {"status": "noop"}, "id": req_id}
+
             elif method == "ping":
                 return {"jsonrpc": "2.0", "result": "pong", "id": req_id}
 
@@ -179,8 +204,12 @@ class IPCServer:
             try:
                 writer.write(message.encode("utf-8"))
                 await writer.drain()
+            except (ConnectionError, BrokenPipeError, ConnectionResetError):
+                if writer in self._clients:
+                    self._clients.remove(writer)
             except Exception:
-                self._clients.remove(writer)
+                if writer in self._clients:
+                    self._clients.remove(writer)
 
     async def stop(self) -> None:
         if self.server:

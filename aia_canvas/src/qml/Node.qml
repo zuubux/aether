@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 
 Item {
     id: rootItem
@@ -87,11 +88,20 @@ Item {
     readonly property real cardCenterX: x
     readonly property real cardCenterY: y
 
-    // Direct 120Hz Physics Drive (No competing QML frame interpolation)
+    // Direct Physics Drive with Selective Glide on Selection
     x: nodeModel ? nodeModel.x : 0
     y: nodeModel ? nodeModel.y : 0
     width: 0
     height: 0
+
+    Behavior on x {
+        enabled: rootItem.isSelected && !dragArea.isDragging
+        NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+    }
+    Behavior on y {
+        enabled: rootItem.isSelected && !dragArea.isDragging
+        NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+    }
 
     scale: isHoverBloomed ? 1.15 : (isHovered ? 1.05 : 1.0)
     Behavior on scale {
@@ -115,14 +125,14 @@ Item {
 
         Behavior on width {
             enabled: !resizeMouseArea.isResizing
-            NumberAnimation { duration: 220; easing.type: Easing.OutQuint }
+            NumberAnimation { duration: 380; easing.type: Easing.OutQuint }
         }
         Behavior on height {
             enabled: !resizeMouseArea.isResizing
-            NumberAnimation { duration: 220; easing.type: Easing.OutQuint }
+            NumberAnimation { duration: 380; easing.type: Easing.OutQuint }
         }
         Behavior on radius {
-            NumberAnimation { duration: 220; easing.type: Easing.OutQuint }
+            NumberAnimation { duration: 300; easing.type: Easing.OutQuint }
         }
 
         color: rootItem.isSelected ? "#0c0e12" : (rootItem.isMacroBead ? rootItem.nodeAccentColor : (rootItem.isHovered ? "#161c28" : "#0a0c10"))
@@ -168,7 +178,7 @@ Item {
                 }
 
                 Text {
-                    text: rootItem.nodeModel ? rootItem.nodeModel.title : ""
+                    text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
                     color: "#f8fafc"
                     font.family: "Monospace"
                     font.pixelSize: 11
@@ -216,7 +226,7 @@ Item {
                 }
 
                 Text {
-                    text: rootItem.nodeModel ? rootItem.nodeModel.title : ""
+                    text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
                     color: rootItem.isHovered ? "#ffffff" : (rootItem.isDirectNeighbor ? "#cbd5e1" : "#64748b")
                     font.family: "Monospace"
                     font.pixelSize: 11
@@ -268,7 +278,7 @@ Item {
                     }
 
                     Text {
-                        text: rootItem.nodeModel ? rootItem.nodeModel.title : ""
+                        text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
                         color: rootItem.isHovered ? "#ffffff" : (rootItem.isDirectNeighbor ? "#f1f5f9" : "#64748b")
                         font.family: "Monospace"
                         font.pixelSize: 13
@@ -323,11 +333,13 @@ Item {
             id: workbenchView
             anchors.fill: parent
             anchors.margins: 18
-            opacity: rootItem.isSelected ? 1.0 : 0.0
+
+            readonly property bool isExpandedEnough: cardBody.width > (rootItem.targetWidth * 0.65)
+            opacity: (rootItem.isSelected && isExpandedEnough) ? 1.0 : 0.0
             visible: opacity > 0.01
             z: 10
 
-            Behavior on opacity { NumberAnimation { duration: 250 } }
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
 
             Column {
                 anchors.fill: parent
@@ -357,7 +369,7 @@ Item {
                     }
 
                     Text {
-                        text: rootItem.nodeModel ? rootItem.nodeModel.title : ""
+                        text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
                         color: "#f8fafc"
                         font.family: "Monospace"
                         font.pixelSize: 15
@@ -421,7 +433,7 @@ Item {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "[ Live Workbench Canvas: " + (rootItem.nodeModel ? rootItem.nodeModel.title : "") + " ]\nReady for active text buffer, terminal shell, or media viewport."
+                        text: "[ Live Workbench Canvas: " + (rootItem.nodeModel ? rootItem.nodeModel.fileName : "") + " ]\nReady for active text buffer, terminal shell, or media viewport."
                         color: "#3b4252"
                         font.family: "Monospace"
                         font.pixelSize: 13

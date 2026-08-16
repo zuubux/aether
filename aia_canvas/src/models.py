@@ -1,71 +1,101 @@
 """
 Aether Canvas - Data Models
-Reactive QObject classes matching the aia_weaver IPC schema.
+Reactive QObject wrapper classes for nodes and relational edges.
 """
 
 from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal
 
-class Node(QObject):
-    xChanged = pyqtSignal(float)
-    yChanged = pyqtSignal(float)
-    focusChanged = pyqtSignal(float)
-    filePathChanged = pyqtSignal(str)
 
-    def __init__(self, id: int, file_path: str, x: float = 0.0, y: float = 0.0, focus: float = 0.35, parent=None):
-        super().__init__(parent)
+class Node(QObject):
+    positionChanged = pyqtSignal()
+    focusChanged = pyqtSignal()
+    filePathChanged = pyqtSignal()
+    clusterIdChanged = pyqtSignal(int)
+
+    def __init__(
+        self,
+        id: int,
+        file_path: str,
+        x: float = 0.0,
+        y: float = 0.0,
+        focus: float = 0.35,
+        cluster_id: int = -1,
+    ):
+        super().__init__()
         self._id = id
         self._file_path = file_path
-        self._extension = Path(file_path).suffix
-        self._x = float(x)
-        self._y = float(y)
-        self.vx = 0.0  # Physics properties don't need QML bindings
-        self.vy = 0.0
-        self._focus = float(focus)
+        self._x = x
+        self._y = y
+        self._vx = 0.0
+        self._vy = 0.0
+        self._focus = focus
+        self._cluster_id = cluster_id
+        self._extension = Path(file_path).suffix if file_path else ""
 
+    # --- ID ---
     @pyqtProperty(int, constant=True)
     def id(self) -> int:
         return self._id
 
-    @pyqtProperty(str, notify=filePathChanged)
-    def title(self) -> str:
-        return Path(self._file_path).name if self._file_path else f"Node {self._id}"
-
+    # --- File Path & Name ---
     @pyqtProperty(str, notify=filePathChanged)
     def filePath(self) -> str:
         return self._file_path
 
     @filePath.setter
-    def filePath(self, path: str):
-        if self._file_path != path:
-            self._file_path = path
-            self._extension = Path(path).suffix
-            self.filePathChanged.emit(path)
+    def filePath(self, val: str):
+        if self._file_path != val:
+            self._file_path = val
+            self._extension = Path(val).suffix if val else ""
+            self.filePathChanged.emit()
 
-    @pyqtProperty(str, constant=True)
+    @pyqtProperty(str, notify=filePathChanged)
+    def fileName(self) -> str:
+        return Path(self._file_path).name if self._file_path else ""
+
+    @pyqtProperty(str, notify=filePathChanged)
     def extension(self) -> str:
-        return self._extension or Path(self._file_path).suffix
+        return self._extension or (Path(self._file_path).suffix if self._file_path else "")
 
-    @pyqtProperty(float, notify=xChanged)
+    # --- Positions & Velocities ---
+    @pyqtProperty(float, notify=positionChanged)
     def x(self) -> float:
         return self._x
 
     @x.setter
     def x(self, val: float):
-        if abs(self._x - val) > 0.001:
+        if self._x != val:
             self._x = val
-            self.xChanged.emit(val)
+            self.positionChanged.emit()
 
-    @pyqtProperty(float, notify=yChanged)
+    @pyqtProperty(float, notify=positionChanged)
     def y(self) -> float:
         return self._y
 
     @y.setter
     def y(self, val: float):
-        if abs(self._y - val) > 0.001:
+        if self._y != val:
             self._y = val
-            self.yChanged.emit(val)
+            self.positionChanged.emit()
 
+    @property
+    def vx(self) -> float:
+        return self._vx
+
+    @vx.setter
+    def vx(self, val: float):
+        self._vx = val
+
+    @property
+    def vy(self) -> float:
+        return self._vy
+
+    @vy.setter
+    def vy(self, val: float):
+        self._vy = val
+
+    # --- Cognitive Focus Weight ---
     @pyqtProperty(float, notify=focusChanged)
     def focus(self) -> float:
         return self._focus
@@ -74,18 +104,35 @@ class Node(QObject):
     def focus(self, val: float):
         if abs(self._focus - val) > 0.001:
             self._focus = val
-            self.focusChanged.emit(val)
+            self.focusChanged.emit()
+
+    # --- Cluster Membership ---
+    @pyqtProperty(int, notify=clusterIdChanged)
+    def clusterId(self) -> int:
+        return self._cluster_id
+
+    @clusterId.setter
+    def clusterId(self, val: int):
+        if self._cluster_id != val:
+            self._cluster_id = val
+            self.clusterIdChanged.emit(val)
 
 
 class Edge(QObject):
-    weightChanged = pyqtSignal(float)
+    weightChanged = pyqtSignal()
 
-    def __init__(self, source_id: int, target_id: int, edge_type: str, weight: float = 1.0, parent=None):
-        super().__init__(parent)
+    def __init__(
+        self,
+        source_id: int,
+        target_id: int,
+        edge_type: str = "explicit",
+        weight: float = 1.0,
+    ):
+        super().__init__()
         self._source_id = source_id
         self._target_id = target_id
         self._edge_type = edge_type
-        self._weight = float(weight)
+        self._weight = weight
 
     @pyqtProperty(int, constant=True)
     def sourceId(self) -> int:
@@ -107,4 +154,4 @@ class Edge(QObject):
     def weight(self, val: float):
         if abs(self._weight - val) > 0.001:
             self._weight = val
-            self.weightChanged.emit(val)
+            self.weightChanged.emit()

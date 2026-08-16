@@ -1,13 +1,13 @@
 """
 Aether Canvas - Python to QML Bridge
-Adapter exposing multi-tier focal weights, telemetry, and secure OS interactions.
+Live temporal co-attention ingestion, priority edge sorting, and telemetry.
 """
 
 import math
 import time
 import logging
 import subprocess
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Dict, Any
 from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot, QTimer
 
 from models import Node, Edge
@@ -40,14 +40,19 @@ class CanvasBridge(QObject):
         self._is_connected = False
 
         self._aperture: float = 1.0
-        self._workbench_width: float = 1400.0
-        self._workbench_height: float = 900.0
+        self._workbench_width: float = 1600.0
+        self._workbench_height: float = 1000.0
 
         self.physics.set_focal_card_dimensions(self._workbench_width, self._workbench_height)
         self.physics.set_aperture(self._aperture)
 
         self._cluster_halos: list = []
         self._last_frametime_ms: float = 0.0
+
+        # Graph Separation: Structural vs Render Subset
+        self._structural_edges: List[Edge] = []
+        self._ambient_edges: List[Edge] = []
+        self._focal_edges: List[Edge] = []
 
         # Background IPC
         self.ipc = WeaverIPCClient()
@@ -63,13 +68,12 @@ class CanvasBridge(QObject):
         self._physics_timer.start(8)
 
     def _recalculate_focal_weights(self, primary_id: int):
-        """Tiered salience assignment mapping biological focus across the graph topology."""
         if primary_id <= 0:
             for node in self.store.get_all_nodes():
                 node.focus = 0.35
             return
 
-        edges = self.store.get_all_edges()
+        edges = self._focal_edges
         first_degree: Set[int] = {
             e.targetId if e.sourceId == primary_id else e.sourceId
             for e in edges if primary_id in (e.sourceId, e.targetId)
@@ -96,19 +100,40 @@ class CanvasBridge(QObject):
         t0 = time.perf_counter()
 
         nodes = self.store.get_all_nodes()
-        edges = self.store.get_all_edges()
-        self.physics.step(nodes, edges, self._selected_node_id, dt=0.008)
-        self._cluster_halos = self.physics.get_cluster_halos(nodes, edges, self._selected_node_id)
+        active_physics_edges = self._focal_edges if self._selected_node_id > 0 else self._structural_edges
+        
+        self.physics.step(nodes, active_physics_edges, self._selected_node_id, dt=0.008)
+        self._cluster_halos = self.physics.get_cluster_halos(nodes, active_physics_edges, self._selected_node_id)
         self.clusterHalosChanged.emit()
 
         t1 = time.perf_counter()
-        frametime_ms = (t1 - t0) * 1000.0
-
-        self._last_frametime_ms = frametime_ms
+        self._last_frametime_ms = (t1 - t0) * 1000.0
         self.telemetryChanged.emit()
 
-        if frametime_ms > 6.5:
-            logger.warning(f"Physics frame deadline breached: {frametime_ms:.2f}ms (Budget: 8.0ms)")
+    def _upsert_edge(self, new_edge: Edge):
+        """Insert or update edge with balanced multi-tier ambient allocation."""
+        matched = False
+        for idx, e in enumerate(self._structural_edges):
+            if (e.sourceId == new_edge.sourceId and e.targetId == new_edge.targetId and e.edgeType == new_edge.edgeType) or \
+               (e.sourceId == new_edge.targetId and e.targetId == new_edge.sourceId and e.edgeType == new_edge.edgeType):
+                self._structural_edges[idx] = new_edge
+                matched = True
+                break
+
+        if not matched:
+            self._structural_edges.append(new_edge)
+
+        # Balanced Ambient Composition: Prevent any single type from crowding out the others
+        temporals = [e for e in self._structural_edges if e.edgeType == "temporal"]
+        explicits = [e for e in self._structural_edges if e.edgeType == "explicit"]
+        semantics = [e for e in self._structural_edges if e.edgeType == "semantic"]
+
+        temporals.sort(key=lambda e: e.weight, reverse=True)
+        explicits.sort(key=lambda e: e.weight, reverse=True)
+        semantics.sort(key=lambda e: e.weight, reverse=True)
+
+        # 20 Recent Sessions, 35 Structural Links, 35 Semantic Relationships
+        self._ambient_edges = temporals[:20] + explicits[:35] + semantics[:35]
 
     # --- Properties Exposed to QML ---
 
@@ -118,7 +143,7 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(list, notify=edgesChanged)
     def edges(self) -> List[Edge]:
-        return self.store.get_all_edges()
+        return self._focal_edges if self._selected_node_id > 0 else self._ambient_edges
 
     @pyqtProperty(int, notify=selectedNodeChanged)
     def selectedNodeId(self) -> int:
@@ -158,7 +183,7 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(int, notify=telemetryChanged)
     def activeEdgeCount(self) -> int:
-        return len(self.store.get_all_edges())
+        return len(self.edges)
 
     # --- Slots Invoked from QML ---
 
@@ -170,7 +195,7 @@ class CanvasBridge(QObject):
 
     @pyqtSlot(int, result=int)
     def get_downstream_count(self, node_id: int) -> int:
-        edges = self.store.get_all_edges()
+        edges = self._focal_edges if self._selected_node_id > 0 else self._ambient_edges
         count = 0
         for e in edges:
             if e.sourceId == node_id and e.targetId != self._selected_node_id:
@@ -206,10 +231,30 @@ class CanvasBridge(QObject):
     def select_node(self, node_id: int):
         if self._selected_node_id != node_id:
             self._selected_node_id = node_id
+            
+            if node_id > 0:
+                if node_id in self.physics.recent_node_ids:
+                    self.physics.recent_node_ids.remove(node_id)
+                self.physics.recent_node_ids.insert(0, node_id)
+                self.physics.recent_node_ids = self.physics.recent_node_ids[:8]
+
             self._recalculate_focal_weights(node_id)
             self.selectedNodeChanged.emit(node_id)
 
+        if node_id == 0:
+            self._focal_edges = []
+            self.edgesChanged.emit()
+            return
+
         if self._is_connected and node_id > 0:
+            # 1. Fire live focus touch event to Weaver
+            self.ipc.call_rpc_sync(
+                "touch_node",
+                {"node_id": node_id, "event_type": "focus"},
+                callback=self._handle_touch_node_response,
+            )
+
+            # 2. Query neighborhood topology for focal workbench
             self.ipc.call_rpc_sync(
                 "get_neighbors",
                 {"node_id": node_id},
@@ -247,43 +292,72 @@ class CanvasBridge(QObject):
 
         target_dir = safe_path if safe_path.is_dir() else safe_path.parent
         if target_dir.exists():
-            subprocess.Popen(
-                ["xdg-open", str(target_dir)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
+            subprocess.Popen(["xdg-open", str(target_dir)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
     # --- IPC Callbacks ---
 
     def _on_ipc_connected(self):
         self._is_connected = True
         self.connectionStatusChanged.emit(True)
-        logger.info("IPC connected. Requesting full node inventory via get_all_nodes...")
-        
         self.ipc.call_rpc_sync("get_all_nodes", {}, callback=self._handle_initial_sync)
-
-        if self._selected_node_id > 0:
-            self.select_node(self._selected_node_id)
 
     def _on_ipc_disconnected(self):
         self._is_connected = False
         self.connectionStatusChanged.emit(False)
 
-    def _handle_initial_sync(self, result: Any, error: Optional[str]):
-        if error:
-            logger.error(f"Failed to fetch initial node inventory: {error}")
-            return
-        if not isinstance(result, list):
-            logger.warning(f"Unexpected get_all_nodes response format: {result}")
+    def _handle_initial_sync(self, result: list, error: Optional[str]):
+        if error or not isinstance(result, list):
             return
 
-        logger.info(f"Initial sync received {len(result)} nodes from Weaver.")
         for node_data in result:
             self._on_node_updated(node_data)
 
+        for n in self.store.get_all_nodes():
+            self.ipc.call_rpc_sync("get_neighbors", {"node_id": n.id}, callback=self._handle_ambient_edges_response)
+
+    def _handle_touch_node_response(self, result: Any, error: Optional[str]):
+        if error or not isinstance(result, dict):
+            return
+
+        raw_temporal = result.get("temporal_edges", [])
+        if not raw_temporal:
+            return
+
+        for e in raw_temporal:
+            src_id = int(e["source_id"])
+            tgt_id = int(e["target_id"])
+            weight = float(e.get("weight", 1.0))
+            edge_obj = Edge(source_id=src_id, target_id=tgt_id, edge_type="temporal", weight=weight)
+            self._upsert_edge(edge_obj)
+
+            # Keep focal view populated if currently viewing one of the nodes
+            if self._selected_node_id in (src_id, tgt_id):
+                if not any((fe.sourceId == src_id and fe.targetId == tgt_id and fe.edgeType == "temporal") or
+                           (fe.sourceId == tgt_id and fe.targetId == src_id and fe.edgeType == "temporal")
+                           for fe in self._focal_edges):
+                    self._focal_edges.append(edge_obj)
+
+        self._recalculate_focal_weights(self._selected_node_id)
+        self.edgesChanged.emit()
+
+    def _handle_ambient_edges_response(self, result: dict, error: Optional[str]):
+        if error or not result:
+            return
+
+        raw_edges = result.get("edges", [])
+        for e in raw_edges:
+            src_id = int(e["source_id"])
+            tgt_id = int(e["target_id"])
+            e_type = e["edge_type"]
+            weight = float(e["weight"])
+            self._upsert_edge(
+                Edge(source_id=src_id, target_id=tgt_id, edge_type=e_type, weight=weight)
+            )
+
+        if self._selected_node_id == 0:
+            self.edgesChanged.emit()
+
     def _on_node_updated(self, data: dict):
-        # Support both 'node_id' and 'id' keys
         raw_id = data.get("node_id") if data.get("node_id") is not None else data.get("id")
         if raw_id is None:
             return
@@ -295,14 +369,10 @@ class CanvasBridge(QObject):
 
         node = self.store.get_node(node_id)
         if not node:
-            # Organic golden-spiral spawn distribution around viewport center
             angle = node_id * 2.399963
-            radius = 120.0 + (math.sqrt(node_id) * 75.0)
-            spawn_x = self.physics.center_x + math.cos(angle) * radius
-            spawn_y = self.physics.center_y + math.sin(angle) * radius
-
-            node = Node(id=node_id, file_path=file_path, x=spawn_x, y=spawn_y, focus=0.35)
-            self.store.upsert_node(node)
+            radius = 350.0 + (math.sqrt(node_id) * 85.0)
+            spawn_x, spawn_y = self.physics.center_x + math.cos(angle) * radius, self.physics.center_y + math.sin(angle) * radius
+            self.store.upsert_node(Node(id=node_id, file_path=file_path, x=spawn_x, y=spawn_y, focus=0.35))
             self.nodesChanged.emit()
         else:
             node.filePath = file_path
@@ -314,6 +384,9 @@ class CanvasBridge(QObject):
         if raw_id is not None:
             node_id = int(raw_id)
             self.store.remove_node(node_id)
+            self._structural_edges = [e for e in self._structural_edges if e.sourceId != node_id and e.targetId != node_id]
+            self._ambient_edges = [e for e in self._ambient_edges if e.sourceId != node_id and e.targetId != node_id]
+            self._focal_edges = [e for e in self._focal_edges if e.sourceId != node_id and e.targetId != node_id]
             self._recalculate_focal_weights(self._selected_node_id)
             self.nodesChanged.emit()
             self.edgesChanged.emit()
@@ -323,28 +396,22 @@ class CanvasBridge(QObject):
             return
 
         raw_edges = result.get("edges", [])
-        parsed_edges: List[Edge] = []
-        for e in raw_edges:
-            parsed_edges.append(
-                Edge(
-                    source_id=int(e["source_id"]),
-                    target_id=int(e["target_id"]),
-                    edge_type=e["edge_type"],
-                    weight=float(e["weight"]),
-                )
-            )
+        parsed_edges: List[Edge] = [
+            Edge(source_id=int(e["source_id"]), target_id=int(e["target_id"]), edge_type=e["edge_type"], weight=float(e["weight"]))
+            for e in raw_edges
+        ]
 
-        # SRE Salience Filter: Sort by priority (Explicit > Semantic > Temporal) & Weight
-        # Prevents K_n complete graph hairballs from saturating the frame budget
-        type_priority = {"explicit": 3, "semantic": 2, "temporal": 1}
-        parsed_edges.sort(
-            key=lambda e: (type_priority.get(e.edgeType, 0), e.weight), 
-            reverse=True
-        )
+        # Preserve any live temporal edges currently in the focal set
+        existing_temporals = [e for e in self._focal_edges if e.edgeType == "temporal"]
+        for te in existing_temporals:
+            if not any((pe.sourceId == te.sourceId and pe.targetId == te.targetId and pe.edgeType == te.edgeType) or
+                       (pe.sourceId == te.targetId and pe.targetId == te.sourceId and pe.edgeType == te.edgeType)
+                       for pe in parsed_edges):
+                parsed_edges.append(te)
 
-        # Cap total active visual tendrils to top 12 connections
-        capped_edges = parsed_edges[:12]
+        type_priority = {"temporal": 3, "explicit": 2, "semantic": 1}
+        parsed_edges.sort(key=lambda e: (type_priority.get(e.edgeType, 0), e.weight), reverse=True)
 
-        self.store.set_edges_for_neighborhood(self._selected_node_id, capped_edges)
+        self._focal_edges = parsed_edges[:16]
         self._recalculate_focal_weights(self._selected_node_id)
         self.edgesChanged.emit()

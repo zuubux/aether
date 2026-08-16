@@ -12,59 +12,49 @@ Item {
     property int hoveredNodeId: 0
     property string edgeType: "explicit"
     property real weight: 1.0
+    property real currentAperture: 1.0
 
-    visible: sourceNode !== null && targetNode !== null
-
-    // Relationship Tiers
+    // Relational Context
     readonly property bool isFirstDegree: selectedNodeId > 0 && (sourceId === selectedNodeId || targetId === selectedNodeId)
     readonly property bool isHoverBloomed: hoveredNodeId > 0 && (sourceId === hoveredNodeId || targetId === hoveredNodeId)
     readonly property bool isSecondDegree: {
         if (isFirstDegree || selectedNodeId <= 0) return false
-        var sFocus = sourceNode ? sourceNode.focusWeight : 0
-        var tFocus = targetNode ? targetNode.focusWeight : 0
+        var sFocus = sourceNode ? (sourceNode.focusWeight !== undefined ? sourceNode.focusWeight : (sourceNode.nodeModel ? sourceNode.nodeModel.focus : 0)) : 0
+        var tFocus = targetNode ? (targetNode.focusWeight !== undefined ? targetNode.focusWeight : (targetNode.nodeModel ? targetNode.nodeModel.focus : 0)) : 0
         return (sFocus > 0.55 && tFocus > 0.35) || (tFocus > 0.55 && sFocus > 0.35)
     }
     readonly property bool isVoidMode: selectedNodeId <= 0
 
-    // Progressive Disclosure Opacity
-    readonly property real targetOpacity: {
-        if (isHoverBloomed) {
-            return 0.88                                 // Hover-Peek Bloom
-        } else if (isFirstDegree) {
-            return Math.max(0.80, weight)               // 1st-Degree Active Beam
-        } else if (isSecondDegree) {
-            return 0.18                                 // 2nd-Degree Echo
-        } else if (isVoidMode) {
-            return Math.max(0.16, weight * 0.28)        // Luminous Ambient Network
-        } else {
-            return 0.04                                 // Background Whisper
-        }
+    // Intra-Cluster Detection (Safely accesses nodeModel.clusterId)
+    readonly property int sourceClusterId: {
+        if (!sourceNode) return -1
+        if (sourceNode.nodeModel && sourceNode.nodeModel.clusterId !== undefined) return sourceNode.nodeModel.clusterId
+        if (sourceNode.clusterId !== undefined) return sourceNode.clusterId
+        return -1
     }
+    readonly property int targetClusterId: {
+        if (!targetNode) return -1
+        if (targetNode.nodeModel && targetNode.nodeModel.clusterId !== undefined) return targetNode.nodeModel.clusterId
+        if (targetNode.clusterId !== undefined) return targetNode.clusterId
+        return -1
+    }
+    readonly property bool isIntraCluster: (sourceClusterId >= 0 && targetClusterId >= 0 && sourceClusterId === targetClusterId)
 
-    opacity: targetOpacity
-    Behavior on opacity {
-        NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
-    }
-
-    readonly property color filamentColor: {
-        if (isHoverBloomed) return "#67e8f9"
-        if (edgeType === "explicit") return "#38bdf8"
-        if (edgeType === "temporal") return "#fbbf24"
-        return "#a78bfa"
-    }
+    // Strictly cull intra-cluster tendrils during macro zoom (<= 45%) unless hovered or focused
+    readonly property bool shouldCullIntra: isIntraCluster && isVoidMode && !isHoverBloomed && (currentAperture <= 0.48)
 
     // Dynamic Endpoints & Geometry
-    readonly property real sCx: sourceNode ? (sourceNode.cardCenterX !== undefined ? sourceNode.cardCenterX : sourceNode.x) : 0
-    readonly property real sCy: sourceNode ? (sourceNode.cardCenterY !== undefined ? sourceNode.cardCenterY : sourceNode.y) : 0
+    readonly property real sCx: sourceNode ? (sourceNode.cardCenterX !== undefined ? sourceNode.cardCenterX : (sourceNode.nodeModel ? sourceNode.nodeModel.x : sourceNode.x)) : 0
+    readonly property real sCy: sourceNode ? (sourceNode.cardCenterY !== undefined ? sourceNode.cardCenterY : (sourceNode.nodeModel ? sourceNode.nodeModel.y : sourceNode.y)) : 0
     readonly property real sW: sourceNode ? (sourceNode.cardWidth !== undefined ? sourceNode.cardWidth : 280) : 280
     readonly property real sH: sourceNode ? (sourceNode.cardHeight !== undefined ? sourceNode.cardHeight : 120) : 120
 
-    readonly property real tCx: targetNode ? (targetNode.cardCenterX !== undefined ? targetNode.cardCenterX : targetNode.x) : 0
-    readonly property real tCy: targetNode ? (targetNode.cardCenterY !== undefined ? targetNode.cardCenterY : targetNode.y) : 0
+    readonly property real tCx: targetNode ? (targetNode.cardCenterX !== undefined ? targetNode.cardCenterX : (targetNode.nodeModel ? targetNode.nodeModel.x : targetNode.x)) : 0
+    readonly property real tCy: targetNode ? (targetNode.cardCenterY !== undefined ? targetNode.cardCenterY : (targetNode.nodeModel ? targetNode.nodeModel.y : targetNode.y)) : 0
     readonly property real tW: targetNode ? (targetNode.cardWidth !== undefined ? targetNode.cardWidth : 280) : 280
     readonly property real tH: targetNode ? (targetNode.cardHeight !== undefined ? targetNode.cardHeight : 120) : 120
 
-    readonly property real jitterSeed: ((sourceId * 37 + targetId * 19) % 20) - 10
+    readonly property real jitterSeed: ((sourceId * 37 + targetId * 19) % 16) - 8
 
     function calculateSynapticPoint(cx, cy, w, h, targetX, targetY, jitter) {
         var dx = targetX - cx
@@ -80,7 +70,7 @@ Item {
             return Qt.point(cx + (signX * halfW), cy + (dy / Math.abs(dx)) * halfW + clampedJitter)
         } else {
             var signY = dy > 0 ? 1 : -1
-            var clampedJitter = Math.max(-halfW + 12, Math.min(halfW - 12, jitter))
+            var clampedJitter = Math.max(-halfW + 12, Math.min(halfH - 12, jitter))
             return Qt.point(cx + (dx / Math.abs(dy)) * halfH + clampedJitter, cy + (signY * halfH))
         }
     }
@@ -95,17 +85,87 @@ Item {
     readonly property real deltaY: endPt.y - startPt.y
     readonly property real spanDist: Math.sqrt(deltaX * deltaX + deltaY * deltaY)
 
-    readonly property real gravitationalSlack: (spanDist < 120) ? 0 :
-        Math.max(0, Math.sin(Math.min(1.0, (spanDist - 120) / 450) * Math.PI) * 35.0)
+    readonly property real gravitationalSlack: (spanDist < 140) ? 0 :
+        Math.max(0, Math.sin(Math.min(1.0, (spanDist - 140) / 600) * Math.PI) * 14.0)
 
-    readonly property real cpOffset: Math.min(Math.abs(deltaX) * 0.4, 120)
+    readonly property real cpOffset: Math.min(Math.abs(deltaX) * 0.22, 45.0)
 
     readonly property real cp1X: startPt.x + (deltaX >= 0 ? cpOffset : -cpOffset)
     readonly property real cp1Y: startPt.y + gravitationalSlack
     readonly property real cp2X: endPt.x - (deltaX >= 0 ? cpOffset : -cpOffset)
     readonly property real cp2Y: endPt.y + gravitationalSlack
 
-    // Core Filament
+    // =========================================================================
+    // Bioluminescent Respiration
+    // =========================================================================
+    property real pulsePhase: 0.35
+
+    SequentialAnimation on pulsePhase {
+        loops: Animation.Infinite
+        running: rootTendril.isVoidMode
+
+        NumberAnimation { to: 1.0; duration: 4000; easing.type: Easing.InOutSine }
+        PauseAnimation { duration: 800 }
+        NumberAnimation { to: 0.20; duration: 5000; easing.type: Easing.InOutSine }
+        PauseAnimation { duration: 2000 }
+    }
+
+    readonly property real ambientSpanLimit: 750.0
+
+    readonly property real proximityFactor: {
+        if (!isVoidMode) {
+            return (spanDist >= 2200.0) ? 0.25 : (1.0 - ((spanDist - 400.0) / 1800.0) * 0.75)
+        }
+        if (spanDist >= ambientSpanLimit) return 0.0
+        if (spanDist <= 280.0) return 1.0
+        return (ambientSpanLimit - spanDist) / (ambientSpanLimit - 280.0)
+    }
+
+    readonly property real ambientOpacity: {
+        if (!isVoidMode || proximityFactor <= 0.001 || shouldCullIntra) return 0.0
+
+        if (edgeType === "explicit") {
+            return (0.18 + 0.16 * pulsePhase) * proximityFactor * Math.max(0.6, weight)
+        } else if (edgeType === "temporal") {
+            // Immediate resting baseline (0.35) + breathing swell up to 0.70
+            return (0.35 + 0.35 * pulsePhase) * proximityFactor * Math.max(0.6, weight)
+        } else {
+            return (0.10 + 0.25 * pulsePhase) * proximityFactor * Math.max(0.4, weight)
+        }
+    }
+
+    readonly property real targetOpacity: {
+        if (isHoverBloomed) {
+            return 0.95
+        } else if (isFirstDegree) {
+            return Math.max(0.85, weight)
+        } else if (isSecondDegree) {
+            return 0.20
+        } else if (isVoidMode) {
+            return ambientOpacity
+        } else {
+            return 0.04
+        }
+    }
+
+    opacity: targetOpacity
+    visible: sourceNode !== null && targetNode !== null && opacity > 0.005
+
+    Behavior on opacity {
+        NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+    }
+
+    readonly property color filamentColor: {
+        if (isHoverBloomed) {
+            if (edgeType === "temporal") return "#fde047"
+            if (edgeType === "explicit") return "#67e8f9"
+            return "#c084fc"
+        }
+        if (edgeType === "explicit") return "#38bdf8"
+        if (edgeType === "temporal") return "#fbbf24"
+        return "#a78bfa"
+    }
+
     Shape {
         anchors.fill: parent
         asynchronous: true
@@ -114,7 +174,7 @@ Item {
 
         ShapePath {
             strokeColor: rootTendril.filamentColor
-            strokeWidth: (rootTendril.isFirstDegree || rootTendril.isHoverBloomed) ? Math.max(1.3, rootTendril.weight * 1.8) : 0.85
+            strokeWidth: (rootTendril.isFirstDegree || rootTendril.isHoverBloomed) ? Math.max(1.8, rootTendril.weight * 2.2) : (rootTendril.edgeType === "temporal" ? 1.4 : 1.0)
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
 
@@ -132,15 +192,14 @@ Item {
         }
     }
 
-    // Outer Glow Halo (Only for active primary beam or hovered bloom)
     Shape {
         anchors.fill: parent
-        visible: rootTendril.isFirstDegree || rootTendril.isHoverBloomed
-        opacity: rootTendril.isHoverBloomed ? 0.45 : Math.max(0.15, rootTendril.weight * 0.35)
+        visible: rootTendril.isFirstDegree || rootTendril.isHoverBloomed || (rootTendril.isVoidMode && rootTendril.edgeType === "temporal")
+        opacity: rootTendril.isHoverBloomed ? 0.55 : (rootTendril.isVoidMode ? 0.20 : Math.max(0.18, rootTendril.weight * 0.35))
 
         ShapePath {
             strokeColor: rootTendril.filamentColor
-            strokeWidth: Math.max(2.5, rootTendril.weight * 4.5)
+            strokeWidth: Math.max(3.0, rootTendril.weight * 4.2)
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
 

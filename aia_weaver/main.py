@@ -55,20 +55,37 @@ class WeaverDaemon:
             search_handler=self.handle_semantic_search,
             neighbors_handler=self.handle_get_neighbors,
             all_nodes_handler=self.db.get_all_nodes,
+            touch_handler=self.handle_touch_node,
             allowed_directories=[Path(d) for d in self.target_directories],
         )
 
     async def handle_semantic_search(self, query_text: str, limit: int = 5) -> list:
-        """Handler for JSON-RPC search queries over IPC."""
         logger.info(f"IPC Search Request received: '{query_text}'")
         query_vec = await self.embedder.embed_text(query_text)
         results = await self.db.search_similar_nodes(query_vec, limit=limit)
         return results
 
     async def handle_get_neighbors(self, node_id: int) -> dict:
-        """Handler for JSON-RPC neighborhood requests over IPC."""
         logger.info(f"IPC Neighbors Request received for Node #{node_id}")
         return await self.db.get_node_neighbors(node_id)
+
+    async def handle_touch_node(self, node_id: int, event_type: str = "focus") -> dict:
+        """Logs active UI focus/interaction and recalculates temporal edges."""
+        logger.info(f"IPC Touch Request: Node #{node_id} (event: {event_type})")
+        await self.db.log_session_event(node_id, event_type=event_type)
+        edges_created = await self.db.create_temporal_edges(
+            node_id, window_minutes=self.temporal_window_minutes
+        )
+        if edges_created > 0:
+            logger.info(f"Linked {edges_created} Temporal Edge(s) via UI focus for Node #{node_id}")
+            await self.ipc.broadcast_event(
+                "node_updated", {"node_id": node_id, "reason": "temporal_link"}
+            )
+        return {
+            "node_id": node_id,
+            "event_type": event_type,
+            "temporal_edges_created": edges_created,
+        }
 
     async def _initial_workspace_scan(self) -> None:
         """Scans configured workspace directories on boot and queues initial indexing events."""
@@ -84,7 +101,7 @@ class WeaverDaemon:
             for path in target_path.rglob("*"):
                 if path.is_file() and not self.watcher._should_ignore(str(path)):
                     await self.event_queue.put({
-                        "action": "created",
+                        "action": "initial_scan",  # <-- Changed from "created"
                         "file_path": str(path.resolve()),
                         "timestamp": asyncio.get_running_loop().time(),
                     })
@@ -93,7 +110,6 @@ class WeaverDaemon:
         logger.info(f"Initial workspace scan enqueued {scanned_count} file(s) for indexing.")
 
     async def start(self) -> None:
-        """Starts daemon engines, background workers, IPC server, and signal handlers."""
         logger.info("Initializing aia_weaver engine...")
 
         await self.db.initialize()
@@ -108,18 +124,15 @@ class WeaverDaemon:
             except NotImplementedError:
                 pass
 
-        # 1. Start background tasks
         watcher_task = asyncio.create_task(self.watcher.watch_loop())
         processor_task = asyncio.create_task(self._process_event_queue())
 
-        # 2. Run initial workspace bootstrap scan
         await self._initial_workspace_scan()
 
         logger.info("aia_weaver fully ACTIVE with hardened IPC socket enabled.")
 
         await self._shutdown_event.wait()
 
-        # Teardown sequence
         logger.info("Stopping all background services...")
         watcher_task.cancel()
         processor_task.cancel()
@@ -132,7 +145,6 @@ class WeaverDaemon:
         logger.info("aia_weaver shutdown complete.")
 
     async def _process_event_queue(self) -> None:
-        """Consumes file events, updates DB nodes & edges, and broadcasts IPC events."""
         while not self._shutdown_event.is_set():
             try:
                 event = await asyncio.wait_for(self.event_queue.get(), timeout=1.0)
@@ -140,8 +152,8 @@ class WeaverDaemon:
                 action = event["action"]
                 path = Path(file_path_str)
 
-                # --- 1. HANDLE CREATED & MODIFIED ---
-                if action in ("created", "modified") and path.exists() and path.is_file():
+                # --- 1. HANDLE INITIAL_SCAN, CREATED & MODIFIED ---
+                if action in ("initial_scan", "created", "modified") and path.exists() and path.is_file():
                     file_bytes = await asyncio.to_thread(path.read_bytes)
                     file_hash = hashlib.sha256(file_bytes).hexdigest()
                     embedding = await self.embedder.embed_file(file_path_str)
@@ -168,17 +180,17 @@ class WeaverDaemon:
                                 f"Linked {created_semantic} Semantic Edge(s) for Node #{source_id}"
                             )
 
-                    # --- TEMPORAL ENGINE ---
-                    await self.db.log_session_event(source_id, event_type=action)
-                    temporal_links = await self.db.create_temporal_edges(
-                        source_id, window_minutes=self.temporal_window_minutes
-                    )
-                    if temporal_links > 0:
-                        logger.info(
-                            f"Linked {temporal_links} Temporal Edge(s) to recent activity for Node #{source_id}"
+                    # --- TEMPORAL ENGINE (Skip during startup bootstrap scan) ---
+                    if action != "initial_scan":
+                        await self.db.log_session_event(source_id, event_type=action)
+                        temporal_links = await self.db.create_temporal_edges(
+                            source_id, window_minutes=self.temporal_window_minutes
                         )
+                        if temporal_links > 0:
+                            logger.info(
+                                f"Linked {temporal_links} Temporal Edge(s) to recent activity for Node #{source_id}"
+                            )
 
-                    # --- EXPLICIT [[WikiLink]] ENGINE ---
                     if path.suffix.lower() in (".md", ".markdown", ".txt"):
                         try:
                             await self.db.reconcile_explicit_edges(source_id)
@@ -210,12 +222,10 @@ class WeaverDaemon:
                         except Exception as parse_err:
                             logger.error(f"Error parsing links in {path.name}: {parse_err}")
 
-                    # Broadcast update event over IPC
                     await self.ipc.broadcast_event(
                         "node_updated", {"node_id": source_id, "file_path": file_path_str}
                     )
 
-                # --- 2. HANDLE DELETED ---
                 elif action == "deleted":
                     deleted_node_id = await self.db.delete_node_by_path(file_path_str)
                     if deleted_node_id:
@@ -280,15 +290,10 @@ def parse_arguments() -> argparse.Namespace:
 if __name__ == "__main__":
     args = parse_arguments()
 
-    # Determine target workspace directories:
-    # 1. CLI arguments (-w / --workspace)
-    # 2. Environment variable AETHER_WORKSPACE_DIR
-    # 3. Default fallback to ./sandbox
     if args.workspaces:
         target_dirs = args.workspaces
     elif os.environ.get("AETHER_WORKSPACE_DIR"):
         env_dirs = os.environ.get("AETHER_WORKSPACE_DIR", "")
-        # Support colon or comma separated paths
         target_dirs = [d.strip() for d in env_dirs.replace(":", ",").split(",") if d.strip()]
     else:
         target_dirs = ["./sandbox"]
