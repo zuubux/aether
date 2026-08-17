@@ -92,7 +92,7 @@ class PhysicsEngine:
     def _find_connected_components(self, nodes: List[Node], edges: List[Edge]) -> List[Set[int]]:
         adj: Dict[int, Set[int]] = {n.id: set() for n in nodes}
         for e in edges:
-            if e.edgeType.lower() != "temporal":
+            if e.edgeType.lower() != "temporal" and e.weight > 0.45:
                 if e.sourceId in adj and e.targetId in adj:
                     adj[e.sourceId].add(e.targetId)
                     adj[e.targetId].add(e.sourceId)
@@ -125,6 +125,10 @@ class PhysicsEngine:
         node_map = {n.id: n for n in nodes}
         has_active_focus = (focused_node_id > 0) and (focused_node_id in node_map)
 
+        # 0. Reset all nodes to independent status at the start of the tick
+        for node in nodes:
+            node.clusterId = -1
+
         # 1. Structural Component & Centroid Resolution
         components = self._find_connected_components(nodes, edges)
         node_comp_map: Dict[int, int] = {}
@@ -132,12 +136,17 @@ class PhysicsEngine:
 
         for c_idx, comp in enumerate(components):
             c_nodes = [node_map[nid] for nid in comp if nid in node_map]
-            if c_nodes:
+            
+            # ONLY form a mathematical cluster if there are 3 or more nodes
+            if len(c_nodes) >= 3:
                 cx = sum(n.x for n in c_nodes) / len(c_nodes)
                 cy = sum(n.y for n in c_nodes) / len(c_nodes)
                 comp_centroids[c_idx] = (cx, cy, len(c_nodes))
+                
                 for nid in comp:
                     node_comp_map[nid] = c_idx
+                    if nid in node_map:
+                        node_map[nid].clusterId = c_idx
 
         # 2. Relational Hierarchy for Active Focus
         first_degree_set: Set[int] = set()
@@ -449,35 +458,52 @@ class PhysicsEngine:
             halo_id = f"component_{comp_idx}"
             active_halo_ids.add(halo_id)
 
-            seed_node = max(group, key=lambda n: deg_map.get(n.id, 0))
-
-            prev = self._smoothed_halos.get(halo_id)
-            curr_cx = prev["centerX"] if prev else seed_node.x
-            curr_cy = prev["centerY"] if prev else seed_node.y
-            curr_r = prev["radius"] if prev else 50.0
-
-            target_cx = sum(n.x for n in group) / len(group)
-            target_cy = sum(n.y for n in group) / len(group)
-
-            # Extract 90th percentile distance to tightly encompass the core cluster
-            dists = sorted([math.hypot(n.x - target_cx, n.y - target_cy) for n in group])
-            p90_idx = int((len(dists) - 1) * 0.90)
-            core_d = dists[p90_idx] if dists else 40.0
-
-            # Calculate physical expectation to match the physics engine
-            base_radius = (55.0 + (24.0 * math.sqrt(len(group)))) * geom_scale
-            expected_radius = min(600.0 * geom_scale, base_radius)
-
-            # The visual circle MUST wrap the core body, but won't collapse smaller than expected
-            target_radius = max(expected_radius * 0.85, core_d + (45.0 * geom_scale))
+            # 1. Calculate actual 2D physical footprint bounds
+            xs = sorted([n.x for n in group])
+            ys = sorted([n.y for n in group])
             
-            # Cap the visual halo so nebulas don't take over the screen
-            target_radius = min(640.0 * geom_scale, target_radius)
+            # 2. Filter outliers (keep inner 90% to ignore rogue runaway nodes)
+            p05 = int(len(group) * 0.05)
+            p95 = int(len(group) * 0.95)
+            
+            if len(group) < 5:
+                min_x, max_x = xs[0], xs[-1]
+                min_y, max_y = ys[0], ys[-1]
+            else:
+                min_x, max_x = xs[p05], xs[p95]
+                min_y, max_y = ys[p05], ys[p95]
+
+            # 3. The exact physical footprint dimensions
+            core_w = max_x - min_x
+            core_h = max_y - min_y
+
+            # 4. Pad generously to swallow Z-depth parallax projections
+            padding = 110.0 * geom_scale
+            target_w = core_w + padding
+            target_h = core_h + padding
+
+            # Minimum size clamp so small clusters don't shrink into tiny dots
+            min_size = 140.0 * geom_scale
+            target_w = max(min_size, target_w)
+            target_h = max(min_size, target_h)
+
+            # 5. Shift visual center to the true center of the mass footprint
+            target_cx = (min_x + max_x) / 2.0
+            target_cy = (min_y + max_y) / 2.0
+
+            # 6. Smooth the dimensions and position
+            prev = self._smoothed_halos.get(halo_id)
+            curr_cx = prev["centerX"] if prev else target_cx
+            curr_cy = prev["centerY"] if prev else target_cy
+            curr_w = prev.get("width", target_w) if prev else target_w
+            curr_h = prev.get("height", target_h) if prev else target_h
 
             smooth_cx = curr_cx + (target_cx - curr_cx) * 0.14
             smooth_cy = curr_cy + (target_cy - curr_cy) * 0.14
-            smooth_r = curr_r + (target_radius - curr_r) * 0.10
+            smooth_w = curr_w + (target_w - curr_w) * 0.10
+            smooth_h = curr_h + (target_h - curr_h) * 0.10
 
+            # Color extraction
             ext_counts: Dict[str, int] = {}
             for n in group:
                 ext = n.extension.lower() if hasattr(n, "extension") else ".txt"
@@ -499,7 +525,8 @@ class PhysicsEngine:
                 "id": halo_id,
                 "centerX": smooth_cx,
                 "centerY": smooth_cy,
-                "radius": smooth_r,
+                "width": smooth_w,     # Replacing 'radius'
+                "height": smooth_h,    # Replacing 'radius'
                 "color": color_hex,
                 "isFocalCluster": is_focal_cluster,
                 "nodeCount": len(group),
@@ -516,7 +543,11 @@ class PhysicsEngine:
                 dx = h2["centerX"] - h1["centerX"]
                 dy = h2["centerY"] - h1["centerY"]
                 dist = math.hypot(dx, dy) or 1.0
-                min_dist = h1["radius"] + h2["radius"] + 40.0
+                
+                # Approximate collision using the average dimension of the pill
+                r1 = (h1["width"] + h1["height"]) / 4.0
+                r2 = (h2["width"] + h2["height"]) / 4.0
+                min_dist = r1 + r2 + 40.0
 
                 if dist < min_dist:
                     overlap = (min_dist - dist) * 0.5

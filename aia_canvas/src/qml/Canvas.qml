@@ -93,7 +93,11 @@ Window {
 
                     centerX: modelData.centerX
                     centerY: modelData.centerY
-                    haloRadius: modelData.radius
+                    
+                    // Replaced haloRadius with independent width/height mapping
+                    haloWidth: modelData.width
+                    haloHeight: modelData.height
+                    
                     haloColor: modelData.color
                     isFocalCluster: modelData.isFocalCluster
                     nodeCount: modelData.nodeCount

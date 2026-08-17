@@ -39,7 +39,7 @@ Item {
         return -1
     }
     readonly property bool isIntraCluster: (sourceClusterId >= 0 && targetClusterId >= 0 && sourceClusterId === targetClusterId)
-    readonly property bool shouldCullIntra: isIntraCluster && isVoidMode && !isHoverBloomed && (currentAperture <= 0.48)
+    readonly property bool shouldCullIntra: isIntraCluster && isVoidMode && !isHoverBloomed && (currentAperture <= 0.40)
 
     // Dynamic Endpoints & Geometry
     readonly property real sCx: sourceNode ? (sourceNode.cardCenterX !== undefined ? sourceNode.cardCenterX : (sourceNode.nodeModel ? sourceNode.nodeModel.x : sourceNode.x)) : 0
@@ -125,29 +125,37 @@ Item {
 
     SequentialAnimation on pulsePhase {
         loops: Animation.Infinite
-        running: true  // Keep breathing continuously across all view modes
+        running: true 
 
-        PauseAnimation { duration: ((rootTendril.sourceId * 137 + rootTendril.targetId * 79) % 3500) + 500 }
-        NumberAnimation { to: 1.0; duration: 2400; easing.type: Easing.InOutSine }
-        PauseAnimation { duration: 400 }
-        NumberAnimation { to: 0.0; duration: 3200; easing.type: Easing.InOutSine }
-        PauseAnimation { duration: 1800 }
+        // Massive random delay (2 to 14 seconds) so connections fire sparsely and randomly
+        PauseAnimation { duration: ((rootTendril.sourceId * 313 + rootTendril.targetId * 107) % 12000) + 2000 }
+        
+        // Deep, slow biological inhale
+        NumberAnimation { to: 1.0; duration: 4500; easing.type: Easing.InOutSine }
+        PauseAnimation { duration: 800 }
+        
+        // Long, soft exhale
+        NumberAnimation { to: 0.0; duration: 5500; easing.type: Easing.InOutSine }
+        
+        // Long baseline rest before the next possible breath
+        PauseAnimation { duration: 4000 }
     }
 
     // =========================================================================
     // Dynamic Opacity & Attenuation
     // =========================================================================
-    // Massively increased to span the new 1500px+ donut hole
-    readonly property real ambientSpanLimit: 2800.0 
+    // Reduced by ~40% so lines don't stretch infinitely across the cosmos
+    readonly property real ambientSpanLimit: 1600.0 
 
     readonly property real proximityFactor: {
         if (!isVoidMode) {
-            return (spanDist >= 2800.0) ? 0.25 : (1.0 - ((spanDist - 400.0) / 2400.0) * 0.75)
+            return (spanDist >= ambientSpanLimit) ? 0.25 : (1.0 - ((spanDist - 400.0) / (ambientSpanLimit - 400.0)) * 0.75)
         }
         if (spanDist >= ambientSpanLimit) return 0.0
-        // Gives lines a solid burn for the first 800px before slowly fading out
-        if (spanDist <= 800.0) return 1.0 
-        return 1.0 - ((spanDist - 800.0) / (ambientSpanLimit - 800.0))
+        
+        // Gives lines a solid burn for the first 500px before smoothly fading out
+        if (spanDist <= 500.0) return 1.0 
+        return 1.0 - ((spanDist - 500.0) / (ambientSpanLimit - 500.0))
     }
 
     readonly property real avgDepth: {

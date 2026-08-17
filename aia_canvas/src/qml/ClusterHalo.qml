@@ -5,7 +5,8 @@ Item {
 
     property real centerX: 0
     property real centerY: 0
-    property real haloRadius: 140
+    property real haloWidth: 280   // Replacing haloRadius
+    property real haloHeight: 280  // Replacing haloRadius
     property color haloColor: "#38bdf8"
     property bool isFocalCluster: false
     property int nodeCount: 3
@@ -23,13 +24,16 @@ Item {
 
     readonly property real projX: vpX + (centerX - vpX) * xSpreadFactor
     readonly property real projY: vpY + (centerY - vpY) * pScale
-    readonly property real projRadius: Math.max(28.0, haloRadius * pScale)
+    
+    // Scale both width and height independently based on depth
+    readonly property real projWidth: Math.max(56.0, haloWidth * pScale)
+    readonly property real projHeight: Math.max(56.0, haloHeight * pScale)
 
     // Dynamic Horizon Geometry
     x: projX - width / 2
     y: projY - height / 2
-    width: projRadius * 2
-    height: projRadius * 2
+    width: projWidth
+    height: projHeight
 
     Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutSine } }
     Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutSine } }
@@ -70,7 +74,8 @@ Item {
         anchors.centerIn: parent
         width: parent.width
         height: parent.height
-        radius: width / 2
+        // PERFECT PILL CAPSULE RADIUS
+        radius: Math.min(width, height) / 2.0 
         color: rootHalo.haloColor
         opacity: 0.035
     }
@@ -80,7 +85,8 @@ Item {
         anchors.centerIn: parent
         width: parent.width + 12 * rootHalo.pScale
         height: parent.height + 12 * rootHalo.pScale
-        radius: width / 2
+        // PERFECT PILL CAPSULE RADIUS
+        radius: Math.min(width, height) / 2.0
         color: "transparent"
         border.color: rootHalo.haloColor
         border.width: 1
@@ -92,7 +98,8 @@ Item {
         anchors.centerIn: parent
         width: parent.width
         height: parent.height
-        radius: width / 2
+        // PERFECT PILL CAPSULE RADIUS
+        radius: Math.min(width, height) / 2.0
         color: "transparent"
         border.color: rootHalo.haloColor
         border.width: rootHalo.isFocalCluster ? 1.5 : 1.0
