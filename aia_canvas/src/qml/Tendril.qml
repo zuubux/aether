@@ -93,7 +93,7 @@ Item {
     readonly property real normY: dirX
 
     // Tangent Projection Length
-    readonly property real tangentLength: Math.min(spanDist * 0.35, 95.0)
+    readonly property real tangentLength: Math.min(spanDist * 0.35, 160.0)
 
     // Edge-Specific Chirality & Fluid Arc Amplitude
     readonly property real strandChirality: ((sourceId * 31 + targetId * 17) % 2 === 0) ? 1.0 : -1.0
@@ -119,33 +119,35 @@ Item {
     readonly property real cp2Y: endPt.y - (dirY * tangentLength) + (normY * normalOffset * 0.6)
 
     // =========================================================================
-    // Bioluminescent Respiration Wave
+    // Bioluminescent Respiration Wave (Continuous Calm Biological Breathing)
     // =========================================================================
     property real pulsePhase: 0.0
 
     SequentialAnimation on pulsePhase {
         loops: Animation.Infinite
-        running: rootTendril.isVoidMode
+        running: true  // Keep breathing continuously across all view modes
 
-        PauseAnimation { duration: ((rootTendril.sourceId * 149 + rootTendril.targetId * 97) % 5000) + 1000 }
-        NumberAnimation { to: 1.0; duration: 4500; easing.type: Easing.InOutSine }
-        PauseAnimation { duration: 800 }
-        NumberAnimation { to: 0.0; duration: 5500; easing.type: Easing.InOutSine }
-        PauseAnimation { duration: 2500 }
+        PauseAnimation { duration: ((rootTendril.sourceId * 137 + rootTendril.targetId * 79) % 3500) + 500 }
+        NumberAnimation { to: 1.0; duration: 2400; easing.type: Easing.InOutSine }
+        PauseAnimation { duration: 400 }
+        NumberAnimation { to: 0.0; duration: 3200; easing.type: Easing.InOutSine }
+        PauseAnimation { duration: 1800 }
     }
 
     // =========================================================================
     // Dynamic Opacity & Attenuation
     // =========================================================================
-    readonly property real ambientSpanLimit: 550.0
+    // Massively increased to span the new 1500px+ donut hole
+    readonly property real ambientSpanLimit: 2800.0 
 
     readonly property real proximityFactor: {
         if (!isVoidMode) {
-            return (spanDist >= 2200.0) ? 0.25 : (1.0 - ((spanDist - 400.0) / 1800.0) * 0.75)
+            return (spanDist >= 2800.0) ? 0.25 : (1.0 - ((spanDist - 400.0) / 2400.0) * 0.75)
         }
         if (spanDist >= ambientSpanLimit) return 0.0
-        if (spanDist <= 240.0) return 1.0
-        return 1.0 - ((spanDist - 240.0) / (ambientSpanLimit - 240.0))
+        // Gives lines a solid burn for the first 800px before slowly fading out
+        if (spanDist <= 800.0) return 1.0 
+        return 1.0 - ((spanDist - 800.0) / (ambientSpanLimit - 800.0))
     }
 
     readonly property real avgDepth: {
@@ -161,11 +163,12 @@ Item {
 
         var base = 0.0
         if (edgeType === "explicit") {
-            base = (0.14 + 0.18 * pulsePhase) * proximityFactor * Math.max(0.5, weight)
+            // Drops completely to 0.0 when breathing out
+            base = Math.pow(pulsePhase, 1.4) * 0.42 * proximityFactor * Math.max(0.4, weight)
         } else if (edgeType === "temporal") {
-            base = (pulsePhase * 0.52 * Math.max(0.5, weight)) * proximityFactor
+            base = Math.pow(pulsePhase, 1.2) * 0.55 * proximityFactor * Math.max(0.5, weight)
         } else {
-            base = (0.08 + 0.22 * pulsePhase) * proximityFactor * Math.max(0.4, weight)
+            base = Math.pow(pulsePhase, 1.6) * 0.35 * proximityFactor * Math.max(0.4, weight)
         }
         return base * depthAttenuation
     }
