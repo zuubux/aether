@@ -70,28 +70,40 @@ class WeaverDaemon:
         return await self.db.get_node_neighbors(node_id)
 
     async def handle_touch_node(self, node_id: int, event_type: str = "focus") -> dict:
-        """Logs active UI focus/interaction and recalculates temporal edges."""
+        """Logs active UI focus/interaction, recalculates decaying temporal edges, and broadcasts recent node set."""
         logger.info(f"IPC Touch Request: Node #{node_id} (event: {event_type})")
         await self.db.log_session_event(node_id, event_type=event_type)
+        
         temporal_edges = await self.db.create_temporal_edges(
-            node_id, window_minutes=self.temporal_window_minutes
+            node_id,
+            window_minutes=self.temporal_window_minutes,
+            half_life_minutes=25.0,
+            reinforcement_boost=0.20,
         )
         
+        recent_node_ids = await self.db.get_recent_node_ids(
+            window_minutes=self.temporal_window_minutes,
+            min_weight=0.10,
+        )
+
         if temporal_edges:
-            logger.info(f"Linked {len(temporal_edges)} Temporal Edge(s) via UI focus for Node #{node_id}")
-            await self.ipc.broadcast_event(
-                "node_updated", {
-                    "node_id": node_id,
-                    "reason": "temporal_link",
-                    "temporal_edges": temporal_edges,
-                }
-            )
+            logger.info(f"Reinforced {len(temporal_edges)} Temporal Edge(s) via UI focus for Node #{node_id}")
+            
+        await self.ipc.broadcast_event(
+            "node_updated", {
+                "node_id": node_id,
+                "reason": "temporal_link",
+                "temporal_edges": temporal_edges,
+                "recent_node_ids": recent_node_ids,
+            }
+        )
             
         return {
             "node_id": node_id,
             "event_type": event_type,
             "temporal_edges_created": len(temporal_edges),
             "temporal_edges": temporal_edges,
+            "recent_node_ids": recent_node_ids,
         }
 
     async def _initial_workspace_scan(self) -> None:
@@ -282,13 +294,13 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--semantic-threshold",
         type=float,
-        default=0.35,
-        help="Cosine distance threshold for semantic edges (default: 0.35)",
+        default=0.65,  # Updated default
+        help="Cosine distance threshold for semantic edges (default: 0.65)",
     )
     parser.add_argument(
         "--temporal-window",
         type=int,
-        default=15,
+        default=60,
         help="Sliding time window in minutes for temporal activity edges (default: 15)",
     )
     return parser.parse_args()

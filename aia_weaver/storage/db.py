@@ -176,7 +176,7 @@ class DatabaseManager:
         self,
         node_id: int,
         embedding: list[float],
-        distance_threshold: float = 0.35,
+        distance_threshold: float = 0.65,  # Relaxed from 0.35 to 0.65 for natural topical discovery
         limit: int = 5,
     ) -> int:
         if not self._conn or embedding is None:
@@ -202,11 +202,20 @@ class DatabaseManager:
 
                 if dist <= distance_threshold:
                     weight = max(0.0, min(1.0, 1.0 - (dist / distance_threshold)))
+                    weight = round(weight, 3)
+
+                    # Upsert bidirectional edge (Node A <-> Node B)
                     await self.upsert_edge(
                         source_id=node_id,
                         target_id=target_id,
                         edge_type="semantic",
-                        weight=round(weight, 3),
+                        weight=weight,
+                    )
+                    await self.upsert_edge(
+                        source_id=target_id,
+                        target_id=node_id,
+                        edge_type="semantic",
+                        weight=weight,
                     )
                     created_count += 1
 
@@ -292,19 +301,22 @@ class DatabaseManager:
     async def create_temporal_edges(
         self,
         node_id: int,
-        window_minutes: int = 15,
+        window_minutes: int = 60,
+        half_life_minutes: float = 25.0,
+        reinforcement_boost: float = 0.20,
     ) -> list[dict]:
         """
-        Discovers files modified/focused within the sliding time window,
-        establishes time-decayed temporal edges between them, and returns the edge list.
+        Calculates exponential time-decayed temporal edges with interaction reinforcement
+        and returns all active temporal edges connected to the node.
         """
         if not self._conn:
             return []
 
-        window_seconds = window_minutes * 60
+        half_life_seconds = half_life_minutes * 60.0
         created_edges = []
 
         async with self._conn.cursor() as cursor:
+            # 1. Fetch recent nodes active within the expanded temporal window
             query = """
                 SELECT 
                     s.node_id,
@@ -322,26 +334,68 @@ class DatabaseManager:
             for record in recent_nodes:
                 target_id = record["node_id"]
                 target_path = record["file_path"]
-                delta_sec = max(0, record["delta_seconds"])
+                delta_sec = max(0.0, float(record["delta_seconds"]))
 
-                decay_ratio = delta_sec / window_seconds
-                weight = max(0.1, min(1.0, 1.0 - (0.9 * decay_ratio)))
-                weight = round(weight, 3)
+                # 2. Check for existing temporal edge weight to apply reinforcement
+                await cursor.execute(
+                    """
+                    SELECT weight FROM edges 
+                    WHERE ((source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?))
+                      AND edge_type = 'temporal'
+                    LIMIT 1;
+                    """,
+                    (node_id, target_id, target_id, node_id),
+                )
+                existing_row = await cursor.fetchone()
+                current_weight = existing_row[0] if existing_row else 1.0
 
+                # 3. Exponential half-life decay + interaction reinforcement
+                # W(t) = (W_curr * 2^(-dt / t_half)) + reinforcement
+                decay_factor = 0.5 ** (delta_sec / half_life_seconds)
+                calculated_weight = (current_weight * decay_factor) + reinforcement_boost
+                clamped_weight = round(max(0.10, min(1.0, calculated_weight)), 3)
+
+                # 4. Upsert bidirectional temporal connection
                 await self.upsert_edge(
                     source_id=node_id,
                     target_id=target_id,
                     edge_type="temporal",
-                    weight=weight,
+                    weight=clamped_weight,
                 )
 
                 created_edges.append({
                     "source_id": node_id,
                     "target_id": target_id,
                     "edge_type": "temporal",
-                    "weight": weight,
+                    "weight": clamped_weight,
                     "target_path": target_path,
                 })
+
+        return created_edges
+
+    async def get_recent_node_ids(self, window_minutes: int = 60, min_weight: float = 0.10) -> list[int]:
+        """Returns IDs of all nodes with active temporal edges or recent session activity."""
+        if not self._conn:
+            return []
+
+        async with self._conn.cursor() as cursor:
+            query = """
+                SELECT DISTINCT id FROM (
+                    -- Nodes active in session logs within window
+                    SELECT node_id AS id FROM session_logs 
+                    WHERE timestamp >= datetime('now', ?)
+                    UNION
+                    -- Nodes maintaining temporal edges above threshold
+                    SELECT source_id AS id FROM edges 
+                    WHERE edge_type = 'temporal' AND weight >= ?
+                    UNION
+                    SELECT target_id AS id FROM edges 
+                    WHERE edge_type = 'temporal' AND weight >= ?
+                ) ORDER BY id ASC;
+            """
+            await cursor.execute(query, (f"-{window_minutes} minutes", min_weight, min_weight))
+            rows = await cursor.fetchall()
+            return [r[0] for r in rows]
 
         return created_edges    
     

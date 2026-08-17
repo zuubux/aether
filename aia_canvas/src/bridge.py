@@ -74,10 +74,16 @@ class CanvasBridge(QObject):
             return
 
         edges = self._focal_edges
-        first_degree: Set[int] = {
-            e.targetId if e.sourceId == primary_id else e.sourceId
-            for e in edges if primary_id in (e.sourceId, e.targetId)
-        }
+        first_degree: Set[int] = set()
+        temporal_first_degree: Set[int] = set()
+
+        for e in edges:
+            if primary_id in (e.sourceId, e.targetId):
+                target = e.targetId if e.sourceId == primary_id else e.sourceId
+                if e.edgeType == "temporal":
+                    temporal_first_degree.add(target)
+                else:
+                    first_degree.add(target)
 
         second_degree: Set[int] = set()
         for e in edges:
@@ -85,6 +91,9 @@ class CanvasBridge(QObject):
                 second_degree.add(e.targetId)
             elif e.targetId in first_degree and e.sourceId != primary_id:
                 second_degree.add(e.sourceId)
+
+        # Push temporal breadcrumbs natively into the Tier 2 satellite orbit
+        second_degree.update(temporal_first_degree - first_degree)
 
         for node in self.store.get_all_nodes():
             if node.id == primary_id:
@@ -100,12 +109,20 @@ class CanvasBridge(QObject):
         t0 = time.perf_counter()
 
         nodes = self.store.get_all_nodes()
-        active_physics_edges = self._focal_edges if self._selected_node_id > 0 else self._structural_edges
         
-        # Advance physics simulation step
-        self.physics.step(nodes, active_physics_edges, self._selected_node_id, dt=0.008)
+        # FIX: Physics ALWAYS needs the full structural graph to keep background galaxies glued together.
+        active_physics_edges = list(self._structural_edges)
+        struct_sigs = {(e.sourceId, e.targetId, e.edgeType) for e in self._structural_edges}
         
-        # Synchronize dynamic cluster membranes
+        if self._selected_node_id > 0:
+            # Add any fresh focal edges (like resurrected temporals) so they get simulated
+            for e in self._focal_edges:
+                if (e.sourceId, e.targetId, e.edgeType) not in struct_sigs:
+                    active_physics_edges.append(e)
+        
+        # Pass hovered node ID into step
+        self.physics.step(nodes, active_physics_edges, self._selected_node_id, self._hovered_node_id, dt=0.008)
+        
         self._cluster_halos = self.physics.get_cluster_halos(nodes, active_physics_edges, self._selected_node_id)
         self.clusterHalosChanged.emit()
 
@@ -144,7 +161,17 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(list, notify=edgesChanged)
     def edges(self) -> List[Edge]:
-        return self._focal_edges if self._selected_node_id > 0 else self._ambient_edges
+        if self._selected_node_id > 0:
+            # 1. Start with curated, deduplicated focal edges
+            combined = list(self._focal_edges)
+            
+            # 2. Exclude any ambient edges touching the focused node to prevent duplicate filaments
+            for e in self._ambient_edges:
+                if e.sourceId == self._selected_node_id or e.targetId == self._selected_node_id:
+                    continue
+                combined.append(e)                
+            return combined
+        return self._ambient_edges
 
     @pyqtProperty(int, notify=selectedNodeChanged)
     def selectedNodeId(self) -> int:
@@ -410,8 +437,12 @@ class CanvasBridge(QObject):
             for e in raw_edges
         ]
 
-        # Preserve live temporal edges from the session queue
-        existing_temporals = [e for e in self._focal_edges if e.edgeType == "temporal"]
+        # 1. Vacuum Seal: ONLY preserve live temporal edges that ACTUALLY touch the current focal lens
+        existing_temporals = [
+            e for e in self._focal_edges 
+            if e.edgeType == "temporal" and (e.sourceId == self._selected_node_id or e.targetId == self._selected_node_id)
+        ]
+        
         for te in existing_temporals:
             if not any(
                 (pe.sourceId == te.sourceId and pe.targetId == te.targetId and pe.edgeType == te.edgeType) or
@@ -420,16 +451,44 @@ class CanvasBridge(QObject):
             ):
                 parsed_edges.append(te)
 
-        # Separate and apply cognitive ceilings
-        temporals = [e for e in parsed_edges if e.edgeType == "temporal" and e.weight >= 0.20]
-        explicits = [e for e in parsed_edges if e.edgeType == "explicit"]
-        semantics = [e for e in parsed_edges if e.edgeType == "semantic" and e.weight >= 0.40]
+        # 2. Universal Deduplication: Keep only the highest priority relational bond
+        unique_edges = {}
+        for e in parsed_edges:
+            if e.sourceId != self._selected_node_id and e.targetId != self._selected_node_id:
+                continue
+                
+            pair_key = (min(e.sourceId, e.targetId), max(e.sourceId, e.targetId))
+            current = unique_edges.get(pair_key)
+            
+            if not current:
+                unique_edges[pair_key] = e
+            else:
+                # Priority mapping ensures Explicit and Semantic links aren't overwritten by Temporal history
+                priority = {"explicit": 3, "semantic": 2, "temporal": 1}
+                if priority[e.edgeType] > priority[current.edgeType]:
+                    unique_edges[pair_key] = e
+                elif priority[e.edgeType] == priority[current.edgeType] and e.weight > current.weight:
+                    unique_edges[pair_key] = e
+                
+        deduped_edges = list(unique_edges.values())
 
+        # 3. Categorize and Boost
+        temporals = [e for e in deduped_edges if e.edgeType == "temporal"]
+        explicits = [e for e in deduped_edges if e.edgeType == "explicit"]
+        
+        semantics = []
+        for e in deduped_edges:
+            if e.edgeType == "semantic" and e.weight >= 0.20:
+                boosted_weight = min(1.0, 0.60 + (e.weight * 0.50))
+                semantics.append(Edge(source_id=e.sourceId, target_id=e.targetId, edge_type="semantic", weight=boosted_weight))
+
+        # 4. Tier Allocations & Strict Secondary Quotas
+        tier1_edges = explicits + semantics
+        tier1_edges.sort(key=lambda e: e.weight, reverse=True)
+        
         temporals.sort(key=lambda e: e.weight, reverse=True)
-        explicits.sort(key=lambda e: e.weight, reverse=True)
-        semantics.sort(key=lambda e: e.weight, reverse=True)
 
-        # Cap: Max 4 temporals, Max 6 explicits, Max 4 semantics (Max 14 total focal lines)
-        self._focal_edges = temporals[:4] + explicits[:6] + semantics[:4]
+        # Cap: Max 8 primary wings, and strictly cap Tier 2 temporal/satellites to max 4 total globally
+        self._focal_edges = tier1_edges[:8] + temporals[:4]
         self._recalculate_focal_weights(self._selected_node_id)
         self.edgesChanged.emit()

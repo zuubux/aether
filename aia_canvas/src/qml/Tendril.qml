@@ -15,10 +15,20 @@ Item {
     property real currentAperture: 1.0
 
     // Relational Context
-    readonly property bool isFirstDegree: selectedNodeId > 0 && (sourceId === selectedNodeId || targetId === selectedNodeId)
+    readonly property bool isFirstDegree: {
+        if (selectedNodeId <= 0 || (sourceId !== selectedNodeId && targetId !== selectedNodeId)) return false
+        var otherNode = (sourceId === selectedNodeId) ? targetNode : sourceNode
+        var otherFocus = otherNode ? (otherNode.focusWeight !== undefined ? otherNode.focusWeight : (otherNode.nodeModel ? otherNode.nodeModel.focus : 0)) : 0
+        return otherFocus >= 0.60
+    }
     readonly property bool isHoverBloomed: hoveredNodeId > 0 && (sourceId === hoveredNodeId || targetId === hoveredNodeId)
     readonly property bool isSecondDegree: {
-        if (isFirstDegree || selectedNodeId <= 0) return false
+        if (selectedNodeId <= 0) return false
+        if (sourceId === selectedNodeId || targetId === selectedNodeId) {
+            var otherNode = (sourceId === selectedNodeId) ? targetNode : sourceNode
+            var otherFocus = otherNode ? (otherNode.focusWeight !== undefined ? otherNode.focusWeight : (otherNode.nodeModel ? otherNode.nodeModel.focus : 0)) : 0
+            return otherFocus < 0.60 && otherFocus > 0.30
+        }
         var sFocus = sourceNode ? (sourceNode.focusWeight !== undefined ? sourceNode.focusWeight : (sourceNode.nodeModel ? sourceNode.nodeModel.focus : 0)) : 0
         var tFocus = targetNode ? (targetNode.focusWeight !== undefined ? targetNode.focusWeight : (targetNode.nodeModel ? targetNode.nodeModel.focus : 0)) : 0
         return (sFocus > 0.55 && tFocus > 0.35) || (tFocus > 0.55 && sFocus > 0.35)
@@ -172,11 +182,12 @@ Item {
         var base = 0.0
         if (edgeType === "explicit") {
             // Drops completely to 0.0 when breathing out
-            base = Math.pow(pulsePhase, 1.4) * 0.42 * proximityFactor * Math.max(0.4, weight)
+            base = Math.pow(pulsePhase, 1.3) * 0.45 * proximityFactor * Math.max(0.4, weight)
         } else if (edgeType === "temporal") {
             base = Math.pow(pulsePhase, 1.2) * 0.55 * proximityFactor * Math.max(0.5, weight)
         } else {
-            base = Math.pow(pulsePhase, 1.6) * 0.35 * proximityFactor * Math.max(0.4, weight)
+            // Equalized semantic prominence and boosted ceiling to 0.48
+            base = Math.pow(pulsePhase, 1.3) * 0.48 * proximityFactor * Math.max(0.4, weight)
         }
         return base * depthAttenuation
     }
@@ -185,8 +196,7 @@ Item {
         if (isHoverBloomed) {
             return 1.0
         } else if (isFirstDegree) {
-            var scaledWeight = Math.max(0.0, Math.min(1.0, rootTendril.weight))
-            return Math.max(0.18, 0.20 + 0.78 * Math.pow(scaledWeight, 1.4))
+            return Math.max(0.85, 0.40 + 0.60 * rootTendril.weight)
         } else if (isSecondDegree) {
             return 0.18 * Math.max(0.3, rootTendril.weight)
         } else if (isVoidMode) {
@@ -317,25 +327,30 @@ Item {
         }
     }
 
-    // Source Synaptic Port
+   // Helper properties to handle edge directionality gracefully
+    readonly property bool sourceIsSelected: sourceId === selectedNodeId
+    readonly property point lensPoint: sourceIsSelected ? startPt : endPt
+    readonly property point outerPoint: sourceIsSelected ? endPt : startPt
+
+    // Lens Frame Synaptic Port (Fires on the lens for Tier 1, Tier 2, and Hover)
     SynapticGlowPort {
-        visible: (rootTendril.isFirstDegree || rootTendril.isHoverBloomed) && rootTendril.weight >= 0.25
-        x: rootTendril.startPt.x - width / 2
-        y: rootTendril.startPt.y - height / 2
-        glowColor: rootTendril.filamentColor
-        isFocalLens: rootTendril.sourceId === rootTendril.selectedNodeId
-        edgeWeight: rootTendril.weight
+        visible: (isFirstDegree || isSecondDegree || isHoverBloomed) && (sourceId === selectedNodeId || targetId === selectedNodeId) && weight >= 0.25
+        x: lensPoint.x - width / 2
+        y: lensPoint.y - height / 2
+        glowColor: filamentColor
+        isFocalLens: true
+        edgeWeight: weight
         z: 9500
     }
 
-    // Target Synaptic Port
+    // Outer Node Synaptic Port (ONLY fires on the outer node for Tier 1 and Hover)
     SynapticGlowPort {
-        visible: (rootTendril.isFirstDegree || rootTendril.isHoverBloomed) && rootTendril.weight >= 0.25
-        x: rootTendril.endPt.x - width / 2
-        y: rootTendril.endPt.y - height / 2
-        glowColor: rootTendril.filamentColor
-        isFocalLens: rootTendril.targetId === rootTendril.selectedNodeId
-        edgeWeight: rootTendril.weight
+        visible: (isFirstDegree || isHoverBloomed) && (sourceId === selectedNodeId || targetId === selectedNodeId) && weight >= 0.25
+        x: outerPoint.x - width / 2
+        y: outerPoint.y - height / 2
+        glowColor: filamentColor
+        isFocalLens: false
+        edgeWeight: weight
         z: 9500
     }
 }

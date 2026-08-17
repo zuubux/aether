@@ -36,8 +36,8 @@ class PhysicsEngine:
 
         # Spring & Field Constants
         self.k_horizon_anchor: float = 9.5
-        self.k_gutter_anchor: float = 8.5
-        self.k_satellite_drift: float = 5.5
+        self.k_gutter_anchor: float = 11.5
+        self.k_satellite_drift: float = 8.5
 
         self.box_bound_x: float = 0.0
         self.box_bound_y: float = 0.0
@@ -118,7 +118,7 @@ class PhysicsEngine:
 
         return components
 
-    def step(self, nodes: List[Node], edges: List[Edge], focused_node_id: int, dt: float = 0.008):
+    def step(self, nodes: List[Node], edges: List[Edge], focused_node_id: int, hovered_node_id: int = 0, dt: float = 0.008):
         if not nodes:
             return
 
@@ -156,35 +156,42 @@ class PhysicsEngine:
 
         if has_active_focus:
             for e in edges:
-                if e.sourceId == focused_node_id:
-                    first_degree_set.add(e.targetId)
-                    focal_weights[e.targetId] = max(focal_weights.get(e.targetId, 0.0), e.weight)
-                elif e.targetId == focused_node_id:
-                    first_degree_set.add(e.sourceId)
-                    focal_weights[e.sourceId] = max(focal_weights.get(e.sourceId, 0.0), e.weight)
+                if e.sourceId == focused_node_id or e.targetId == focused_node_id:
+                    target = e.targetId if e.sourceId == focused_node_id else e.sourceId
+                    # Tier 2 Allocation: Temporals instantly bypass wings and map to satellites
+                    if e.edgeType == "temporal":
+                        second_degree_set.add(target)
+                        second_degree_parent[target] = focused_node_id
+                    else:
+                        first_degree_set.add(target)
+                        focal_weights[target] = max(focal_weights.get(target, 0.0), e.weight)
 
             for e in edges:
                 if e.sourceId in first_degree_set and e.targetId != focused_node_id and e.targetId not in first_degree_set:
                     second_degree_set.add(e.targetId)
-                    second_degree_parent[e.targetId] = e.sourceId
+                    if e.targetId not in second_degree_parent:
+                        second_degree_parent[e.targetId] = e.sourceId
                 elif e.targetId in first_degree_set and e.sourceId != focused_node_id and e.sourceId not in first_degree_set:
                     second_degree_set.add(e.sourceId)
-                    second_degree_parent[e.sourceId] = e.targetId
+                    if e.sourceId not in second_degree_parent:
+                        second_degree_parent[e.sourceId] = e.targetId
 
-        # 3. Wing Target Allocation (Top 4 Companions Flanked Left / Right)
+        # 3. Wing Target Allocation (Top 8 Companions Flanked Left / Right)
         wing_targets: Dict[int, Tuple[float, float]] = {}
         if has_active_focus:
             sorted_companions = sorted(list(first_degree_set), key=lambda nid: focal_weights.get(nid, 0.0), reverse=True)
-            top_companions = sorted_companions[:4]
+            top_companions = sorted_companions[:8]
+            
             left_wing = [nid for idx, nid in enumerate(top_companions) if idx % 2 == 0]
             right_wing = [nid for idx, nid in enumerate(top_companions) if idx % 2 != 0]
 
             def compute_wing_slots(c_ids: List[int], is_left: bool):
                 total = len(c_ids)
                 sign = -1.0 if is_left else 1.0
-                target_x = self.center_x + sign * ((self.focal_card_w / 2.0) + 480.0)
+                # Bring wings closer to the card (was 480.0, putting them off-screen)
+                target_x = self.center_x + sign * ((self.focal_card_w / 2.0) + 450.0) 
                 for idx, nid in enumerate(c_ids):
-                    y_offset = (idx - (total - 1) / 2.0) * 110.0
+                    y_offset = (idx - (total - 1) / 2.0) * 160.0 
                     wing_targets[nid] = (target_x, self.center_y + y_offset)
 
             compute_wing_slots(left_wing, is_left=True)
@@ -223,8 +230,8 @@ class PhysicsEngine:
                             forces[nid][1] += push_y / math.sqrt(count2)
 
         # 6. Pairwise Node Repulsion (Aperture-Aware Physical Scaling)
-        # Scales geometry from 1.0x (dots) up to ~2.8x (full cards) based on zoom
-        geom_scale = 1.0 + max(0.0, min(1.8, (self.aperture - 0.35) * 2.4))
+        # Smoothly scales from 1.0x at 0.35 zoom up to ~3.8x at 2.20 zoom
+        geom_scale = 1.0 + max(0.0, (self.aperture - 0.35) * 1.5)
         
         node_list = list(nodes)
         num_nodes = len(node_list)
@@ -238,18 +245,33 @@ class PhysicsEngine:
                 dist = math.sqrt(dist_sq) or 1.0
 
                 same_cluster = (node_comp_map.get(n1.id) == node_comp_map.get(n2.id)) and (node_comp_map.get(n1.id) is not None)
+                
+                # NEW: Check if these nodes are actively participating in the Focal Lens (1st OR 2nd degree)
+                n1_focal = has_active_focus and (n1.id == focused_node_id or n1.id in first_degree_set or n1.id in second_degree_set)
+                n2_focal = has_active_focus and (n2.id == focused_node_id or n2.id in first_degree_set or n2.id in second_degree_set)
 
                 if has_active_focus:
-                    min_sep = 160.0 * (1.0 + max(0.0, geom_scale - 1.0) * 0.5)
+                    if n1_focal != n2_focal:
+                        # Ethereal: Active focal hierarchy completely ignores background nodes
+                        min_sep = 0.0
+                    elif n1.id == focused_node_id or n2.id == focused_node_id:
+                        # Center card ignores its own wings
+                        min_sep = 0.0
+                    elif n1_focal and n2_focal:
+                        # Wingmen and Satellites just need a tiny bit of personal space from each other
+                        min_sep = 120.0
+                    else:
+                        organic_jitter = ((n1.id + n2.id) % 17) - 8.0 
+                        min_sep = 42.0 + organic_jitter if same_cluster else 220.0
                 else:
-                    # Inject organic noise (+/- 8px) so they don't form a perfect uniform grid
                     organic_jitter = ((n1.id + n2.id) % 17) - 8.0 
                     
-                    # Dynamically expand to make room for pill and full-card geometry
-                    friend_sep = (42.0 + organic_jitter) * geom_scale
-                    stranger_sep = 340.0 * (1.0 + max(0.0, geom_scale - 1.0) * 0.6)
+                    # PROGRESSIVE SPREAD: 48px at 35% zoom, 290px at 100% zoom, 460px at 220% zoom
+                    friend_base = 48.0 + (max(0.0, self.aperture - 0.35) * 225.0)
+                    friend_sep = friend_base + organic_jitter
+                    stranger_sep = 340.0 * geom_scale
                     min_sep = friend_sep if same_cluster else stranger_sep
-
+                
                 if dist < min_sep:
                     repulse = (min_sep - dist) * 8.5
                     fx = (dx / dist) * repulse
@@ -272,7 +294,24 @@ class PhysicsEngine:
 
             rest_len = 150.0 if e.edgeType == "explicit" else (200.0 if e.edgeType == "temporal" else 240.0)
             displacement = dist - rest_len
+            
             k_spring = 0.85 * min(1.0, e.weight)
+            
+            # Soften cross-desk temporal springs
+            is_cross_desk_temporal = (e.edgeType == "temporal") and (
+                (n1.id in self.recent_node_ids) != (n2.id in self.recent_node_ids)
+            )
+            if is_cross_desk_temporal:
+                k_spring *= 0.10
+                
+            # --- FOCAL DECOUPLING FIX ---
+            # Completely snap ALL springs touching ANY active focal element (1st or 2nd degree).
+            # This allows wings and satellites to reach their UI slots without fighting the background.
+            if has_active_focus:
+                n1_focal = (n1.id == focused_node_id or n1.id in first_degree_set or n1.id in second_degree_set)
+                n2_focal = (n2.id == focused_node_id or n2.id in first_degree_set or n2.id in second_degree_set)
+                if n1_focal or n2_focal:
+                    k_spring = 0.0
 
             spring_force = displacement * k_spring
 
@@ -318,25 +357,59 @@ class PhysicsEngine:
                 elif node.id in second_degree_parent:
                     parent_node = node_map.get(second_degree_parent[node.id])
                     if parent_node:
-                        p_dx = parent_node.x - self.center_x
-                        p_dy = parent_node.y - self.center_y
-                        p_theta = math.atan2(p_dy, p_dx)
-
-                        sat_span = 180.0 * math.pow(self.aperture, 1.2)
-                        target_sat_x = parent_node.x + (math.cos(p_theta) * sat_span)
-                        target_sat_y = parent_node.y + (math.sin(p_theta) * sat_span)
+                        # Direct temporal breadcrumbs push past the card boundaries into the deep left/right void
+                        if parent_node.id == focused_node_id:
+                            sign = 1.0 if (node.id % 2 == 0) else -1.0
+                            # FIX: Guaranteed clearance outside the 1600px card (800px half-width + 720px clearance)
+                            base_clearance = (self.focal_card_w / 2.0) + 720.0
+                            sat_span_x = base_clearance + (160.0 * (self.aperture - 1.0))
+                        else:
+                            # Wing satellites push outward from their respective parent wing
+                            sign = -1.0 if parent_node.x < self.center_x else 1.0
+                            sat_span_x = 280.0 + (120.0 * (self.aperture - 1.0))
+                        
+                        y_spread = ((node.id % 5) - 2) * 140.0
+                        target_sat_x = parent_node.x + (sign * sat_span_x)
+                        target_sat_y = parent_node.y + y_spread
 
                         forces[node.id][0] += (target_sat_x - node.x) * self.k_satellite_drift
                         forces[node.id][1] += (target_sat_y - node.y) * self.k_satellite_drift
-
-                # Unfocused Background Clusters: Stay Put with Moderate Cohesion
+                # Unfocused Background Clusters: Full Progressive Cohesion & Strict Boundary
                 else:
                     c_idx = node_comp_map.get(node.id, -1)
                     if c_idx in comp_centroids:
                         ccx, ccy, count = comp_centroids[c_idx]
                         if count >= 3:
-                            forces[node.id][0] += (ccx - node.x) * 0.45
-                            forces[node.id][1] += (ccy - node.y) * 0.45
+                            dx_c = ccx - node.x
+                            dy_c = ccy - node.y
+                            dist_c = math.hypot(dx_c, dy_c) or 1.0
+
+                            # RESTORE FULL PROGRESSIVE COHESION: Prevents clusters from ripping apart
+                            base_radius = (55.0 + (24.0 * math.sqrt(count))) * geom_scale
+                            expected_radius = min(600.0 * geom_scale, base_radius)
+
+                            if dist_c < expected_radius * 0.8:
+                                k_pull = 1.25
+                            else:
+                                escape_dist = dist_c - (expected_radius * 0.8)
+                                k_pull = min(12.0, 1.25 + (escape_dist * 0.25))
+
+                            forces[node.id][0] += dx_c * k_pull
+                            forces[node.id][1] += dy_c * k_pull
+
+                    # Aspect & Card-Height Aware Boundary (Prevents cards hanging off the bottom)
+                    bound_x = (self.viewport_w / 2.0) * 0.78
+                    bound_y = (self.viewport_h / 2.0) * 0.65  # Padded to fit full card height
+
+                    if abs(dx) > bound_x:
+                        pull_ramp_x = abs(dx) - bound_x
+                        sign_x = 1.0 if dx > 0 else -1.0
+                        forces[node.id][0] -= sign_x * pull_ramp_x * 8.0
+
+                    if abs(dy) > bound_y:
+                        pull_ramp_y = abs(dy) - bound_y
+                        sign_y = 1.0 if dy > 0 else -1.0
+                        forces[node.id][1] -= sign_y * pull_ramp_y * 8.0
 
             # Ambient Void Mode
             else:
@@ -351,24 +424,43 @@ class PhysicsEngine:
                     dy = 1.0 + (node.id % 7)
                     dist_to_center = math.hypot(dx, dy)
 
-                # 2. The Donut Hole (Absolute Center Void)
-                void_radius = 750.0
+                # --- NEW WORKBENCH LOGIC START ---
+                is_recent = node.id in self.recent_node_ids
+
+                # 2. The Donut Hole (Softened for Recent Nodes)
+                # Recent nodes get an inner working ring (380px) instead of the deep void (750px)
+                void_radius = 380.0 if is_recent else 750.0
                 if dist_to_center < void_radius:
                     # Exponential ramp makes the very center violently repulsive
                     ramp = ((void_radius - dist_to_center) / void_radius) ** 1.5
                     forces[node.id][0] += (dx / dist_to_center) * ramp * 3200.0
                     forces[node.id][1] += (dy / dist_to_center) * ramp * 3200.0
 
-                # 3. Outer Viewport Containment Belt
-                containment_radius = 1250.0
-                if dist_to_center > containment_radius:
-                    pull_ramp = dist_to_center - containment_radius
-                    forces[node.id][0] -= (dx / dist_to_center) * pull_ramp * 3.5
-                    forces[node.id][1] -= (dy / dist_to_center) * pull_ramp * 3.5
+                # If it's a recent node drifting too far out, gently tug it to stay on the desk
+                if is_recent and dist_to_center > 650.0:
+                    desk_pull = (dist_to_center - 650.0) * 2.5
+                    forces[node.id][0] -= (dx / dist_to_center) * desk_pull
+                    forces[node.id][1] -= (dy / dist_to_center) * desk_pull
+
+                # 3. Outer Viewport Containment Belt (Card-Height Aware)
+                bound_x = (self.viewport_w / 2.0) * 0.78
+                bound_y = (self.viewport_h / 2.0) * 0.65
+
+                if abs(dx) > bound_x:
+                    pull_ramp_x = abs(dx) - bound_x
+                    sign_x = 1.0 if dx > 0 else -1.0
+                    forces[node.id][0] -= sign_x * pull_ramp_x * 4.5
+                
+                if abs(dy) > bound_y:
+                    pull_ramp_y = abs(dy) - bound_y
+                    sign_y = 1.0 if dy > 0 else -1.0
+                    forces[node.id][1] -= sign_y * pull_ramp_y * 4.5
 
                 # 4. Progressive Intra-Cluster Cohesion (Aperture-Aware Membrane)
                 c_idx = node_comp_map.get(node.id, -1)
-                if c_idx in comp_centroids:
+                
+                # NEW: Exempt recent nodes from being dragged back into the cluster
+                if c_idx in comp_centroids and not is_recent:
                     ccx, ccy, count = comp_centroids[c_idx]
                     if count >= 3:
                         dx_c = ccx - node.x
@@ -397,6 +489,12 @@ class PhysicsEngine:
                 node.y = self.center_y
                 continue
 
+            # NEW: Freeze hovered node under mouse in ambient mode
+            if not has_active_focus and node.id == hovered_node_id and node.id != self.pinned_node_id:
+                node.vx = 0.0
+                node.vy = 0.0
+                continue
+
             if node.id == self.pinned_node_id:
                 node.vx = 0.0
                 node.vy = 0.0
@@ -422,7 +520,7 @@ class PhysicsEngine:
             node.vy += ay * dt
 
             cur_speed = math.sqrt(node.vx * node.vx + node.vy * node.vy)
-            max_speed = 280.0 if has_active_focus else 180.0
+            max_speed = 340.0 if has_active_focus else 180.0
             if cur_speed > max_speed:
                 scale = max_speed / cur_speed
                 node.vx *= scale

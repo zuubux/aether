@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import signal
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Optional
@@ -13,6 +14,7 @@ _embedding_model: Optional[TextEmbedding] = None
 
 def _init_worker():
     """Initializes the fastembed model once per process pool worker."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     global _embedding_model
     # BAAI/bge-small-en-v1.5 generates 384-dim vectors efficiently on CPU
     _embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
