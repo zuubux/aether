@@ -62,7 +62,7 @@ class CanvasBridge(QObject):
         self.ipc.nodeDeleted.connect(self._on_node_deleted)
         self.ipc.start()
 
-        # 120Hz Physics Integrator (8ms)
+        # 120Hz Physics Integrator (8ms tick)
         self._physics_timer = QTimer()
         self._physics_timer.timeout.connect(self._on_physics_tick)
         self._physics_timer.start(8)
@@ -102,7 +102,10 @@ class CanvasBridge(QObject):
         nodes = self.store.get_all_nodes()
         active_physics_edges = self._focal_edges if self._selected_node_id > 0 else self._structural_edges
         
+        # Advance physics simulation step
         self.physics.step(nodes, active_physics_edges, self._selected_node_id, dt=0.008)
+        
+        # Synchronize dynamic cluster membranes
         self._cluster_halos = self.physics.get_cluster_halos(nodes, active_physics_edges, self._selected_node_id)
         self.clusterHalosChanged.emit()
 
@@ -123,7 +126,6 @@ class CanvasBridge(QObject):
         if not matched:
             self._structural_edges.append(new_edge)
 
-        # Balanced Ambient Composition: Prevent any single type from crowding out the others
         temporals = [e for e in self._structural_edges if e.edgeType == "temporal"]
         explicits = [e for e in self._structural_edges if e.edgeType == "explicit"]
         semantics = [e for e in self._structural_edges if e.edgeType == "semantic"]
@@ -132,7 +134,6 @@ class CanvasBridge(QObject):
         explicits.sort(key=lambda e: e.weight, reverse=True)
         semantics.sort(key=lambda e: e.weight, reverse=True)
 
-        # 20 Recent Sessions, 35 Structural Links, 35 Semantic Relationships
         self._ambient_edges = temporals[:20] + explicits[:35] + semantics[:35]
 
     # --- Properties Exposed to QML ---
@@ -247,14 +248,12 @@ class CanvasBridge(QObject):
             return
 
         if self._is_connected and node_id > 0:
-            # 1. Fire live focus touch event to Weaver
             self.ipc.call_rpc_sync(
                 "touch_node",
                 {"node_id": node_id, "event_type": "focus"},
                 callback=self._handle_touch_node_response,
             )
 
-            # 2. Query neighborhood topology for focal workbench
             self.ipc.call_rpc_sync(
                 "get_neighbors",
                 {"node_id": node_id},
@@ -292,7 +291,12 @@ class CanvasBridge(QObject):
 
         target_dir = safe_path if safe_path.is_dir() else safe_path.parent
         if target_dir.exists():
-            subprocess.Popen(["xdg-open", str(target_dir)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            subprocess.Popen(
+                ["xdg-open", str(target_dir)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
 
     # --- IPC Callbacks ---
 
@@ -330,7 +334,6 @@ class CanvasBridge(QObject):
             edge_obj = Edge(source_id=src_id, target_id=tgt_id, edge_type="temporal", weight=weight)
             self._upsert_edge(edge_obj)
 
-            # Keep focal view populated if currently viewing one of the nodes
             if self._selected_node_id in (src_id, tgt_id):
                 if not any((fe.sourceId == src_id and fe.targetId == tgt_id and fe.edgeType == "temporal") or
                            (fe.sourceId == tgt_id and fe.targetId == src_id and fe.edgeType == "temporal")
@@ -371,7 +374,8 @@ class CanvasBridge(QObject):
         if not node:
             angle = node_id * 2.399963
             radius = 350.0 + (math.sqrt(node_id) * 85.0)
-            spawn_x, spawn_y = self.physics.center_x + math.cos(angle) * radius, self.physics.center_y + math.sin(angle) * radius
+            spawn_x = self.physics.center_x + math.cos(angle) * radius
+            spawn_y = self.physics.center_y + math.sin(angle) * radius
             self.store.upsert_node(Node(id=node_id, file_path=file_path, x=spawn_x, y=spawn_y, focus=0.35))
             self.nodesChanged.emit()
         else:
@@ -397,21 +401,35 @@ class CanvasBridge(QObject):
 
         raw_edges = result.get("edges", [])
         parsed_edges: List[Edge] = [
-            Edge(source_id=int(e["source_id"]), target_id=int(e["target_id"]), edge_type=e["edge_type"], weight=float(e["weight"]))
+            Edge(
+                source_id=int(e["source_id"]),
+                target_id=int(e["target_id"]),
+                edge_type=e["edge_type"],
+                weight=float(e["weight"])
+            )
             for e in raw_edges
         ]
 
-        # Preserve any live temporal edges currently in the focal set
+        # Preserve live temporal edges from the session queue
         existing_temporals = [e for e in self._focal_edges if e.edgeType == "temporal"]
         for te in existing_temporals:
-            if not any((pe.sourceId == te.sourceId and pe.targetId == te.targetId and pe.edgeType == te.edgeType) or
-                       (pe.sourceId == te.targetId and pe.targetId == te.sourceId and pe.edgeType == te.edgeType)
-                       for pe in parsed_edges):
+            if not any(
+                (pe.sourceId == te.sourceId and pe.targetId == te.targetId and pe.edgeType == te.edgeType) or
+                (pe.sourceId == te.targetId and pe.targetId == te.sourceId and pe.edgeType == te.edgeType)
+                for pe in parsed_edges
+            ):
                 parsed_edges.append(te)
 
-        type_priority = {"temporal": 3, "explicit": 2, "semantic": 1}
-        parsed_edges.sort(key=lambda e: (type_priority.get(e.edgeType, 0), e.weight), reverse=True)
+        # Separate and apply cognitive ceilings
+        temporals = [e for e in parsed_edges if e.edgeType == "temporal" and e.weight >= 0.20]
+        explicits = [e for e in parsed_edges if e.edgeType == "explicit"]
+        semantics = [e for e in parsed_edges if e.edgeType == "semantic" and e.weight >= 0.40]
 
-        self._focal_edges = parsed_edges[:16]
+        temporals.sort(key=lambda e: e.weight, reverse=True)
+        explicits.sort(key=lambda e: e.weight, reverse=True)
+        semantics.sort(key=lambda e: e.weight, reverse=True)
+
+        # Cap: Max 4 temporals, Max 6 explicits, Max 4 semantics (Max 14 total focal lines)
+        self._focal_edges = temporals[:4] + explicits[:6] + semantics[:4]
         self._recalculate_focal_weights(self._selected_node_id)
         self.edgesChanged.emit()

@@ -114,21 +114,21 @@ Item {
     height: 0
 
     Behavior on x {
-        enabled: rootItem.isSelected && !dragArea.isDragging
+        enabled: rootItem.isSelected && !dragArea.isDragging && !resizeMouseArea.isResizing
         NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
     }
     Behavior on y {
-        enabled: rootItem.isSelected && !dragArea.isDragging
+        enabled: rootItem.isSelected && !dragArea.isDragging && !resizeMouseArea.isResizing
         NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
     }
 
-    // Composite Scale (Perspective * Interaction Zoom)
-    scale: (isHoverBloomed ? 1.15 : (isHovered ? 1.05 : 1.0)) * perspectiveScale
+    // Strict Scale Lock: Keep selected workbench card at exactly 1.0 to ensure 1:1 resize fidelity
+    scale: isSelected ? 1.0 : ((isHoverBloomed ? 1.15 : (isHovered ? 1.05 : 1.0)) * perspectiveScale)
     Behavior on scale {
         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
     }
 
-    // Depth Stacking (Foreground renders above horizon)
+    // Depth Stacking
     z: isSelected ? 9000 : (isHoverBloomed ? 8000 : (isHovered ? 7000 : Math.round((1.0 - depthZ) * 1000 + focusWeight * 100)))
 
     // Atmospheric Haze Attenuation
@@ -146,11 +146,11 @@ Item {
         clip: true
 
         Behavior on width {
-            enabled: !resizeMouseArea.isResizing
+            enabled: !resizeMouseArea.isResizing && !rootItem.isSelected
             NumberAnimation { duration: 380; easing.type: Easing.OutQuint }
         }
         Behavior on height {
-            enabled: !resizeMouseArea.isResizing
+            enabled: !resizeMouseArea.isResizing && !rootItem.isSelected
             NumberAnimation { duration: 380; easing.type: Easing.OutQuint }
         }
         Behavior on radius {
@@ -356,7 +356,7 @@ Item {
             anchors.fill: parent
             anchors.margins: 18
 
-            readonly property bool isExpandedEnough: cardBody.width > (rootItem.targetWidth * 0.65)
+            readonly property bool isExpandedEnough: cardBody.width > 600
             opacity: (rootItem.isSelected && isExpandedEnough) ? 1.0 : 0.0
             visible: opacity > 0.01
             z: 10
@@ -466,80 +466,7 @@ Item {
         }
 
         // =====================================================================
-        // Workbench Resizing Grip
-        // =====================================================================
-        Rectangle {
-            id: resizeGrip
-            visible: rootItem.isSelected
-            width: 28
-            height: 28
-            anchors.bottom: parent.bottom
-            anchors.right: parent.right
-            anchors.margins: 4
-            color: "transparent"
-            z: 500
-
-            Canvas {
-                anchors.fill: parent
-                onPaint: {
-                    var ctx = getContext("2d")
-                    ctx.reset()
-                    ctx.strokeStyle = "#38bdf8"
-                    ctx.lineWidth = 2.0
-                    ctx.beginPath()
-                    ctx.moveTo(22, 10); ctx.lineTo(10, 22)
-                    ctx.moveTo(22, 16); ctx.lineTo(16, 22)
-                    ctx.stroke()
-                }
-            }
-
-            MouseArea {
-                id: resizeMouseArea
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.SizeFDiagCursor
-
-                property bool isResizing: false
-                property real startMouseX: 0
-                property real startMouseY: 0
-                property real startW: 0
-                property real startH: 0
-
-                onPressed: function(mouse) {
-                    isResizing = true
-                    var globalPt = mapToItem(null, mouse.x, mouse.y)
-                    startMouseX = globalPt.x
-                    startMouseY = globalPt.y
-                    startW = cardBody.width
-                    startH = cardBody.height
-                }
-
-                onPositionChanged: function(mouse) {
-                if (isDragging && rootItem.bridge) {
-                    var dx = Math.abs(mouse.x - pressStartX)
-                    var dy = Math.abs(mouse.y - pressStartY)
-                    if (dx > 6 || dy > 6) {
-                        isDragMoved = true
-                    }
-
-                    var container = rootItem.viewportContainer || rootItem.parent
-                    var posInParent = mapToItem(container, mouse.x, mouse.y)
-                    
-                    // Unproject drag position back to physics space using panoramic spread
-                    var unprojX = rootItem.vpX + (posInParent.x - dragOffsetX - rootItem.vpX) / rootItem.xSpreadFactor
-                    var unprojY = rootItem.vpY + (posInParent.y - dragOffsetY - rootItem.vpY) / rootItem.perspectiveScale
-
-                    rootItem.bridge.update_drag_pos(rootItem.nodeId, unprojX, unprojY)
-                }
-            }
-
-                onReleased: { isResizing = false }
-                onCanceled: { isResizing = false }
-            }
-        }
-
-        // =====================================================================
-        // Interaction & Hover Reporting
+        // Main Card Drag & Interaction Handler
         // =====================================================================
         MouseArea {
             id: dragArea
@@ -547,6 +474,8 @@ Item {
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
+            // Disable drag handling when clicking near the bottom-right resize corner on selected cards
+            enabled: !resizeMouseArea.isResizing
 
             property real pressStartX: 0
             property real pressStartY: 0
@@ -575,6 +504,9 @@ Item {
                     return
                 }
 
+                // If selected, do not drag through physics; let it sit anchored
+                if (rootItem.isSelected) return
+
                 isDragging = true
                 isDragMoved = false
                 pressStartX = mouse.x
@@ -593,7 +525,7 @@ Item {
             }
 
             onPositionChanged: function(mouse) {
-                if (isDragging && rootItem.bridge) {
+                if (isDragging && rootItem.bridge && !rootItem.isSelected) {
                     var dx = Math.abs(mouse.x - pressStartX)
                     var dy = Math.abs(mouse.y - pressStartY)
                     if (dx > 6 || dy > 6) {
@@ -603,8 +535,7 @@ Item {
                     var container = rootItem.viewportContainer || rootItem.parent
                     var posInParent = mapToItem(container, mouse.x, mouse.y)
                     
-                    // Unproject drag position back to physics coordinate space
-                    var unprojX = rootItem.vpX + (posInParent.x - dragOffsetX - rootItem.vpX) / rootItem.perspectiveScale
+                    var unprojX = rootItem.vpX + (posInParent.x - dragOffsetX - rootItem.vpX) / rootItem.xSpreadFactor
                     var unprojY = rootItem.vpY + (posInParent.y - dragOffsetY - rootItem.vpY) / rootItem.perspectiveScale
 
                     rootItem.bridge.update_drag_pos(rootItem.nodeId, unprojX, unprojY)
@@ -621,6 +552,11 @@ Item {
                             rootItem.bridge.set_hovered_node(0)
                         }
                     }
+                } else if (!rootItem.isSelected && !isDragMoved) {
+                    if (rootItem.bridge) {
+                        rootItem.bridge.select_node(rootItem.nodeId)
+                        rootItem.bridge.set_hovered_node(0)
+                    }
                 }
             }
 
@@ -631,6 +567,72 @@ Item {
                         rootItem.bridge.release_node(rootItem.nodeId)
                     }
                 }
+            }
+        }
+
+        // =====================================================================
+        // Workbench Resizing Grip (Top-Layer Z: 1000)
+        // =====================================================================
+        Rectangle {
+            id: resizeGrip
+            visible: rootItem.isSelected
+            width: 32
+            height: 32
+            anchors.bottom: parent.bottom
+            anchors.right: parent.right
+            anchors.margins: 4
+            color: "transparent"
+            z: 1000
+
+            Canvas {
+                anchors.fill: parent
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.reset()
+                    ctx.strokeStyle = "#38bdf8"
+                    ctx.lineWidth = 2.0
+                    ctx.beginPath()
+                    ctx.moveTo(26, 12); ctx.lineTo(12, 26)
+                    ctx.moveTo(26, 18); ctx.lineTo(18, 26)
+                    ctx.stroke()
+                }
+            }
+
+            MouseArea {
+                id: resizeMouseArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.SizeFDiagCursor
+
+                property bool isResizing: false
+                property real startMouseX: 0
+                property real startMouseY: 0
+                property real startW: 0
+                property real startH: 0
+
+                onPressed: function(mouse) {
+                    isResizing = true
+                    var globalPt = mapToItem(null, mouse.x, mouse.y)
+                    startMouseX = globalPt.x
+                    startMouseY = globalPt.y
+                    startW = rootItem.bridge ? rootItem.bridge.workbenchWidth : cardBody.width
+                    startH = rootItem.bridge ? rootItem.bridge.workbenchHeight : cardBody.height
+                }
+
+                onPositionChanged: function(mouse) {
+                    if (isResizing && rootItem.bridge) {
+                        var globalPt = mapToItem(null, mouse.x, mouse.y)
+                        var deltaX = (globalPt.x - startMouseX) * 2.0
+                        var deltaY = (globalPt.y - startMouseY) * 2.0
+                        rootItem.bridge.set_workbench_dimensions(
+                            Math.max(650, Math.min(2400, startW + deltaX)),
+                            Math.max(400, Math.min(1400, startH + deltaY))
+                        )
+                    }
+                }
+
+                onReleased: { isResizing = false }
+                onCanceled: { isResizing = false }
             }
         }
     }

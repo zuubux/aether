@@ -39,8 +39,6 @@ Item {
         return -1
     }
     readonly property bool isIntraCluster: (sourceClusterId >= 0 && targetClusterId >= 0 && sourceClusterId === targetClusterId)
-
-    // Cull intra-cluster tendrils during macro zoom (<= 48%) unless hovered or focused
     readonly property bool shouldCullIntra: isIntraCluster && isVoidMode && !isHoverBloomed && (currentAperture <= 0.48)
 
     // Dynamic Endpoints & Geometry
@@ -70,7 +68,7 @@ Item {
             return Qt.point(cx + (signX * halfW), cy + (dy / Math.abs(dx)) * halfW + clampedJitter)
         } else {
             var signY = dy > 0 ? 1 : -1
-            var clampedJitter = Math.max(-halfW + 12, Math.min(halfH - 12, jitter))
+            var clampedJitter = Math.max(-halfH + 12, Math.min(halfH - 12, jitter))
             return Qt.point(cx + (dx / Math.abs(dy)) * halfH + clampedJitter, cy + (signY * halfH))
         }
     }
@@ -81,22 +79,47 @@ Item {
     readonly property point endPt: (sourceNode && targetNode) ?
         calculateSynapticPoint(tCx, tCy, tW, tH, sCx, sCy, -jitterSeed) : Qt.point(0, 0)
 
+    // =========================================================================
+    // Neutral-Buoyancy Fluid Geometry (Perpendicular Normal Deflection)
+    // =========================================================================
     readonly property real deltaX: endPt.x - startPt.x
     readonly property real deltaY: endPt.y - startPt.y
-    readonly property real spanDist: Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+    readonly property real spanDist: Math.max(1.0, Math.sqrt(deltaX * deltaX + deltaY * deltaY))
 
-    readonly property real gravitationalSlack: (spanDist < 140) ? 0 :
-        Math.max(0, Math.sin(Math.min(1.0, (spanDist - 140) / 600) * Math.PI) * 14.0)
+    // Unit Chord & Normal Vectors
+    readonly property real dirX: deltaX / spanDist
+    readonly property real dirY: deltaY / spanDist
+    readonly property real normX: -dirY
+    readonly property real normY: dirX
 
-    readonly property real cpOffset: Math.min(Math.abs(deltaX) * 0.22, 45.0)
+    // Tangent Projection Length
+    readonly property real tangentLength: Math.min(spanDist * 0.35, 95.0)
 
-    readonly property real cp1X: startPt.x + (deltaX >= 0 ? cpOffset : -cpOffset)
-    readonly property real cp1Y: startPt.y + gravitationalSlack
-    readonly property real cp2X: endPt.x - (deltaX >= 0 ? cpOffset : -cpOffset)
-    readonly property real cp2Y: endPt.y + gravitationalSlack
+    // Edge-Specific Chirality & Fluid Arc Amplitude
+    readonly property real strandChirality: ((sourceId * 31 + targetId * 17) % 2 === 0) ? 1.0 : -1.0
+    readonly property real fluidBaseAmp: Math.min(24.0, Math.max(8.0, spanDist * 0.09))
+    
+    // Slow Fluid Micro-Sway (Tied to Respiration Phase)
+    readonly property real fluidSway: Math.sin(pulsePhase * 6.28318 + (sourceId % 7)) * 4.0
+    readonly property real normalOffset: (fluidBaseAmp * strandChirality) + fluidSway
+
+    // Workbench Egress Projection (Gently kicks straight outward from lens walls)
+    readonly property real focalBiasX: {
+        if (!isFirstDegree || !sourceNode) return 0.0
+        var fcx = sourceId === selectedNodeId ? sCx : tCx
+        var ptX = sourceId === selectedNodeId ? startPt.x : endPt.x
+        return (ptX - fcx) > 0 ? 1.0 : -1.0
+    }
+    readonly property real emergenceKick: isFirstDegree ? Math.min(32.0, spanDist * 0.18) : 0.0
+
+    // Fluid Spline Control Points
+    readonly property real cp1X: startPt.x + (dirX * tangentLength) + (normX * normalOffset) + (sourceId === selectedNodeId ? focalBiasX * emergenceKick : 0.0)
+    readonly property real cp1Y: startPt.y + (dirY * tangentLength) + (normY * normalOffset)
+    readonly property real cp2X: endPt.x - (dirX * tangentLength) + (normX * normalOffset * 0.6) + (targetId === selectedNodeId ? focalBiasX * emergenceKick : 0.0)
+    readonly property real cp2Y: endPt.y - (dirY * tangentLength) + (normY * normalOffset * 0.6)
 
     // =========================================================================
-    // Deep Bioluminescent Respiration
+    // Bioluminescent Respiration Wave
     // =========================================================================
     property real pulsePhase: 0.0
 
@@ -112,7 +135,7 @@ Item {
     }
 
     // =========================================================================
-    // Strict Local Neighborhood Horizon (Max 550px)
+    // Dynamic Opacity & Attenuation
     // =========================================================================
     readonly property real ambientSpanLimit: 550.0
 
@@ -120,7 +143,6 @@ Item {
         if (!isVoidMode) {
             return (spanDist >= 2200.0) ? 0.25 : (1.0 - ((spanDist - 400.0) / 1800.0) * 0.75)
         }
-        // Hard cutoff: Any ambient line longer than 550px is instantly culled
         if (spanDist >= ambientSpanLimit) return 0.0
         if (spanDist <= 240.0) return 1.0
         return 1.0 - ((spanDist - 240.0) / (ambientSpanLimit - 240.0))
@@ -132,33 +154,34 @@ Item {
         return (sDepth + tDepth) / 2.0
     }
 
-    readonly property real depthAttenuation: 1.0 - (avgDepth * 0.50)
+    readonly property real depthAttenuation: 1.0 - (avgDepth * 0.40)
 
     readonly property real ambientOpacity: {
         if (!isVoidMode || proximityFactor <= 0.001 || shouldCullIntra) return 0.0
 
         var base = 0.0
         if (edgeType === "explicit") {
-            base = (0.10 + 0.15 * pulsePhase) * proximityFactor * Math.max(0.5, weight)
+            base = (0.14 + 0.18 * pulsePhase) * proximityFactor * Math.max(0.5, weight)
         } else if (edgeType === "temporal") {
-            base = (pulsePhase * 0.45 * Math.max(0.5, weight)) * proximityFactor
+            base = (pulsePhase * 0.52 * Math.max(0.5, weight)) * proximityFactor
         } else {
-            base = (0.05 + 0.20 * pulsePhase) * proximityFactor * Math.max(0.4, weight)
+            base = (0.08 + 0.22 * pulsePhase) * proximityFactor * Math.max(0.4, weight)
         }
         return base * depthAttenuation
     }
 
     readonly property real targetOpacity: {
         if (isHoverBloomed) {
-            return 0.95
+            return 1.0
         } else if (isFirstDegree) {
-            return Math.max(0.85, weight)
+            var scaledWeight = Math.max(0.0, Math.min(1.0, rootTendril.weight))
+            return Math.max(0.18, 0.20 + 0.78 * Math.pow(scaledWeight, 1.4))
         } else if (isSecondDegree) {
-            return 0.20
+            return 0.18 * Math.max(0.3, rootTendril.weight)
         } else if (isVoidMode) {
             return ambientOpacity
         } else {
-            return 0.04
+            return 0.03
         }
     }
 
@@ -166,30 +189,35 @@ Item {
     visible: sourceNode !== null && targetNode !== null && opacity > 0.005
 
     Behavior on opacity {
-        NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
     }
 
     readonly property color filamentColor: {
         if (isHoverBloomed) {
-            if (edgeType === "temporal") return "#fde047"
-            if (edgeType === "explicit") return "#67e8f9"
-            return "#c084fc"
+            if (edgeType === "temporal") return "#fef08a"
+            if (edgeType === "explicit") return "#7dd3fc"
+            return "#e9d5ff"
         }
         if (edgeType === "explicit") return "#38bdf8"
-        if (edgeType === "temporal") return "#fbbf24"
-        return "#a78bfa"
+        if (edgeType === "temporal") return "#fde047"
+        return "#c084fc"
     }
 
+    // =========================================================================
     // Core Synaptic Filament
+    // =========================================================================
     Shape {
         anchors.fill: parent
         asynchronous: true
-        layer.enabled: true
-        layer.smooth: true
+        preferredRendererType: Shape.CurveRenderer
 
         ShapePath {
             strokeColor: rootTendril.filamentColor
-            strokeWidth: (rootTendril.isFirstDegree || rootTendril.isHoverBloomed) ? Math.max(1.8, rootTendril.weight * 2.2) : (rootTendril.edgeType === "temporal" ? 1.3 : 1.0)
+            strokeWidth: {
+                if (rootTendril.isHoverBloomed) return 1.8
+                if (rootTendril.isFirstDegree) return Math.max(0.65, 0.50 + 1.15 * rootTendril.weight)
+                return rootTendril.edgeType === "temporal" ? 1.0 : 0.8
+            }
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
 
@@ -207,15 +235,17 @@ Item {
         }
     }
 
-    // Outer Glow Halo
+    // Outer Aura Bloom
     Shape {
         anchors.fill: parent
-        visible: rootTendril.isFirstDegree || rootTendril.isHoverBloomed || (rootTendril.isVoidMode && rootTendril.pulsePhase > 0.8)
-        opacity: rootTendril.isHoverBloomed ? 0.55 : (rootTendril.isVoidMode ? 0.15 : Math.max(0.18, rootTendril.weight * 0.35))
+        asynchronous: true
+        preferredRendererType: Shape.CurveRenderer
+        visible: rootTendril.isHoverBloomed || (rootTendril.isFirstDegree && rootTendril.weight >= 0.55) || (rootTendril.isVoidMode && rootTendril.pulsePhase > 0.80)
+        opacity: rootTendril.isHoverBloomed ? 0.65 : (rootTendril.isVoidMode ? 0.18 : Math.max(0.15, rootTendril.weight * 0.40))
 
         ShapePath {
             strokeColor: rootTendril.filamentColor
-            strokeWidth: Math.max(3.0, rootTendril.weight * 4.2)
+            strokeWidth: Math.max(2.2, rootTendril.weight * 3.4)
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
 
@@ -231,5 +261,70 @@ Item {
                 control2Y: rootTendril.cp2Y
             }
         }
+    }
+
+    // =========================================================================
+    // Diffuse Bioluminescent Synaptic Port Component
+    // =========================================================================
+    component SynapticGlowPort: Item {
+        id: portRoot
+        property color glowColor: "#38bdf8"
+        property bool isFocalLens: false
+        property real edgeWeight: 1.0
+
+        readonly property real glowSize: isFocalLens ? (14 + 10 * edgeWeight) : (8 + 6 * edgeWeight)
+        width: glowSize
+        height: glowSize
+        opacity: Math.max(0.20, Math.min(1.0, edgeWeight))
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width
+            height: parent.height
+            radius: width / 2
+            color: portRoot.glowColor
+            opacity: portRoot.isFocalLens ? (0.10 + 0.15 * portRoot.edgeWeight) : 0.12
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width * 0.55
+            height: parent.height * 0.55
+            radius: width / 2
+            color: portRoot.glowColor
+            opacity: portRoot.isFocalLens ? (0.25 + 0.35 * portRoot.edgeWeight) : 0.28
+        }
+
+        Rectangle {
+            visible: portRoot.edgeWeight >= 0.35
+            anchors.centerIn: parent
+            width: portRoot.isFocalLens ? (2.5 + 2.0 * portRoot.edgeWeight) : 2.5
+            height: width
+            radius: width / 2
+            color: "#ffffff"
+            opacity: 0.85
+        }
+    }
+
+    // Source Synaptic Port
+    SynapticGlowPort {
+        visible: (rootTendril.isFirstDegree || rootTendril.isHoverBloomed) && rootTendril.weight >= 0.25
+        x: rootTendril.startPt.x - width / 2
+        y: rootTendril.startPt.y - height / 2
+        glowColor: rootTendril.filamentColor
+        isFocalLens: rootTendril.sourceId === rootTendril.selectedNodeId
+        edgeWeight: rootTendril.weight
+        z: 9500
+    }
+
+    // Target Synaptic Port
+    SynapticGlowPort {
+        visible: (rootTendril.isFirstDegree || rootTendril.isHoverBloomed) && rootTendril.weight >= 0.25
+        x: rootTendril.endPt.x - width / 2
+        y: rootTendril.endPt.y - height / 2
+        glowColor: rootTendril.filamentColor
+        isFocalLens: rootTendril.targetId === rootTendril.selectedNodeId
+        edgeWeight: rootTendril.weight
+        z: 9500
     }
 }

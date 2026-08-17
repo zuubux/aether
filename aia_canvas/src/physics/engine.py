@@ -28,6 +28,7 @@ class PhysicsEngine:
 
         # Viscous Spring Constants
         self.k_horizon_anchor = 7.5
+        self.k_gutter_anchor = 6.5
         self.k_satellite_drift = 4.0
 
         # Bearing & Anchor State
@@ -65,9 +66,10 @@ class PhysicsEngine:
         self.recent_node_ids = recent_ids
 
     def _recalculate_horizons(self):
-        self.box_bound_x = (self.focal_card_w / 2.0) + 180.0
-        self.box_bound_y = (self.focal_card_h / 2.0) + 135.0
-        self.soft_buffer = 105.0
+        # Match the wider gutter envelope so background dots clear the companion wings
+        self.box_bound_x = (self.focal_card_w / 2.0) + 320.0
+        self.box_bound_y = (self.focal_card_h / 2.0) + 140.0
+        self.soft_buffer = 120.0
 
         diag = math.sqrt(self.box_bound_x**2 + self.box_bound_y**2)
         self.ideal_horizon_radius = diag + (180.0 * max(0.50, self.aperture))
@@ -134,7 +136,6 @@ class PhysicsEngine:
 
         for comp_idx, comp_ids in enumerate(components):
             group = [node_map[nid] for nid in comp_ids if nid in node_map]
-            # Dyad Rule: Suppress halos for components under 3 nodes
             if len(group) < 3:
                 continue
 
@@ -249,16 +250,13 @@ class PhysicsEngine:
         w = max(0.05, min(1.0, edge.weight))
         eff_ap = math.pow(self.aperture, 1.4)
 
-        # Zero-Mass Temporal Links: Never exert physical spring forces
         if edge_type == "temporal":
             return 0.0, 400.0, False
 
-        # Check for working memory desk pass attenuation
         src_desk_w = desk_pass_nodes.get(edge.sourceId, 0.0)
         tgt_desk_w = desk_pass_nodes.get(edge.targetId, 0.0)
         max_desk_w = max(src_desk_w, tgt_desk_w)
 
-        # Explicit [[WikiLinks]]: High covalent tension with non-linear stretch ramp
         if edge_type == "explicit":
             k = 13.0 if not has_active_focus else 10.5
             span = 145.0 * eff_ap
@@ -276,7 +274,6 @@ class PhysicsEngine:
             span = 220.0 * eff_ap
             is_ramp = False
 
-        # Slack Tether: Attenuate spring pull if one of the nodes is parked on the desk
         if max_desk_w > 0.0 and not has_active_focus:
             k *= (1.0 - 0.85 * max_desk_w)
             span += (600.0 * max_desk_w)
@@ -314,9 +311,7 @@ class PhysicsEngine:
         comp_centroids: Dict[int, Tuple[float, float, int]] = {}
 
         for c_idx, c_ids in enumerate(components):
-            # Only assign valid cluster IDs to clusters of 3+ nodes
             assigned_cluster_id = c_idx if len(c_ids) >= 3 else -1
-            
             c_nodes = [node_map[nid] for nid in c_ids if nid in node_map]
             if len(c_ids) >= 3 and c_nodes:
                 cx = sum(n.x for n in c_nodes) / len(c_nodes)
@@ -328,26 +323,22 @@ class PhysicsEngine:
                 if nid in node_map:
                     node_map[nid].clusterId = assigned_cluster_id
 
-        # 2. Working Memory Desk Queue & Staging Arc Slots
-        # Capacity throttles with aperture zoom and screen width (Max 5)
+        # 2. Working Memory Desk Queue & Staging Arc Slots (Ambient Mode)
         max_desk_slots = max(2, min(5, round(5.0 * min(1.0, self.aperture) * (self.width / 2560.0))))
         active_desk_ids = [nid for nid in self.recent_node_ids if nid in node_map and nid != focused_node_id][:max_desk_slots]
         num_desk = len(active_desk_ids)
 
-        desk_pass_nodes: Dict[int, float] = {}   # node_id -> desk_weight in [0.6, 1.0]
+        desk_pass_nodes: Dict[int, float] = {}
         desk_slot_targets: Dict[int, Tuple[float, float]] = {}
 
         if num_desk > 0:
-            # Elliptical Horseshoe Tray below the focal center
             arc_rx = 450.0 * min(1.0, math.pow(self.aperture, 0.8))
             arc_ry = 260.0 * min(1.0, math.pow(self.aperture, 0.8))
-            delta_theta = 0.38  # ~21 degrees per slot separation
+            delta_theta = 0.38
 
             for idx, nid in enumerate(active_desk_ids):
                 weight = 1.0 - (idx / float(max_desk_slots)) * 0.35
                 desk_pass_nodes[nid] = weight
-
-                # Inverted arc hanging below workbench
                 slot_offset = (idx - (num_desk - 1) / 2.0) * delta_theta
                 slot_x = self.center_x - math.sin(slot_offset) * arc_rx
                 slot_y = self.center_y + math.cos(slot_offset) * arc_ry + 60.0
@@ -358,16 +349,20 @@ class PhysicsEngine:
             deg = sum(1 for e in edges if e.sourceId == n.id or e.targetId == n.id)
             node_mass[n.id] = 1.0 + (0.45 * deg)
 
-        # 3. Focus Transition & Horizon Bearing Latching
+        # 3. Focus Transition & Magnetic Lateral Gutter Targets
         first_degree_set: Set[int] = set()
         second_degree_parent: Dict[int, int] = {}
+        wing_targets: Dict[int, Tuple[float, float]] = {}
 
         if has_active_focus:
+            focal_weights: Dict[int, float] = {}
             for e in edges:
                 if e.sourceId == focused_node_id:
                     first_degree_set.add(e.targetId)
+                    focal_weights[e.targetId] = max(focal_weights.get(e.targetId, 0.0), e.weight)
                 elif e.targetId == focused_node_id:
                     first_degree_set.add(e.sourceId)
+                    focal_weights[e.sourceId] = max(focal_weights.get(e.sourceId, 0.0), e.weight)
 
             for e in edges:
                 src, tgt = e.sourceId, e.targetId
@@ -380,8 +375,28 @@ class PhysicsEngine:
                 self._last_focused_id = focused_node_id
                 self._horizon_bearings.clear()
 
+            # Rank 1st degree companions by edge weight for lateral wing slotting (up to 4)
+            sorted_companions = sorted(list(first_degree_set), key=lambda nid: focal_weights.get(nid, 0.0), reverse=True)
+            top_companions = sorted_companions[:4]
+            left_wing = [nid for idx, nid in enumerate(top_companions) if idx % 2 == 0]
+            right_wing = [nid for idx, nid in enumerate(top_companions) if idx % 2 != 0]
+
+            def compute_wing_slots(c_ids: List[int], is_left: bool):
+                total = len(c_ids)
+                sign = -1.0 if is_left else 1.0
+                # Increased lateral clearance from 130.0 -> 240.0 for natural tendril curvature
+                target_x = self.center_x + sign * ((self.focal_card_w / 2.0) + 240.0)
+                for idx, nid in enumerate(c_ids):
+                    # Roomy vertical distribution
+                    y_offset = (idx - (total - 1) / 2.0) * 110.0
+                    wing_targets[nid] = (target_x, self.center_y + y_offset)
+
+            compute_wing_slots(left_wing, is_left=True)
+            compute_wing_slots(right_wing, is_left=False)
+
+            # Secondary 1st-degree connections retain horizon bearings
             for n_id in first_degree_set:
-                if n_id not in self._horizon_bearings and n_id in node_map:
+                if n_id not in wing_targets and n_id not in self._horizon_bearings and n_id in node_map:
                     n = node_map[n_id]
                     self._horizon_bearings[n_id] = math.atan2(n.y - self.center_y, n.x - self.center_x)
         else:
@@ -420,7 +435,6 @@ class PhysicsEngine:
                 overlap_x = req_sep_x - abs_dx
                 overlap_y = req_sep_y - abs_dy
 
-                # Box Non-Overlap Push (Applies universally for legibility)
                 if overlap_x > 0.0 and overlap_y > 0.0:
                     dist = math.sqrt(dx * dx + dy * dy) + 0.1
                     dir_x = (dx / dist) if dist > 0.1 else 1.0
@@ -434,7 +448,6 @@ class PhysicsEngine:
                     forces[n2.id][0] += dir_x * box_push
                     forces[n2.id][1] += dir_y * box_push
 
-                # Inter-Component Coulomb Repulsion (Strictly between different clusters)
                 elif not is_same_component:
                     dist_sq = (dx * dx) + (dy * dy * 2.0) + 400.0
                     dist = math.sqrt(dist_sq)
@@ -449,7 +462,7 @@ class PhysicsEngine:
                     forces[n2.id][0] += fx
                     forces[n2.id][1] += fy
 
-        # 5. Tendril Elasticity with Slack Tether Attenuation
+        # 5. Tendril Elasticity
         for edge in edges:
             src = node_map.get(edge.sourceId)
             dst = node_map.get(edge.targetId)
@@ -482,7 +495,7 @@ class PhysicsEngine:
             forces[dst.id][0] -= fx
             forces[dst.id][1] -= fy
 
-        # 6. Ambient Void, Desk Staging Slots, and Intra-Cluster Cohesion
+        # 6. Focal Workbench Anchors, Lateral Gutters & Ambient Flow
         soft_hull_x = self.box_bound_x + self.soft_buffer
         soft_hull_y = self.box_bound_y + self.soft_buffer
 
@@ -501,7 +514,13 @@ class PhysicsEngine:
             dist_to_center = math.sqrt(dx * dx + dy * dy) + 0.1
 
             if has_active_focus:
-                if node.id in first_degree_set:
+                # 1st-Degree Companions: Soft Wing Gutters vs Horizon Bearings
+                if node.id in wing_targets:
+                    wx, wy = wing_targets[node.id]
+                    forces[node.id][0] += (wx - node.x) * self.k_gutter_anchor
+                    forces[node.id][1] += (wy - node.y) * self.k_gutter_anchor
+
+                elif node.id in first_degree_set:
                     theta = self._horizon_bearings.get(node.id, math.atan2(dy, dx))
                     target_r = self._get_conformal_horizon_radius(theta)
                     target_x = self.center_x + math.cos(theta) * target_r
@@ -510,20 +529,22 @@ class PhysicsEngine:
                     forces[node.id][0] += (target_x - node.x) * self.k_horizon_anchor
                     forces[node.id][1] += (target_y - node.y) * self.k_horizon_anchor
 
+                # 2nd-Degree Nodes: Satellites orbiting their 1st-degree parent
                 elif node.id in second_degree_parent:
                     parent_node = node_map.get(second_degree_parent[node.id])
                     if parent_node:
-                        p_theta = self._horizon_bearings.get(
-                            parent_node.id,
-                            math.atan2(parent_node.y - self.center_y, parent_node.x - self.center_x)
-                        )
-                        sat_span = 200.0 * math.pow(self.aperture, 1.2)
+                        p_dx = parent_node.x - self.center_x
+                        p_dy = parent_node.y - self.center_y
+                        p_theta = math.atan2(p_dy, p_dx)
+
+                        sat_span = 180.0 * math.pow(self.aperture, 1.2)
                         target_sat_x = parent_node.x + (math.cos(p_theta) * sat_span)
                         target_sat_y = parent_node.y + (math.sin(p_theta) * sat_span)
 
                         forces[node.id][0] += (target_sat_x - node.x) * self.k_satellite_drift
                         forces[node.id][1] += (target_sat_y - node.y) * self.k_satellite_drift
 
+                # Unfocused Background Nodes: Desk Clearance Field
                 else:
                     if abs_dx < soft_hull_x and abs_dy < soft_hull_y:
                         pen_x = max(0.0, soft_hull_x - abs_dx) / self.soft_buffer
@@ -533,11 +554,11 @@ class PhysicsEngine:
                         dir_x = (dx / dist_to_center) if dist_to_center > 1.0 else 1.0
                         dir_y = (dy / dist_to_center) if dist_to_center > 1.0 else 0.0
 
-                        forces[node.id][0] += dir_x * ramp * 600.0
-                        forces[node.id][1] += dir_y * ramp * 600.0
+                        forces[node.id][0] += dir_x * ramp * 2200.0
+                        forces[node.id][1] += dir_y * ramp * 2200.0
 
             else:
-                # AMBIENT MODE: Working Memory Desk Slot vs Central Void Shove
+                # AMBIENT MODE
                 if node.id in desk_slot_targets:
                     slot_x, slot_y = desk_slot_targets[node.id]
                     desk_w = desk_pass_nodes.get(node.id, 1.0)
@@ -545,7 +566,6 @@ class PhysicsEngine:
                     forces[node.id][1] += (slot_y - node.y) * (6.5 * desk_w)
 
                 else:
-                    # Standard Ambient Void Clearing Field
                     void_radius_x = 1000.0
                     void_radius_y = 675.0
                     normalized_dist = math.sqrt((dx / void_radius_x)**2 + (dy / void_radius_y)**2)
@@ -558,7 +578,6 @@ class PhysicsEngine:
                         forces[node.id][0] += dir_x * push_intensity
                         forces[node.id][1] += dir_y * push_intensity
 
-                    # Ambient Landscape Orbit
                     ideal_ring_x = 1500.0
                     ideal_ring_y = 900.0
                     current_ring_dist = math.sqrt((dx / ideal_ring_x)**2 + (dy / ideal_ring_y)**2)
@@ -566,7 +585,6 @@ class PhysicsEngine:
                     forces[node.id][0] += (dx / dist_to_center) * ring_delta * 12.0
                     forces[node.id][1] += (dy / dist_to_center) * ring_delta * 12.0
 
-                    # Intra-Cluster Centroid Cohesion
                     c_idx = node_comp_map.get(node.id, -1)
                     if c_idx in comp_centroids:
                         ccx, ccy, count = comp_centroids[c_idx]
@@ -579,7 +597,7 @@ class PhysicsEngine:
                 forces[node.id][0] += (c_x - node.x) * 40.0
                 forces[node.id][1] += (c_y - node.y) * 40.0
 
-            # Harmonic Biological Respiration
+            # Biological Micro-Respiration
             phase = node.id * 1.618033
             drift_x = math.sin(elapsed * 0.22 + phase) + (0.35 * math.sin(elapsed * 0.10 + phase * 2.1))
             drift_y = math.cos(elapsed * 0.18 + phase * 1.3) + (0.35 * math.cos(elapsed * 0.08 + phase * 0.7))
@@ -617,7 +635,7 @@ class PhysicsEngine:
             node.vy += ay * dt
 
             cur_speed = math.sqrt(node.vx * node.vx + node.vy * node.vy)
-            max_speed = 35.0 if has_active_focus else 28.0
+            max_speed = 280.0 if has_active_focus else 180.0
             if cur_speed > max_speed:
                 scale = max_speed / cur_speed
                 node.vx *= scale

@@ -8,14 +8,11 @@ import sys
 import signal
 import logging
 from pathlib import Path
-from PyQt6.QtGui import QGuiApplication
+from PyQt6.QtGui import QGuiApplication, QSurfaceFormat
 from PyQt6.QtQml import QQmlApplicationEngine
 from PyQt6.QtCore import QTimer
 
 from bridge import CanvasBridge
-
-# Allow clean Ctrl+C termination from terminal
-signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 def setup_observability():
     """Configure structured stdout logging for systemd-journald."""
@@ -30,9 +27,19 @@ def main():
     logger = setup_observability()
     logger.info("Initializing Aether Canvas...")
 
+    # Set 4x hardware MSAA and enable vsync matching your high refresh rate
+    surface_format = QSurfaceFormat()
+    surface_format.setSamples(4)
+    surface_format.setSwapInterval(1)
+    QSurfaceFormat.setDefaultFormat(surface_format)
+
+    # Instantiate QGuiApplication exactly once
     app = QGuiApplication(sys.argv)
     app.setApplicationName("Aether Canvas")
     app.setOrganizationName("Aether")
+
+    # Allow clean Ctrl+C termination from terminal
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     engine = QQmlApplicationEngine()
 
