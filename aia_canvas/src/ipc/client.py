@@ -53,6 +53,14 @@ class WeaverIPCClient(QObject):
         asyncio.set_event_loop(self._loop)
         self._loop.run_until_complete(self._lifecycle_loop())
 
+    def _flush_pending_callbacks(self, error_msg: str):
+        for req_id, callback in list(self._pending_callbacks.items()):
+            try:
+                callback(None, error_msg)
+            except Exception as e:
+                logger.error(f"Error in pending callback: {e}")
+        self._pending_callbacks.clear()
+
     async def _lifecycle_loop(self):
         while self._running:
             try:
@@ -69,10 +77,12 @@ class WeaverIPCClient(QObject):
 
             except (ConnectionRefusedError, FileNotFoundError, asyncio.IncompleteReadError):
                 self.disconnected.emit()
+                self._flush_pending_callbacks("IPC disconnected")
                 await asyncio.sleep(2.0)
             except Exception as e:
                 logger.error(f"IPC socket fault: {e}")
                 self.disconnected.emit()
+                self._flush_pending_callbacks(f"IPC socket fault: {e}")
                 await asyncio.sleep(2.0)
 
     async def _listen_stream(self):
@@ -117,7 +127,7 @@ class WeaverIPCClient(QObject):
         if callback:
             callback(result, error if error else None)
 
-    def call_rpc_sync(self, method: str, params: dict, callback: Optional[Callable] = None):
+    def call_rpc_sync(self, method: str, params: dict, callback: Optional[Callable] = None, timeout: float = 5.0):
         """Dispatches an asynchronous RPC request from Qt without blocking the UI thread."""
         if not self._running or not self._loop or not self._writer:
             if callback:
@@ -128,6 +138,16 @@ class WeaverIPCClient(QObject):
         req_id = self._req_id
         if callback:
             self._pending_callbacks[req_id] = callback
+            # Schedule a timeout to flush this specific callback
+            self._loop.call_later(timeout, self._handle_rpc_timeout, req_id)
+
+    def _handle_rpc_timeout(self, req_id: int):
+        callback = self._pending_callbacks.pop(req_id, None)
+        if callback:
+            try:
+                callback(None, "RPC request timed out")
+            except Exception as e:
+                logger.error(f"Error in RPC timeout callback: {e}")
 
         payload = {
             "jsonrpc": "2.0",

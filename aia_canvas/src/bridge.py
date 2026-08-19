@@ -38,6 +38,11 @@ class CanvasBridge(QObject):
         self._selected_node_id: int = 0
         self._hovered_node_id: int = 0
         self._is_connected = False
+        
+        self._cached_first_degree: Set[int] = set()
+        self._cached_second_degree: Set[int] = set()
+        self._cached_second_degree_parent: Dict[int, int] = {}
+        self._cached_focal_weights: Dict[int, float] = {}
 
         self._aperture: float = 1.0
         self._workbench_width: float = 1600.0
@@ -68,6 +73,11 @@ class CanvasBridge(QObject):
         self._physics_timer.start(8)
 
     def _recalculate_focal_weights(self, primary_id: int):
+        self._cached_first_degree.clear()
+        self._cached_second_degree.clear()
+        self._cached_second_degree_parent.clear()
+        self._cached_focal_weights.clear()
+
         if primary_id <= 0:
             for node in self.store.get_all_nodes():
                 node.focus = 0.35
@@ -76,24 +86,35 @@ class CanvasBridge(QObject):
         edges = self._focal_edges
         first_degree: Set[int] = set()
         temporal_first_degree: Set[int] = set()
-
+        focal_weights: Dict[int, float] = {}
+        
         for e in edges:
             if primary_id in (e.sourceId, e.targetId):
                 target = e.targetId if e.sourceId == primary_id else e.sourceId
                 if e.edgeType == "temporal":
                     temporal_first_degree.add(target)
+                    self._cached_second_degree_parent[target] = primary_id
                 else:
                     first_degree.add(target)
+                    focal_weights[target] = max(focal_weights.get(target, 0.0), e.weight)
 
         second_degree: Set[int] = set()
         for e in edges:
-            if e.sourceId in first_degree and e.targetId != primary_id:
+            if e.sourceId in first_degree and e.targetId != primary_id and e.targetId not in first_degree:
                 second_degree.add(e.targetId)
-            elif e.targetId in first_degree and e.sourceId != primary_id:
+                if e.targetId not in self._cached_second_degree_parent:
+                    self._cached_second_degree_parent[e.targetId] = e.sourceId
+            elif e.targetId in first_degree and e.sourceId != primary_id and e.sourceId not in first_degree:
                 second_degree.add(e.sourceId)
+                if e.sourceId not in self._cached_second_degree_parent:
+                    self._cached_second_degree_parent[e.sourceId] = e.targetId
 
         # Push temporal breadcrumbs natively into the Tier 2 satellite orbit
         second_degree.update(temporal_first_degree - first_degree)
+
+        self._cached_first_degree = first_degree
+        self._cached_second_degree = second_degree
+        self._cached_focal_weights = focal_weights
 
         for node in self.store.get_all_nodes():
             if node.id == primary_id:
@@ -121,8 +142,21 @@ class CanvasBridge(QObject):
                     active_physics_edges.append(e)
         
         # Pass hovered node ID into step
-        self.physics.step(nodes, active_physics_edges, self._selected_node_id, self._hovered_node_id, dt=0.008)
+        is_active = self.physics.step(
+            nodes, active_physics_edges, self._selected_node_id, self._hovered_node_id, dt=0.008,
+            first_degree_set=self._cached_first_degree,
+            second_degree_set=self._cached_second_degree,
+            second_degree_parent=self._cached_second_degree_parent,
+            focal_weights=self._cached_focal_weights
+        )
         
+        if not is_active and self._physics_timer.isActive():
+            self._physics_timer.stop()
+            # Still update halos one last time when stopping
+            self._cluster_halos = self.physics.get_cluster_halos(nodes, active_physics_edges, self._selected_node_id)
+            self.clusterHalosChanged.emit()
+            return
+            
         self._cluster_halos = self.physics.get_cluster_halos(nodes, active_physics_edges, self._selected_node_id)
         self.clusterHalosChanged.emit()
 
@@ -130,8 +164,13 @@ class CanvasBridge(QObject):
         self._last_frametime_ms = (t1 - t0) * 1000.0
         self.telemetryChanged.emit()
 
+    def _wake_physics(self):
+        if not self._physics_timer.isActive():
+            self._physics_timer.start(8)
+
     def _upsert_edge(self, new_edge: Edge):
         """Insert or update edge with balanced multi-tier ambient allocation."""
+        self._wake_physics()
         matched = False
         for idx, e in enumerate(self._structural_edges):
             if (e.sourceId == new_edge.sourceId and e.targetId == new_edge.targetId and e.edgeType == new_edge.edgeType) or \
@@ -220,6 +259,7 @@ class CanvasBridge(QObject):
         if self._hovered_node_id != node_id:
             self._hovered_node_id = node_id
             self.hoveredNodeChanged.emit(node_id)
+            self._wake_physics()
 
     @pyqtSlot(int, result=int)
     def get_downstream_count(self, node_id: int) -> int:
@@ -239,6 +279,7 @@ class CanvasBridge(QObject):
             self._aperture = new_val
             self.physics.set_aperture(new_val)
             self.apertureChanged.emit(new_val)
+            self._wake_physics()
 
     @pyqtSlot(float, float)
     def set_workbench_dimensions(self, width: float, height: float):
@@ -257,6 +298,7 @@ class CanvasBridge(QObject):
 
     @pyqtSlot(int)
     def select_node(self, node_id: int):
+        self._wake_physics()
         if self._selected_node_id != node_id:
             self._selected_node_id = node_id
             
@@ -289,6 +331,7 @@ class CanvasBridge(QObject):
 
     @pyqtSlot(int, float, float)
     def pin_node(self, node_id: int, x: float, y: float):
+        self._wake_physics()
         self.physics.pin_node(node_id)
         node = self.store.get_node(node_id)
         if node:
@@ -297,6 +340,7 @@ class CanvasBridge(QObject):
 
     @pyqtSlot(int, float, float)
     def update_drag_pos(self, node_id: int, x: float, y: float):
+        self._wake_physics()
         node = self.store.get_node(node_id)
         if node:
             node.x = x
@@ -304,6 +348,7 @@ class CanvasBridge(QObject):
 
     @pyqtSlot(int)
     def release_node(self, node_id: int):
+        self._wake_physics()
         self.physics.unpin_node()
 
     @pyqtSlot(int, float, float)
@@ -340,8 +385,13 @@ class CanvasBridge(QObject):
         if error or not isinstance(result, list):
             return
 
-        for node_data in result:
-            self._on_node_updated(node_data)
+        # Temporarily disconnect the signal to prevent duplicate incoming nodeUpdated events
+        self.ipc.nodeUpdated.disconnect(self._on_node_updated)
+        try:
+            for node_data in result:
+                self._on_node_updated(node_data)
+        finally:
+            self.ipc.nodeUpdated.connect(self._on_node_updated)
 
         for n in self.store.get_all_nodes():
             self.ipc.call_rpc_sync("get_neighbors", {"node_id": n.id}, callback=self._handle_ambient_edges_response)
@@ -388,6 +438,7 @@ class CanvasBridge(QObject):
             self.edgesChanged.emit()
 
     def _on_node_updated(self, data: dict):
+        self._wake_physics()
         raw_id = data.get("node_id") if data.get("node_id") is not None else data.get("id")
         if raw_id is None:
             return
@@ -400,7 +451,13 @@ class CanvasBridge(QObject):
         node = self.store.get_node(node_id)
         if not node:
             angle = node_id * 2.399963
-            radius = 350.0 + (math.sqrt(node_id) * 85.0)
+            # Limit the radius to within the current viewport bounds
+            max_r_x = self.physics.viewport_w * 0.4
+            max_r_y = self.physics.viewport_h * 0.4
+            # Keep within the screen boundaries safely
+            base_r = min(max_r_x, max_r_y)
+            radius = min(350.0 + (math.sqrt(node_id) * 85.0), max(50.0, base_r - 150.0))
+            
             spawn_x = self.physics.center_x + math.cos(angle) * radius
             spawn_y = self.physics.center_y + math.sin(angle) * radius
             self.store.upsert_node(Node(id=node_id, file_path=file_path, x=spawn_x, y=spawn_y, focus=0.35))
@@ -411,6 +468,7 @@ class CanvasBridge(QObject):
         self._recalculate_focal_weights(self._selected_node_id)
 
     def _on_node_deleted(self, data: dict):
+        self._wake_physics()
         raw_id = data.get("node_id") if data.get("node_id") is not None else data.get("id")
         if raw_id is not None:
             node_id = int(raw_id)

@@ -118,12 +118,25 @@ class PhysicsEngine:
 
         return components
 
-    def step(self, nodes: List[Node], edges: List[Edge], focused_node_id: int, hovered_node_id: int = 0, dt: float = 0.008):
+    def step(self, nodes: List[Node], edges: List[Edge], focused_node_id: int, hovered_node_id: int = 0, dt: float = 0.008,
+             first_degree_set: Optional[Set[int]] = None,
+             second_degree_set: Optional[Set[int]] = None,
+             second_degree_parent: Optional[Dict[int, int]] = None,
+             focal_weights: Optional[Dict[int, float]] = None) -> bool:
+        """
+        Advances the physics simulation by one tick.
+        Returns True if the system is still active, False if it has settled and can sleep.
+        """
         if not nodes:
-            return
+            return False
 
         node_map = {n.id: n for n in nodes}
         has_active_focus = (focused_node_id > 0) and (focused_node_id in node_map)
+
+        first_degree_set = first_degree_set or set()
+        second_degree_set = second_degree_set or set()
+        second_degree_parent = second_degree_parent or {}
+        focal_weights = focal_weights or {}
 
         # 0. Reset all nodes to independent status at the start of the tick
         for node in nodes:
@@ -147,34 +160,6 @@ class PhysicsEngine:
                     node_comp_map[nid] = c_idx
                     if nid in node_map:
                         node_map[nid].clusterId = c_idx
-
-        # 2. Relational Hierarchy for Active Focus
-        first_degree_set: Set[int] = set()
-        second_degree_set: Set[int] = set()
-        second_degree_parent: Dict[int, int] = {}
-        focal_weights: Dict[int, float] = {}
-
-        if has_active_focus:
-            for e in edges:
-                if e.sourceId == focused_node_id or e.targetId == focused_node_id:
-                    target = e.targetId if e.sourceId == focused_node_id else e.sourceId
-                    # Tier 2 Allocation: Temporals instantly bypass wings and map to satellites
-                    if e.edgeType == "temporal":
-                        second_degree_set.add(target)
-                        second_degree_parent[target] = focused_node_id
-                    else:
-                        first_degree_set.add(target)
-                        focal_weights[target] = max(focal_weights.get(target, 0.0), e.weight)
-
-            for e in edges:
-                if e.sourceId in first_degree_set and e.targetId != focused_node_id and e.targetId not in first_degree_set:
-                    second_degree_set.add(e.targetId)
-                    if e.targetId not in second_degree_parent:
-                        second_degree_parent[e.targetId] = e.sourceId
-                elif e.targetId in first_degree_set and e.sourceId != focused_node_id and e.sourceId not in first_degree_set:
-                    second_degree_set.add(e.sourceId)
-                    if e.sourceId not in second_degree_parent:
-                        second_degree_parent[e.sourceId] = e.targetId
 
         # 3. Wing Target Allocation (Top 8 Companions Flanked Left / Right)
         wing_targets: Dict[int, Tuple[float, float]] = {}
@@ -528,6 +513,13 @@ class PhysicsEngine:
 
             node.x += node.vx * dt
             node.y += node.vy * dt
+
+        # Kinetic Energy Cutoff
+        total_velocity = sum(math.sqrt(n.vx**2 + n.vy**2) for n in nodes)
+        if total_velocity < 0.01 * len(nodes):
+            return False
+
+        return True
 
     def get_cluster_halos(self, nodes: List[Node], edges: List[Edge], focused_id: int) -> List[dict]:
         if not nodes:
