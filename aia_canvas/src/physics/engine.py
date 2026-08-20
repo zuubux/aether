@@ -133,6 +133,13 @@ class PhysicsEngine:
         node_map = {n.id: n for n in nodes}
         has_active_focus = (focused_node_id > 0) and (focused_node_id in node_map)
 
+        # Viewport-Aware Zoom/Aperture Center update
+        wing_width = (self.viewport_w - self.focal_card_w) / 2.0
+        if has_active_focus:
+            self.center_x = (self.viewport_w - wing_width) / 2.0
+        else:
+            self.center_x = self.viewport_w / 2.0
+
         first_degree_set = first_degree_set or set()
         second_degree_set = second_degree_set or set()
         second_degree_parent = second_degree_parent or {}
@@ -148,7 +155,11 @@ class PhysicsEngine:
         comp_centroids: Dict[int, Tuple[float, float, int]] = {}
 
         for c_idx, comp in enumerate(components):
-            c_nodes = [node_map[nid] for nid in comp if nid in node_map]
+            # Exclude focused and docked wing nodes from the centroid calculation of background clusters
+            if has_active_focus:
+                c_nodes = [node_map[nid] for nid in comp if nid in node_map and nid != focused_node_id and nid not in first_degree_set and nid not in second_degree_set]
+            else:
+                c_nodes = [node_map[nid] for nid in comp if nid in node_map]
             
             # ONLY form a mathematical cluster if there are 3 or more nodes
             if len(c_nodes) >= 3:
@@ -215,7 +226,7 @@ class PhysicsEngine:
                             forces[nid][1] += push_y / math.sqrt(count2)
 
         # 6. Pairwise Node Repulsion (Aperture-Aware Physical Scaling)
-        # Smoothly scales from 1.0x at 0.35 zoom up to ~3.8x at 2.20 zoom
+        # Smoothly scales from 1.0x at 0.35 zoom up to ~3.8x at 2.20 zoom, clamping at 1.0x for low aperture
         geom_scale = 1.0 + max(0.0, (self.aperture - 0.35) * 1.5)
         
         node_list = list(nodes)
@@ -252,7 +263,7 @@ class PhysicsEngine:
                     organic_jitter = ((n1.id + n2.id) % 17) - 8.0 
                     
                     # PROGRESSIVE SPREAD: 48px at 35% zoom, 290px at 100% zoom, 460px at 220% zoom
-                    friend_base = 48.0 + (max(0.0, self.aperture - 0.35) * 225.0)
+                    friend_base = 48.0 + max(0.0, (self.aperture - 0.35) * 225.0)
                     friend_sep = friend_base + organic_jitter
                     stranger_sep = 340.0 * geom_scale
                     min_sep = friend_sep if same_cluster else stranger_sep
@@ -282,20 +293,27 @@ class PhysicsEngine:
             
             k_spring = 0.85 * min(1.0, e.weight)
             
-            # Soften cross-desk temporal springs
-            is_cross_desk_temporal = (e.edgeType == "temporal") and (
-                (n1.id in self.recent_node_ids) != (n2.id in self.recent_node_ids)
-            )
-            if is_cross_desk_temporal:
-                k_spring *= 0.10
+            if e.edgeType.lower() == "temporal":
+                k_spring = 0.0
+            else:
+                # Soften cross-desk temporal springs
+                is_cross_desk_temporal = (e.edgeType == "temporal") and (
+                    (n1.id in self.recent_node_ids) != (n2.id in self.recent_node_ids)
+                )
+                if is_cross_desk_temporal:
+                    k_spring *= 0.10
                 
             # --- FOCAL DECOUPLING FIX ---
-            # Completely snap ALL springs touching ANY active focal element (1st or 2nd degree).
-            # This allows wings and satellites to reach their UI slots without fighting the background.
+            # Temporarily disable or zero out spring forces (k = 0) between docked wing nodes and non-focused peripheral nodes.
             if has_active_focus:
-                n1_focal = (n1.id == focused_node_id or n1.id in first_degree_set or n1.id in second_degree_set)
-                n2_focal = (n2.id == focused_node_id or n2.id in first_degree_set or n2.id in second_degree_set)
-                if n1_focal or n2_focal:
+                n1_docked = (n1.id in first_degree_set or n1.id in second_degree_set)
+                n2_docked = (n2.id in first_degree_set or n2.id in second_degree_set)
+                n1_peripheral = (n1.id != focused_node_id and not n1_docked)
+                n2_peripheral = (n2.id != focused_node_id and not n2_docked)
+                
+                if (n1_docked and n2_peripheral) or (n2_docked and n1_peripheral):
+                    k_spring = 0.0
+                elif (n1.id == focused_node_id and n2_peripheral) or (n2.id == focused_node_id and n1_peripheral):
                     k_spring = 0.0
 
             spring_force = displacement * k_spring
@@ -325,40 +343,32 @@ class PhysicsEngine:
                     forces[node.id][0] += (self.center_x - node.x) * 18.0
                     forces[node.id][1] += (self.center_y - node.y) * 18.0
 
-                elif node.id in wing_targets:
-                    wx, wy = wing_targets[node.id]
-                    forces[node.id][0] += (wx - node.x) * self.k_gutter_anchor
-                    forces[node.id][1] += (wy - node.y) * self.k_gutter_anchor
+                elif node.id in first_degree_set or node.id in second_degree_parent:
+                    viewport_center_x = self.viewport_w / 2.0
+                    workbench_width = self.focal_card_w
+                    workbench_x = (self.viewport_w - workbench_width) / 2.0
+                    margin = 450.0
+                    left_shelf_x = workbench_x - margin
+                    right_shelf_x = workbench_x + workbench_width + margin
 
-                elif node.id in first_degree_set:
-                    theta = self._horizon_bearings.get(node.id, math.atan2(dy, dx))
-                    target_r = self._get_conformal_horizon_radius(theta)
-                    target_x = self.center_x + math.cos(theta) * target_r
-                    target_y = self.center_y + math.sin(theta) * target_r
+                    if node.x <= viewport_center_x:
+                        target_x = left_shelf_x
+                    else:
+                        target_x = right_shelf_x
 
-                    forces[node.id][0] += (target_x - node.x) * self.k_horizon_anchor
-                    forces[node.id][1] += (target_y - node.y) * self.k_horizon_anchor
+                    forces[node.id][0] += (target_x - node.x) * self.k_gutter_anchor
 
-                elif node.id in second_degree_parent:
-                    parent_node = node_map.get(second_degree_parent[node.id])
-                    if parent_node:
-                        # Direct temporal breadcrumbs push past the card boundaries into the deep left/right void
-                        if parent_node.id == focused_node_id:
-                            sign = 1.0 if (node.id % 2 == 0) else -1.0
-                            # FIX: Guaranteed clearance outside the 1600px card (800px half-width + 720px clearance)
-                            base_clearance = (self.focal_card_w / 2.0) + 720.0
-                            sat_span_x = base_clearance + (160.0 * (self.aperture - 1.0))
-                        else:
-                            # Wing satellites push outward from their respective parent wing
-                            sign = -1.0 if parent_node.x < self.center_x else 1.0
-                            sat_span_x = 280.0 + (120.0 * (self.aperture - 1.0))
-                        
-                        y_spread = ((node.id % 5) - 2) * 140.0
-                        target_sat_x = parent_node.x + (sign * sat_span_x)
-                        target_sat_y = parent_node.y + y_spread
-
-                        forces[node.id][0] += (target_sat_x - node.x) * self.k_satellite_drift
-                        forces[node.id][1] += (target_sat_y - node.y) * self.k_satellite_drift
+                    if node.id in wing_targets:
+                        _, wy = wing_targets[node.id]
+                        forces[node.id][1] += (wy - node.y) * self.k_gutter_anchor
+                    elif node.id in second_degree_parent:
+                        parent_node = node_map.get(second_degree_parent[node.id])
+                        if parent_node:
+                            y_spread = ((node.id % 5) - 2) * 140.0
+                            target_sat_y = parent_node.y + y_spread
+                            forces[node.id][1] += (target_sat_y - node.y) * self.k_satellite_drift
+                    else:
+                        forces[node.id][1] += (self.center_y - node.y) * self.k_horizon_anchor
                 # Unfocused Background Clusters: Full Progressive Cohesion & Strict Boundary
                 else:
                     c_idx = node_comp_map.get(node.id, -1)
@@ -465,6 +475,31 @@ class PhysicsEngine:
                         forces[node.id][0] += dx_c * k_pull
                         forces[node.id][1] += dy_c * k_pull
 
+        # --- Elastic Boundary Cushion (32px inner boundary zone) ---
+        cushion_zone = 32.0
+        k_cushion = 25.0
+        for node in nodes:
+            if has_active_focus and node.id == focused_node_id:
+                continue
+
+            # Left border
+            if node.x < cushion_zone:
+                penetration = cushion_zone - node.x
+                forces[node.id][0] += k_cushion * (penetration ** 1.8)
+            # Right border
+            elif node.x > self.viewport_w - cushion_zone:
+                penetration = node.x - (self.viewport_w - cushion_zone)
+                forces[node.id][0] -= k_cushion * (penetration ** 1.8)
+
+            # Top border
+            if node.y < cushion_zone:
+                penetration = cushion_zone - node.y
+                forces[node.id][1] += k_cushion * (penetration ** 1.8)
+            # Bottom border
+            elif node.y > self.viewport_h - cushion_zone:
+                penetration = node.y - (self.viewport_h - cushion_zone)
+                forces[node.id][1] -= k_cushion * (penetration ** 1.8)
+
         # 9. Viscous Fluid Drag & Integration
         for node in nodes:
             if has_active_focus and node.id == focused_node_id:
@@ -514,6 +549,18 @@ class PhysicsEngine:
             node.x += node.vx * dt
             node.y += node.vy * dt
 
+        # Update depthZ for all nodes (lateral separation forces are already integrated into node.x / node.y)
+        for node in nodes:
+            if has_active_focus and node.id == focused_node_id:
+                node.depthZ = 0.0
+            else:
+                normalized_y = max(0.0, min(1.0, 1.0 - (node.y / self.viewport_h)))
+                is_wing_node = has_active_focus and (node.id in first_degree_set or node.id in second_degree_parent)
+                if is_wing_node:
+                    node.depthZ = normalized_y * 0.25
+                else:
+                    node.depthZ = normalized_y * (1.0 - node.focus * 0.5)
+
         # Kinetic Energy Cutoff
         total_velocity = sum(math.sqrt(n.vx**2 + n.vy**2) for n in nodes)
         if total_velocity < 0.01 * len(nodes):
@@ -521,7 +568,9 @@ class PhysicsEngine:
 
         return True
 
-    def get_cluster_halos(self, nodes: List[Node], edges: List[Edge], focused_id: int) -> List[dict]:
+    def get_cluster_halos(self, nodes: List[Node], edges: List[Edge], focused_id: int,
+                          first_degree_set: Optional[Set[int]] = None,
+                          second_degree_set: Optional[Set[int]] = None) -> List[dict]:
         if not nodes:
             return []
 
@@ -540,8 +589,12 @@ class PhysicsEngine:
                 deg_map[e.sourceId] = deg_map.get(e.sourceId, 0) + 1
                 deg_map[e.targetId] = deg_map.get(e.targetId, 0) + 1
 
+        first_deg = first_degree_set or set()
+        second_deg = second_degree_set or set()
+        workbench_nodes = {focused_id} | first_deg | second_deg
+
         for comp_idx, comp_ids in enumerate(components):
-            group = [node_map[nid] for nid in comp_ids if nid in node_map]
+            group = [node_map[nid] for nid in comp_ids if nid in node_map and nid not in workbench_nodes]
             if len(group) < 3:
                 continue
 
@@ -593,23 +646,15 @@ class PhysicsEngine:
             smooth_w = curr_w + (target_w - curr_w) * 0.10
             smooth_h = curr_h + (target_h - curr_h) * 0.10
 
-            # Color extraction
-            ext_counts: Dict[str, int] = {}
-            for n in group:
-                ext = n.extension.lower() if hasattr(n, "extension") else ".txt"
-                ext_counts[ext] = ext_counts.get(ext, 0) + 1
+            # Procedural Nebula Identity
+            import colorsys
+            min_node_id = min(n.id for n in group)
+            hue = (min_node_id * 137.508) % 360.0
+            # Low saturation, moderate lightness for etched light aesthetic
+            r, g, b = colorsys.hls_to_rgb(hue / 360.0, 0.65, 0.35)
+            color_hex = f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
 
-            top_ext = max(ext_counts, key=ext_counts.get) if ext_counts else ".md"
-            if top_ext == ".py":
-                color_hex = "#38bdf8"
-            elif top_ext in [".sh", ".bash", ".zsh"]:
-                color_hex = "#fbbf24"
-            elif top_ext in [".md", ".org", ".txt"]:
-                color_hex = "#a78bfa"
-            else:
-                color_hex = "#34d399"
-
-            is_focal_cluster = any(n.id == focused_id for n in group) and focused_id > 0
+            is_focal_cluster = any(nid == focused_id for nid in comp_ids) and focused_id > 0
 
             halo_data = {
                 "id": halo_id,

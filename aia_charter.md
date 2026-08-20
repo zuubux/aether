@@ -27,3 +27,4 @@ We reject legacy WIMP metaphors (Windows, Icons, Menus, Pointer) and rigid sci-f
 ## 4. Engineering Stance
 - **Never repeat legacy design just because "that's how it's always been done."**
 - **Keep it grounded:** Maintain compatibility with real POSIX substrates (`.py`, `.txt`, `.md`, media) and underlying system performance.
+- **Kinetic Calm & Computational Silence:** The interface rests when the mind rests. Layout forces, animations, and IPC streams must cleanly settle and sleep when idle—zero unbounded loops, zero CPU waste, and zero unprovoked visual movement.

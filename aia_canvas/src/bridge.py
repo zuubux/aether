@@ -153,11 +153,19 @@ class CanvasBridge(QObject):
         if not is_active and self._physics_timer.isActive():
             self._physics_timer.stop()
             # Still update halos one last time when stopping
-            self._cluster_halos = self.physics.get_cluster_halos(nodes, active_physics_edges, self._selected_node_id)
+            self._cluster_halos = self.physics.get_cluster_halos(
+                nodes, active_physics_edges, self._selected_node_id,
+                first_degree_set=self._cached_first_degree,
+                second_degree_set=self._cached_second_degree
+            )
             self.clusterHalosChanged.emit()
             return
             
-        self._cluster_halos = self.physics.get_cluster_halos(nodes, active_physics_edges, self._selected_node_id)
+        self._cluster_halos = self.physics.get_cluster_halos(
+            nodes, active_physics_edges, self._selected_node_id,
+            first_degree_set=self._cached_first_degree,
+            second_degree_set=self._cached_second_degree
+        )
         self.clusterHalosChanged.emit()
 
         t1 = time.perf_counter()
@@ -200,17 +208,34 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(list, notify=edgesChanged)
     def edges(self) -> List[Edge]:
+        base_edges = []
         if self._selected_node_id > 0:
             # 1. Start with curated, deduplicated focal edges
-            combined = list(self._focal_edges)
+            base_edges = list(self._focal_edges)
             
             # 2. Exclude any ambient edges touching the focused node to prevent duplicate filaments
             for e in self._ambient_edges:
                 if e.sourceId == self._selected_node_id or e.targetId == self._selected_node_id:
                     continue
-                combined.append(e)                
-            return combined
-        return self._ambient_edges
+                base_edges.append(e)                
+        else:
+            base_edges = self._ambient_edges
+            
+        # 3. Global deduplication by priority to ensure no visual overlap
+        unique_edges = {}
+        priority = {"explicit": 3, "semantic": 2, "temporal": 1}
+        for e in base_edges:
+            pair_key = (min(e.sourceId, e.targetId), max(e.sourceId, e.targetId))
+            current = unique_edges.get(pair_key)
+            if not current:
+                unique_edges[pair_key] = e
+            else:
+                if priority.get(e.edgeType, 0) > priority.get(current.edgeType, 0):
+                    unique_edges[pair_key] = e
+                elif priority.get(e.edgeType, 0) == priority.get(current.edgeType, 0) and e.weight > current.weight:
+                    unique_edges[pair_key] = e
+                    
+        return list(unique_edges.values())
 
     @pyqtProperty(int, notify=selectedNodeChanged)
     def selectedNodeId(self) -> int:
@@ -231,6 +256,10 @@ class CanvasBridge(QObject):
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def workbenchHeight(self) -> float:
         return self._workbench_height
+
+    @pyqtProperty(float, notify=workbenchDimensionsChanged)
+    def wingWidth(self) -> float:
+        return (self.physics.viewport_w - self._workbench_width) / 2.0
 
     @pyqtProperty(float, notify=apertureChanged)
     def aperture(self) -> float:
@@ -283,6 +312,7 @@ class CanvasBridge(QObject):
 
     @pyqtSlot(float, float)
     def set_workbench_dimensions(self, width: float, height: float):
+        self._wake_physics()
         clamped_w = max(680.0, min(2600.0, width))
         clamped_h = max(420.0, min(1600.0, height))
 
@@ -294,7 +324,9 @@ class CanvasBridge(QObject):
 
     @pyqtSlot(float, float)
     def update_viewport_dimensions(self, width: float, height: float):
+        self._wake_physics()
         self.physics.set_viewport_dimensions(width, height)
+        self.workbenchDimensionsChanged.emit()
 
     @pyqtSlot(int)
     def select_node(self, node_id: int):
@@ -346,6 +378,16 @@ class CanvasBridge(QObject):
             node.x = x
             node.y = y
 
+    @pyqtSlot(int, result=str)
+    def get_relation_type(self, node_id: int) -> str:
+        if self._selected_node_id <= 0 or node_id == self._selected_node_id:
+            return ""
+        for e in self._focal_edges:
+            if (e.sourceId == self._selected_node_id and e.targetId == node_id) or \
+               (e.targetId == self._selected_node_id and e.sourceId == node_id):
+                return e.edgeType
+        return ""
+
     @pyqtSlot(int)
     def release_node(self, node_id: int):
         self._wake_physics()
@@ -392,6 +434,8 @@ class CanvasBridge(QObject):
                 self._on_node_updated(node_data)
         finally:
             self.ipc.nodeUpdated.connect(self._on_node_updated)
+
+        self._wake_physics()
 
         for n in self.store.get_all_nodes():
             self.ipc.call_rpc_sync("get_neighbors", {"node_id": n.id}, callback=self._handle_ambient_edges_response)
@@ -460,7 +504,13 @@ class CanvasBridge(QObject):
             
             spawn_x = self.physics.center_x + math.cos(angle) * radius
             spawn_y = self.physics.center_y + math.sin(angle) * radius
-            self.store.upsert_node(Node(id=node_id, file_path=file_path, x=spawn_x, y=spawn_y, focus=0.35))
+            
+            new_node = Node(id=node_id, file_path=file_path, x=spawn_x, y=spawn_y, focus=0.35)
+            # Impart an initial outward impulse so it doesn't just sleep
+            new_node.vx = math.cos(angle) * 40.0
+            new_node.vy = math.sin(angle) * 40.0
+            
+            self.store.upsert_node(new_node)
             self.nodesChanged.emit()
         else:
             node.filePath = file_path
@@ -534,19 +584,21 @@ class CanvasBridge(QObject):
         temporals = [e for e in deduped_edges if e.edgeType == "temporal"]
         explicits = [e for e in deduped_edges if e.edgeType == "explicit"]
         
-        semantics = []
+        tier1_semantics = []
+        tier2_semantics = []
         for e in deduped_edges:
-            if e.edgeType == "semantic" and e.weight >= 0.20:
-                boosted_weight = min(1.0, 0.60 + (e.weight * 0.50))
-                semantics.append(Edge(source_id=e.sourceId, target_id=e.targetId, edge_type="semantic", weight=boosted_weight))
+            if e.edgeType == "semantic":
+                tier1_semantics.append(e)
 
         # 4. Tier Allocations & Strict Secondary Quotas
-        tier1_edges = explicits + semantics
+        tier1_edges = explicits + tier1_semantics
         tier1_edges.sort(key=lambda e: e.weight, reverse=True)
         
-        temporals.sort(key=lambda e: e.weight, reverse=True)
+        tier2_edges = temporals + tier2_semantics
+        tier2_edges.sort(key=lambda e: e.weight, reverse=True)
 
         # Cap: Max 8 primary wings, and strictly cap Tier 2 temporal/satellites to max 4 total globally
-        self._focal_edges = tier1_edges[:8] + temporals[:4]
+        self._focal_edges = tier1_edges[:8] + tier2_edges[:4]
+
         self._recalculate_focal_weights(self._selected_node_id)
         self.edgesChanged.emit()

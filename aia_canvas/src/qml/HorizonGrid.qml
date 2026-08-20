@@ -30,21 +30,59 @@ Item {
         opacity: 0.22
 
         // Receding Depth Latitude Rings (Non-linear geometric progression)
-        Repeater {
-            model: [0.15, 0.28, 0.44, 0.62, 0.82, 1.0]
-
-            ShapePath {
-                required property real modelData
-                strokeColor: rootGrid.gridColor
-                strokeWidth: 1.0
-                fillColor: "transparent"
-
-                readonly property real lineY: rootGrid.vpY + (rootGrid.height - rootGrid.vpY) * modelData
-                startX: 0
-                startY: lineY
-
-                PathLine { x: rootGrid.width; y: lineY }
-            }
+        ShapePath {
+            id: sp1
+            strokeColor: rootGrid.gridColor
+            strokeWidth: 1.0
+            fillColor: "transparent"
+            readonly property real lineY: rootGrid.vpY + (rootGrid.height - rootGrid.vpY) * 0.15
+            startX: 0; startY: lineY
+            PathLine { x: rootGrid.width; y: sp1.lineY }
+        }
+        ShapePath {
+            id: sp2
+            strokeColor: rootGrid.gridColor
+            strokeWidth: 1.0
+            fillColor: "transparent"
+            readonly property real lineY: rootGrid.vpY + (rootGrid.height - rootGrid.vpY) * 0.28
+            startX: 0; startY: lineY
+            PathLine { x: rootGrid.width; y: sp2.lineY }
+        }
+        ShapePath {
+            id: sp3
+            strokeColor: rootGrid.gridColor
+            strokeWidth: 1.0
+            fillColor: "transparent"
+            readonly property real lineY: rootGrid.vpY + (rootGrid.height - rootGrid.vpY) * 0.44
+            startX: 0; startY: lineY
+            PathLine { x: rootGrid.width; y: sp3.lineY }
+        }
+        ShapePath {
+            id: sp4
+            strokeColor: rootGrid.gridColor
+            strokeWidth: 1.0
+            fillColor: "transparent"
+            readonly property real lineY: rootGrid.vpY + (rootGrid.height - rootGrid.vpY) * 0.62
+            startX: 0; startY: lineY
+            PathLine { x: rootGrid.width; y: sp4.lineY }
+        }
+        ShapePath {
+            id: sp5
+            strokeColor: rootGrid.gridColor
+            strokeWidth: 1.0
+            fillColor: "transparent"
+            readonly property real lineY: rootGrid.vpY + (rootGrid.height - rootGrid.vpY) * 0.82
+            startX: 0; startY: lineY
+            PathLine { x: rootGrid.width; y: sp5.lineY }
+        }
+        ShapePath {
+            id: sp6
+            strokeColor: rootGrid.gridColor
+            strokeWidth: 1.0
+            fillColor: "transparent"
+            readonly property real lineY: rootGrid.vpY + (rootGrid.height - rootGrid.vpY) * 1.0
+            startX: 0; startY: lineY
+            PathLine { x: rootGrid.width; y: sp6.lineY }
         }
     }
 }

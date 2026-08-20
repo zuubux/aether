@@ -54,21 +54,40 @@ Item {
         return "#94a3b8"
     }
 
+    readonly property string relationType: bridge ? bridge.get_relation_type(nodeId) : ""
+    readonly property color relationAccentColor: {
+        if (relationType === "semantic") return "#a78bfa" // Violet/Purple accent
+        if (relationType === "explicit") return "#38bdf8" // Cyan accent
+        if (relationType === "temporal") return "#fbbf24" // Amber/Yellow accent
+        return rootItem.nodeAccentColor
+    }
+
     // Downstream Connection Count
     readonly property int downstreamCount: bridge ? bridge.get_downstream_count(nodeId) : 0
 
     // =========================================================================
     // 2.5D Panoramic Horizon Projection (Decoupled X/Y Spread)
     // =========================================================================
-    readonly property real vpX: viewportContainer ? viewportContainer.width / 2 : 1280
+    readonly property real wingWidth: bridge ? bridge.wingWidth : 300.0
+
+    readonly property real vpX: {
+        if (bridge && bridge.selectedNodeId > 0) {
+            return (viewportContainer ? (viewportContainer.width - bridge.wingWidth) / 2.0 : 1280)
+        }
+        return viewportContainer ? viewportContainer.width / 2 : 1280
+    }
     readonly property real vpY: viewportContainer ? viewportContainer.height * 0.20 : 280
     readonly property real rawPhysicsX: nodeModel ? nodeModel.x : 0
     readonly property real rawPhysicsY: nodeModel ? nodeModel.y : 0
 
     // Depth: z=0 foreground (bottom), z=1 horizon (top)
     readonly property real depthZ: {
+        if (isSelected) return 0.0
+        if (nodeModel && nodeModel.depthZ !== undefined) {
+            return nodeModel.depthZ
+        }
         var normalizedY = Math.max(0.0, Math.min(1.0, 1.0 - (rawPhysicsY / (viewportContainer ? viewportContainer.height : 1440))))
-        return isSelected ? 0.0 : normalizedY * (1.0 - focusWeight * 0.5)
+        return normalizedY * (1.0 - focusWeight * 0.5)
     }
 
     readonly property real perspectiveScale: 1.0 / (1.0 + depthZ * 1.25)
@@ -76,42 +95,59 @@ Item {
     readonly property real projectedX: vpX + (rawPhysicsX - vpX) * xSpreadFactor
     readonly property real projectedY: vpY + (rawPhysicsY - vpY) * perspectiveScale
 
+    // Wing Squeeze Opacity & Label fading for progressive depth cascade
+    readonly property real wingSqueezeOpacity: {
+        if (!hasActiveFocus) return 1.0
+        if (!isDirectNeighbor) {
+            if (wingWidth < 120.0) {
+                return 0.2 + 0.8 * (wingWidth / 120.0)
+            }
+        }
+        return 1.0
+    }
+
+    readonly property real labelOpacity: {
+        if (hasActiveFocus && isDirectNeighbor) {
+            if (wingWidth < 120.0) {
+                return Math.max(0.0, wingWidth / 120.0)
+            }
+        }
+        return 1.0
+    }
+
     // Target Dimensions
     readonly property real targetWidth: {
         if (isSelected) return bridge ? bridge.workbenchWidth : 1400
-        if (isMacroBead) return 16
-        if (isHoverBloomed) return 160
+        if (isMacroBead || isHoverBloomed) return 16
         if (isCompactCapsule) return 180
         return 280
     }
 
     readonly property real targetHeight: {
         if (isSelected) return bridge ? bridge.workbenchHeight : 900
-        if (isMacroBead) return 16
-        if (isHoverBloomed) return 32
+        if (isMacroBead || isHoverBloomed) return 16
         if (isCompactCapsule) return 48
         return 115
     }
 
     readonly property real cardRadius: {
         if (isSelected) return 14
-        if (isMacroBead) return 8
-        if (isHoverBloomed) return 16
+        if (isMacroBead || isHoverBloomed) return 8
         if (isCompactCapsule) return 24
         return 10
     }
 
     // Geometry exports for Tendril.qml
-    readonly property real cardWidth: cardBody.width * scale
-    readonly property real cardHeight: cardBody.height * scale
-    readonly property real cardCenterX: x
-    readonly property real cardCenterY: y
+    readonly property real cardWidth: width * scale
+    readonly property real cardHeight: height * scale
+    readonly property real cardCenterX: x + width / 2
+    readonly property real cardCenterY: y + height / 2
 
     // Projected Coordinate Anchors
-    x: projectedX
-    y: projectedY
-    width: 0
-    height: 0
+    x: isSelected ? (viewportContainer ? (viewportContainer.width - targetWidth) / 2 : 0) : (projectedX - targetWidth / 2)
+    y: isSelected ? (viewportContainer ? (viewportContainer.height - targetHeight) / 2 : 0) : (projectedY - targetHeight / 2)
+    width: targetWidth
+    height: targetHeight
 
     Behavior on x {
         enabled: rootItem.isSelected && !dragArea.isDragging && !resizeMouseArea.isResizing
@@ -119,6 +155,14 @@ Item {
     }
     Behavior on y {
         enabled: rootItem.isSelected && !dragArea.isDragging && !resizeMouseArea.isResizing
+        NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+    }
+    Behavior on width {
+        enabled: !resizeMouseArea.isResizing
+        NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+    }
+    Behavior on height {
+        enabled: !resizeMouseArea.isResizing
         NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
     }
 
@@ -131,34 +175,113 @@ Item {
     // Depth Stacking
     z: isSelected ? 9000 : (isHoverBloomed ? 8000 : (isHovered ? 7000 : Math.round((1.0 - depthZ) * 1000 + focusWeight * 100)))
 
-    // Atmospheric Haze Attenuation
-    opacity: isSelected ? 1.0 : (isHovered ? 1.0 : Math.max(0.25, focusWeight * (1.0 - depthZ * 0.35)))
+    readonly property real insideClusterFactor: {
+        if (!nodeModel || nodeModel.clusterId === undefined || nodeModel.clusterId < 0) return 0.0;
+        if (!bridge || !bridge.clusterHalos) return 0.0;
+        var halos = bridge.clusterHalos;
+        for (var i = 0; i < halos.length; i++) {
+            if (halos[i].id === "component_" + nodeModel.clusterId) {
+                var cx = halos[i].centerX;
+                var cy = halos[i].centerY;
+                var r = Math.min(halos[i].width, halos[i].height) * 0.5;
+                var dx = rawPhysicsX - cx;
+                var dy = rawPhysicsY - cy;
+                var dist = Math.sqrt(dx * dx + dy * dy);
+                
+                var margin = 40.0;
+                var innerR = r - margin;
+                var outerR = r + margin;
+                
+                if (dist <= innerR) {
+                    return 1.0;
+                } else if (dist >= outerR) {
+                    return 0.0;
+                } else {
+                    return (outerR - dist) / (2.0 * margin);
+                }
+            }
+        }
+        return 0.0;
+    }
+
+    readonly property bool isInsideCluster: insideClusterFactor > 0.5
+
+    readonly property real macroOpacityFade: {
+        if (isSelected || isHovered) return 1.0
+        if (currentAperture >= 0.35) return 1.0
+        
+        var hasValidCluster = nodeModel && nodeModel.clusterId !== undefined && nodeModel.clusterId >= 0;
+        if (!hasValidCluster) return 1.0;
+        
+        var fadedVal = Math.max(0.0, (currentAperture - 0.20) / 0.15);
+        return 1.0 * (1.0 - insideClusterFactor) + fadedVal * insideClusterFactor;
+    }
+
+    // Atmospheric Haze Attenuation & Progressive Squeeze Falloff
+    opacity: (isSelected ? 1.0 : (isHovered ? 1.0 : Math.max(0.0, focusWeight * (1.0 - depthZ * 0.35)))) * wingSqueezeOpacity * macroOpacityFade
     Behavior on opacity {
         NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
     }
 
+    // =====================================================================
+    // TIER 4: Hover-Bloomed Preview Capsule Overlay
+    // =====================================================================
+    Rectangle {
+        id: bloomOverlay
+        width: 160
+        height: 32
+        anchors.centerIn: parent
+        radius: 16
+        color: "#161c28"
+        border.color: rootItem.nodeAccentColor
+        border.width: 1.5
+        opacity: rootItem.isHoverBloomed ? 1.0 : 0.0
+        visible: opacity > 0.01
+        z: 9999
+        enabled: false
+
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+
+        Row {
+            anchors.centerIn: parent
+            spacing: 8
+
+            Rectangle {
+                width: 8
+                height: 8
+                radius: 4
+                color: rootItem.nodeAccentColor
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+                text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
+                color: "#f8fafc"
+                font.family: "Monospace"
+                font.pixelSize: 11
+                font.bold: true
+                elide: Text.ElideRight
+                width: 120
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+    }
+
     Rectangle {
         id: cardBody
-        anchors.centerIn: parent
-        width: rootItem.targetWidth
-        height: rootItem.targetHeight
+        anchors.fill: parent
         radius: rootItem.cardRadius
         clip: true
+        opacity: rootItem.isHoverBloomed ? 0.0 : 1.0
+        
+        Behavior on opacity { NumberAnimation { duration: 150 } }
 
-        Behavior on width {
-            enabled: !resizeMouseArea.isResizing && !rootItem.isSelected
-            NumberAnimation { duration: 380; easing.type: Easing.OutQuint }
-        }
-        Behavior on height {
-            enabled: !resizeMouseArea.isResizing && !rootItem.isSelected
-            NumberAnimation { duration: 380; easing.type: Easing.OutQuint }
-        }
         Behavior on radius {
             NumberAnimation { duration: 300; easing.type: Easing.OutQuint }
         }
 
         color: rootItem.isSelected ? "#0c0e12" : (rootItem.isMacroBead ? rootItem.nodeAccentColor : (rootItem.isHovered ? "#161c28" : "#0a0c10"))
-        border.color: rootItem.isSelected ? "#38bdf8" : (rootItem.isMacroBead ? Qt.lighter(rootItem.nodeAccentColor, 1.3) : (rootItem.isHovered ? rootItem.nodeAccentColor : "#1e2430"))
+        border.color: rootItem.isSelected ? "#38bdf8" : (rootItem.isMacroBead ? Qt.lighter(rootItem.nodeAccentColor, 1.3) : (rootItem.isHovered ? rootItem.nodeAccentColor : (rootItem.isDirectNeighbor ? rootItem.relationAccentColor : "#1e2430")))
         border.width: rootItem.isMacroBead ? 1.5 : (rootItem.isSelected || rootItem.isHovered ? 1.5 : 1.0)
 
         Behavior on color { ColorAnimation { duration: 180 } }
@@ -175,42 +298,6 @@ Item {
             opacity: 0.85
         }
 
-        // =====================================================================
-        // TIER 4: Hover-Bloomed Preview Capsule
-        // =====================================================================
-        Item {
-            id: bloomView
-            anchors.fill: parent
-            anchors.margins: 6
-            opacity: rootItem.isHoverBloomed ? 1.0 : 0.0
-            visible: opacity > 0.01
-
-            Behavior on opacity { NumberAnimation { duration: 150 } }
-
-            Row {
-                anchors.centerIn: parent
-                spacing: 8
-
-                Rectangle {
-                    width: 8
-                    height: 8
-                    radius: 4
-                    color: rootItem.nodeAccentColor
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                Text {
-                    text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
-                    color: "#f8fafc"
-                    font.family: "Monospace"
-                    font.pixelSize: 11
-                    font.bold: true
-                    elide: Text.ElideRight
-                    width: 120
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-        }
 
         // =====================================================================
         // TIER 3: Compact Capsule
@@ -267,7 +354,7 @@ Item {
             id: tokenView
             anchors.fill: parent
             anchors.margins: 14
-            opacity: rootItem.isFullToken ? 1.0 : 0.0
+            opacity: rootItem.isFullToken ? rootItem.labelOpacity : 0.0
             visible: opacity > 0.01
 
             Behavior on opacity { NumberAnimation { duration: 180 } }
@@ -285,7 +372,7 @@ Item {
                         height: 18
                         radius: 4
                         color: "#111827"
-                        border.color: rootItem.isDirectNeighbor ? rootItem.nodeAccentColor : "#1e293b"
+                        border.color: rootItem.isDirectNeighbor ? rootItem.relationAccentColor : "#1e293b"
                         border.width: 1
                         anchors.verticalCenter: parent.verticalCenter
 

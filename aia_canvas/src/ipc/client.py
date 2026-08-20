@@ -141,14 +141,6 @@ class WeaverIPCClient(QObject):
             # Schedule a timeout to flush this specific callback
             self._loop.call_later(timeout, self._handle_rpc_timeout, req_id)
 
-    def _handle_rpc_timeout(self, req_id: int):
-        callback = self._pending_callbacks.pop(req_id, None)
-        if callback:
-            try:
-                callback(None, "RPC request timed out")
-            except Exception as e:
-                logger.error(f"Error in RPC timeout callback: {e}")
-
         payload = {
             "jsonrpc": "2.0",
             "method": method,
@@ -157,6 +149,14 @@ class WeaverIPCClient(QObject):
         }
 
         asyncio.run_coroutine_threadsafe(self._send_payload(payload), self._loop)
+
+    def _handle_rpc_timeout(self, req_id: int):
+        callback = self._pending_callbacks.pop(req_id, None)
+        if callback:
+            try:
+                callback(None, "RPC request timed out")
+            except Exception as e:
+                logger.error(f"Error in RPC timeout callback: {e}")
 
     async def _send_payload(self, payload: dict):
         if self._writer:

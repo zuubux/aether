@@ -32,8 +32,8 @@ Item {
     // Dynamic Horizon Geometry
     x: projX - width / 2
     y: projY - height / 2
-    width: projWidth
-    height: projHeight
+    width: projWidth + 160
+    height: projHeight + 160
 
     Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutSine } }
     Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutSine } }
@@ -66,43 +66,58 @@ Item {
     }
 
     // =========================================================================
-    // Atmospheric Celestial Nebula Membrane
+    // Activity-Based Drift Speed (Biological Respiration vs Active Surge)
+    // =========================================================================
+    property real lastCenterX: centerX
+    property real lastCenterY: centerY
+    property real activityLevel: 0.0
+    property real timeDrift: 0.0
+
+    Timer {
+        interval: 16
+        running: rootHalo.visible
+        repeat: true
+        onTriggered: {
+            // Calculate spatial displacement to infer "active movement"
+            let dx = rootHalo.centerX - rootHalo.lastCenterX
+            let dy = rootHalo.centerY - rootHalo.lastCenterY
+            let dist = Math.sqrt(dx * dx + dy * dy)
+
+            if (dist > 0.5) {
+                // Surge activity quickly when moving
+                rootHalo.activityLevel = Math.min(1.0, rootHalo.activityLevel + 0.1)
+            } else {
+                // Settle gently into biological respiration cadence
+                rootHalo.activityLevel = Math.max(0.0, rootHalo.activityLevel - 0.01)
+            }
+
+            // Drift speed logic
+            let baseSpeed = 0.05
+            let surgeSpeed = 0.5
+            let currentSpeed = baseSpeed + (rootHalo.activityLevel * surgeSpeed)
+
+            // Increment timeDrift. Using interval / 1000.0 as approximate delta time
+            rootHalo.timeDrift += (16.0 / 1000.0) * currentSpeed
+
+            rootHalo.lastCenterX = rootHalo.centerX
+            rootHalo.lastCenterY = rootHalo.centerY
+        }
+    }
+
+    // =========================================================================
+    // Atmospheric Celestial Nebula Membrane (Volumetric SDF)
     // =========================================================================
 
-    // 1. Soft Uniform Glass Interior Wash
-    Rectangle {
-        anchors.centerIn: parent
-        width: parent.width
-        height: parent.height
-        // PERFECT PILL CAPSULE RADIUS
-        radius: Math.min(width, height) / 2.0 
-        color: rootHalo.haloColor
-        opacity: 0.035
-    }
+    ShaderEffect {
+        id: nebulaShader
+        anchors.fill: parent
 
-    // 2. Outer Resonant Aura
-    Rectangle {
-        anchors.centerIn: parent
-        width: parent.width + 12 * rootHalo.pScale
-        height: parent.height + 12 * rootHalo.pScale
-        // PERFECT PILL CAPSULE RADIUS
-        radius: Math.min(width, height) / 2.0
-        color: "transparent"
-        border.color: rootHalo.haloColor
-        border.width: 1
-        opacity: 0.10
-    }
-
-    // 3. Primary Shield Perimeter (Refined Hairline)
-    Rectangle {
-        anchors.centerIn: parent
-        width: parent.width
-        height: parent.height
-        // PERFECT PILL CAPSULE RADIUS
-        radius: Math.min(width, height) / 2.0
-        color: "transparent"
-        border.color: rootHalo.haloColor
-        border.width: rootHalo.isFocalCluster ? 1.5 : 1.0
-        opacity: rootHalo.isFocalCluster ? 0.45 : 0.28
+        // Uniforms bound to QML properties automatically
+        // width and height are provided by the ShaderEffect Item itself
+        property real time: rootHalo.timeDrift
+        property color haloColor: rootHalo.haloColor
+        
+        // Load the compiled Qt Shader Baker file
+        fragmentShader: "halo.frag.qsb"
     }
 }

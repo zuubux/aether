@@ -12,6 +12,7 @@ class Node(QObject):
     focusChanged = pyqtSignal()
     filePathChanged = pyqtSignal()
     clusterIdChanged = pyqtSignal(int)
+    depthZChanged = pyqtSignal()
 
     def __init__(
         self,
@@ -31,6 +32,7 @@ class Node(QObject):
         self._vy = 0.0
         self._focus = focus
         self._cluster_id = cluster_id
+        self._depth_z = 0.0
         self._extension = Path(file_path).suffix if file_path else ""
 
     # --- ID ---
@@ -116,6 +118,17 @@ class Node(QObject):
         if self._cluster_id != val:
             self._cluster_id = val
             self.clusterIdChanged.emit(val)
+
+    # --- Depth Z ---
+    @pyqtProperty(float, notify=depthZChanged)
+    def depthZ(self) -> float:
+        return self._depth_z
+
+    @depthZ.setter
+    def depthZ(self, val: float):
+        if abs(self._depth_z - val) > 0.001:
+            self._depth_z = val
+            self.depthZChanged.emit()
 
 
 class Edge(QObject):
