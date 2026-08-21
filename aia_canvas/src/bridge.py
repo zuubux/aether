@@ -29,6 +29,8 @@ class CanvasBridge(QObject):
     apertureChanged = pyqtSignal(float)
     clusterHalosChanged = pyqtSignal()
     telemetryChanged = pyqtSignal()
+    searchResultsReceived = pyqtSignal(list)
+    searchCleared = pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -283,6 +285,56 @@ class CanvasBridge(QObject):
 
     # --- Slots Invoked from QML ---
 
+    @pyqtSlot(str)
+    def submit_query(self, query: str):
+        logger.debug(f"OmniBar query submitted: {query}")
+        if not self._is_connected:
+            return
+
+        def _handle_search(result: Any, error: Optional[str]):
+            if error or not isinstance(result, list):
+                logger.error(f"OmniBar search failed: {error}")
+                return
+
+            logger.debug(f"OmniBar search response: {result}")
+            node_ids = []
+            for n in result:
+                n_id = n.get('id') if 'id' in n else n.get('node_id')
+                if n_id is not None:
+                    node_ids.append(str(n_id))
+
+            if node_ids:
+                self.searchResultsReceived.emit(node_ids)
+            else:
+                self.searchCleared.emit()
+
+        if not query.strip():
+            self.searchCleared.emit()
+            return
+
+        self.ipc.call_rpc_sync(
+            "search_graph",
+            {"query": query, "limit": 5},
+            callback=_handle_search
+        )
+
+    @pyqtSlot()
+    def clear_search(self):
+        self.physics.set_staged_nodes([], self.physics.viewport_w, 0.0, self.store.get_all_nodes())
+        self._wake_physics()
+        self.searchCleared.emit()
+
+    @pyqtSlot(list, float, float)
+    def set_staged_nodes(self, node_id_strs: list, viewport_w: float, shelf_y: float):
+        node_ids = []
+        for nid in node_id_strs:
+            try:
+                node_ids.append(int(nid))
+            except ValueError:
+                pass
+        self.physics.set_staged_nodes(node_ids, viewport_w, shelf_y, self.store.get_all_nodes())
+        self._wake_physics()
+
     @pyqtSlot(int)
     def set_hovered_node(self, node_id: int):
         if self._hovered_node_id != node_id:
@@ -492,6 +544,10 @@ class CanvasBridge(QObject):
         if not node_id or not file_path:
             return
 
+        archetype = data.get("archetype", "document")
+        snippet = data.get("snippet", "")
+        size_bytes = data.get("size_bytes", 0)
+
         node = self.store.get_node(node_id)
         if not node:
             angle = node_id * 2.399963
@@ -505,7 +561,16 @@ class CanvasBridge(QObject):
             spawn_x = self.physics.center_x + math.cos(angle) * radius
             spawn_y = self.physics.center_y + math.sin(angle) * radius
             
-            new_node = Node(id=node_id, file_path=file_path, x=spawn_x, y=spawn_y, focus=0.35)
+            new_node = Node(
+                id=node_id, 
+                file_path=file_path, 
+                x=spawn_x, 
+                y=spawn_y, 
+                focus=0.35, 
+                archetype=archetype, 
+                snippet=snippet, 
+                size_bytes=size_bytes
+            )
             # Impart an initial outward impulse so it doesn't just sleep
             new_node.vx = math.cos(angle) * 40.0
             new_node.vy = math.sin(angle) * 40.0
@@ -514,6 +579,9 @@ class CanvasBridge(QObject):
             self.nodesChanged.emit()
         else:
             node.filePath = file_path
+            node._archetype = archetype
+            node._snippet = snippet
+            node._size_bytes = size_bytes
 
         self._recalculate_focal_weights(self._selected_node_id)
 

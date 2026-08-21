@@ -32,8 +32,8 @@ Item {
     // Dynamic Horizon Geometry
     x: projX - width / 2
     y: projY - height / 2
-    width: projWidth + 160
-    height: projHeight + 160
+    width: projWidth * 2.6
+    height: projHeight * 2.6
 
     Behavior on x { NumberAnimation { duration: 160; easing.type: Easing.OutSine } }
     Behavior on y { NumberAnimation { duration: 160; easing.type: Easing.OutSine } }
@@ -46,11 +46,13 @@ Item {
     // =========================================================================
     // Aperture & Density Gating with Atmospheric Depth Attenuation
     // =========================================================================
-    // Macro Gating: Smooth ramp between 40% and 25% zoom
+    // Macro Gating: Smooth ramp between 35% and 20% zoom
     readonly property real apertureRamp: {
-        if (isFocalCluster || currentAperture > 0.40) return 0.0
-        return Math.min(1.0, (0.40 - currentAperture) / 0.15)
+        if (isFocalCluster || currentAperture > 0.35) return 0.0
+        return Math.min(1.0, (0.35 - currentAperture) / 0.15)
     }
+
+    property real densityWeight: 1.0
 
     // Population Scaling: Soft whisper for 3 nodes, rich celestial nebula for 8+
     readonly property real populationWeight: Math.min(1.0, Math.max(0.40, rootHalo.nodeCount / 8.0))
@@ -58,7 +60,7 @@ Item {
     // Atmospheric Haze Factor
     readonly property real depthAttenuation: 1.0 - (depthZ * 0.35)
 
-    opacity: apertureRamp * populationWeight * depthAttenuation
+    opacity: apertureRamp * populationWeight * depthAttenuation * densityWeight
     visible: opacity > 0.005
 
     Behavior on opacity {

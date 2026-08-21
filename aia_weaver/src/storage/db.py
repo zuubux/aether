@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     file_hash TEXT NOT NULL,
     extension TEXT,
     size_bytes INTEGER,
+    archetype TEXT NOT NULL DEFAULT 'document',
+    snippet TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -82,7 +84,7 @@ class DatabaseManager:
         logger.info("Database schema and sqlite-vec vector table initialized.")
 
     async def upsert_node(
-        self, file_path: str, file_hash: str, extension: str, size_bytes: int, embedding: list[float] | None = None
+        self, file_path: str, file_hash: str, extension: str, size_bytes: int, archetype: str = 'document', snippet: str = '', embedding: list[float] | None = None
     ) -> int:
         """Inserts or updates a file node and its vector embedding."""
         if not self._conn:
@@ -91,15 +93,17 @@ class DatabaseManager:
         async with self._conn.cursor() as cursor:
             await cursor.execute(
                 """
-                INSERT INTO nodes (file_path, file_hash, extension, size_bytes, updated_at)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO nodes (file_path, file_hash, extension, size_bytes, archetype, snippet, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(file_path) DO UPDATE SET
                     file_hash=excluded.file_hash,
                     size_bytes=excluded.size_bytes,
+                    archetype=excluded.archetype,
+                    snippet=excluded.snippet,
                     updated_at=CURRENT_TIMESTAMP
                 RETURNING id;
                 """,
-                (file_path, file_hash, extension, size_bytes),
+                (file_path, file_hash, extension, size_bytes, archetype, snippet),
             )
             row = await cursor.fetchone()
             node_id = row[0]
@@ -124,7 +128,7 @@ class DatabaseManager:
 
         async with self._conn.cursor() as cursor:
             await cursor.execute(
-                "SELECT id, file_path, extension, size_bytes, updated_at FROM nodes ORDER BY id ASC;"
+                "SELECT id, file_path, extension, size_bytes, archetype, snippet, updated_at FROM nodes ORDER BY id ASC;"
             )
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
@@ -162,6 +166,8 @@ class DatabaseManager:
                 SELECT 
                     n.id, 
                     n.file_path, 
+                    n.archetype,
+                    n.snippet,
                     v.distance 
                 FROM node_embeddings v
                 JOIN nodes n ON n.id = v.node_id

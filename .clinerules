@@ -1,0 +1,34 @@
+# Aether Interface Architecture (.clinerules)
+
+## 1. Role & Operating Paradigm
+- **Role:** Precision Implementation Engineer for Aether Interface Architecture (`aia_canvas`, `aia_weaver`, `aia_saccade`).
+- **Interaction Style:** Surgical, minimal diffs, zero architectural drift.
+- **Workflow:** Implement exact requested changes without unsolicited refactoring of adjacent physics loops, GLSL shaders, or state models.
+
+## 2. Technical Stack & Conventions
+- **UI & Graphics:** PyQt6, QML (Qt Quick 6), GLSL / `.qsb` shaders.
+- **Backend & Physics:** Python 3.11+, custom force-directed numerical integration, domain-warping SDF algorithms.
+- **IPC Pipeline:** Local Unix domain sockets (`/run/user/1000/aia_weaver/aia_weaver.sock`), asynchronous event-driven streaming.
+- **Target Workstation:** High-performance Linux environment running KDE Plasma on multi-head / ultrawide displays. Target smooth 120 FPS frame timing.
+
+## 3. Core Physics & Layout Guardrails
+- **Temporal Decoupling:** Temporal connections (`edge_type == 'temporal'`) must ALWAYS have zero spring constant ($k = 0.0$) in the physics engine. They are visual history telemetry only and must never exert physical tension between clusters.
+- **Kinematic Focus Isolation:** When Focus Mode is active (`focused_node_id` set):
+  - Docked wing nodes (Tier 1/2) must be excluded from background cluster centroid calculations.
+  - Spring tension between docked nodes and peripheral void nodes must be zeroed ($k = 0.0$).
+- **Geometry & Border Docking:**
+  - Standard Cards: Ray-box boundary docking strictly to rendered dimensions (`width * scale`, `height * scale`).
+  - Stadium / Capsule Nodes: Ray-capsule docking against semicircular end caps with zero air gaps.
+  - Star Beads (16x16): Strictly dock to geometric centers (`x + 8`, `y + 8`).
+
+## 4. Shaders & Visual Aesthetics
+- **Nebula Halos:**
+  - Must use smooth radial edge masks (`smoothstep`) to guarantee alpha hits absolute zero ($0.0$) before reaching UV texture boundaries (prevent rectangular quad clipping).
+  - Center cores must be luminous and translucent (avoid opaque white flashbangs or dark hollow rings).
+  - Only generate halos for connected communities with $N \ge 3$ nodes.
+- **Shader Compilation:** Whenever editing `.frag` or `.vert` files, compile using `/usr/lib64/qt6/bin/qsb --qt6 -o <path>.qsb <path>.frag`.
+
+## 5. Execution Rules & Safety
+- **No Hallucinated Functions:** Verify dictionary access syntax (`dict.get(k)` or `dict[k]`, never call dicts like functions `dict(k)`).
+- **Coordinate Integrity:** Avoid mutating global physics coordinates with local QML transient UI transforms (like hover bloom or temporary scales).
+- **Direct Output:** Keep implementation explanations concise, itemizing exact files and mathematical modifications made.

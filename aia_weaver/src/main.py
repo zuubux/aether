@@ -8,16 +8,19 @@ import signal
 import sys
 
 from indexer.embedder import LocalEmbedder
-from indexer.parser import extract_explicit_links
+from indexer.parser import extract_explicit_links, extract_archetype_and_snippet
 from ipc.server import IPCServer
 from storage.db import DatabaseManager
 from watcher.fs_events import FileWatcher
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
+def setup_logging(debug=False):
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.WARNING,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    return logging.getLogger("aia_weaver")
+
 logger = logging.getLogger("aia_weaver")
 
 
@@ -29,6 +32,7 @@ class WeaverDaemon:
         enable_semantic_edges: bool = False,
         semantic_distance_threshold: float = 0.35,
         temporal_window_minutes: int = 15,
+        socket_path: str | None = None,
     ):
         self._shutdown_event = asyncio.Event()
         self.target_directories = [str(Path(d).expanduser().resolve()) for d in target_directories]
@@ -57,6 +61,7 @@ class WeaverDaemon:
             all_nodes_handler=self.db.get_all_nodes,
             touch_handler=self.handle_touch_node,
             allowed_directories=[Path(d) for d in self.target_directories],
+            socket_path=socket_path,
         )
 
     async def handle_semantic_search(self, query_text: str, limit: int = 5) -> list:
@@ -176,6 +181,8 @@ class WeaverDaemon:
                     file_bytes = await asyncio.to_thread(path.read_bytes)
                     file_hash = hashlib.sha256(file_bytes).hexdigest()
                     embedding = await self.embedder.embed_file(file_path_str)
+                    
+                    archetype, snippet = extract_archetype_and_snippet(path, file_bytes)
 
                     # Upsert Node
                     source_id = await self.db.upsert_node(
@@ -183,6 +190,8 @@ class WeaverDaemon:
                         file_hash=file_hash,
                         extension=path.suffix,
                         size_bytes=path.stat().st_size,
+                        archetype=archetype,
+                        snippet=snippet,
                         embedding=embedding,
                     )
                     logger.info(f"Indexed Node #{source_id} [{action.upper()}] -> {path.name}")
@@ -226,6 +235,8 @@ class WeaverDaemon:
                                     file_hash="pending",
                                     extension=".md",
                                     size_bytes=0,
+                                    archetype="document",
+                                    snippet="",
                                     embedding=None,
                                 )
 
@@ -279,6 +290,25 @@ def parse_arguments() -> argparse.Namespace:
         dest="workspaces",
         help="Workspace directory to watch and index (can be specified multiple times)",
     )
+    default_watch_dir = str(Path(__file__).resolve().parents[1] / "sandbox")
+    parser.add_argument(
+        "--watch-dir",
+        type=str,
+        default=default_watch_dir,
+        help=f"Target sandbox/notes directory to watch (default: {default_watch_dir})",
+    )
+    parser.add_argument(
+        "--socket",
+        type=str,
+        default=None,
+        help="Custom IPC socket path",
+    )
+    parser.add_argument(
+        "-v",
+        "--debug",
+        action="store_true",
+        help="Enable verbose debug logging",
+    )
     parser.add_argument(
         "--db-path",
         type=str,
@@ -307,15 +337,29 @@ def parse_arguments() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
+    args, unknown = parser.parse_known_args() if 'parser' in locals() else parse_arguments(), []
+    
+    # Redefine to avoid undefined behavior based on my hacky diff
     args = parse_arguments()
+
+    logger = setup_logging(args.debug)
 
     if args.workspaces:
         target_dirs = args.workspaces
+    elif args.watch_dir:
+        target_dirs = [args.watch_dir]
     elif os.environ.get("AETHER_WORKSPACE_DIR"):
         env_dirs = os.environ.get("AETHER_WORKSPACE_DIR", "")
         target_dirs = [d.strip() for d in env_dirs.replace(":", ",").split(",") if d.strip()]
     else:
-        target_dirs = ["./sandbox"]
+        target_dirs = [str(Path(__file__).resolve().parents[1] / "sandbox")]
+
+    for d in target_dirs:
+        p = Path(d).resolve()
+        if not p.exists():
+            logger.warning(f"Target directory does not exist: {p}")
+        else:
+            logger.info(f"Monitoring canonical path: {p}")
 
     daemon = WeaverDaemon(
         target_directories=target_dirs,
@@ -323,6 +367,7 @@ if __name__ == "__main__":
         enable_semantic_edges=args.enable_semantic,
         semantic_distance_threshold=args.semantic_threshold,
         temporal_window_minutes=args.temporal_window,
+        socket_path=args.socket,
     )
 
     try:

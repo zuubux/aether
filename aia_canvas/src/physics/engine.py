@@ -43,6 +43,13 @@ class PhysicsEngine:
         self.box_bound_y: float = 0.0
         self.soft_buffer: float = 120.0
         self.ideal_horizon_radius: float = 1200.0
+        
+        # Summoning state
+        self.summoning_targets: Dict[int, Tuple[Tuple[float, float], float]] = {}
+        
+        # Staging state
+        self.staged_origins: Dict[int, Tuple[float, float]] = {}
+        self.staged_targets: Dict[int, Tuple[float, float]] = {}
 
         self._recalculate_horizons()
 
@@ -70,6 +77,39 @@ class PhysicsEngine:
 
     def set_custom_anchor(self, node_id: int, x: float, y: float):
         self.custom_anchors[node_id] = (x, y)
+
+    def summon_nodes(self, node_ids: list, target_x: float, target_y: float, strength: float = 0.6):
+        """Applies an active spring/attractor vector toward (target_x, target_y) for only the target node IDs."""
+        for nid_str in node_ids:
+            try:
+                nid = int(nid_str)
+                self.summoning_targets[nid] = ((target_x, target_y), strength)
+            except ValueError:
+                pass
+
+    def set_staged_nodes(self, node_ids: List[int], viewport_w: float, shelf_y: float, nodes: List[Node]):
+        node_map = {n.id: n for n in nodes}
+        
+        for nid in list(self.staged_targets.keys()):
+            if nid not in node_ids:
+                if nid in self.staged_origins:
+                    ox, oy = self.staged_origins[nid]
+                    self.summoning_targets[nid] = ((ox, oy), 0.8)
+                    
+        self.staged_targets.clear()
+        
+        if not node_ids:
+            return
+            
+        total = len(node_ids)
+        spacing = 300.0
+        total_width = (total - 1) * spacing
+        start_x = (viewport_w / 2.0) - (total_width / 2.0)
+        
+        for i, nid in enumerate(node_ids):
+            if nid not in self.staged_origins and nid in node_map:
+                self.staged_origins[nid] = (node_map[nid].x, node_map[nid].y)
+            self.staged_targets[nid] = (start_x + (i * spacing), shelf_y)
 
     def _recalculate_horizons(self):
         self.box_bound_x = (self.focal_card_w / 2.0) + 520.0
@@ -226,8 +266,8 @@ class PhysicsEngine:
                             forces[nid][1] += push_y / math.sqrt(count2)
 
         # 6. Pairwise Node Repulsion (Aperture-Aware Physical Scaling)
-        # Smoothly scales from 1.0x at 0.35 zoom up to ~3.8x at 2.20 zoom, clamping at 1.0x for low aperture
-        geom_scale = 1.0 + max(0.0, (self.aperture - 0.35) * 1.5)
+        # Smoothly scales from 1.0x at 0.50 zoom up to ~2.7x at 2.20 zoom, clamping at 1.0x for low aperture
+        geom_scale = 1.0 + max(0.0, (self.aperture - 0.50) * 1.0)
         
         node_list = list(nodes)
         num_nodes = len(node_list)
@@ -262,8 +302,8 @@ class PhysicsEngine:
                 else:
                     organic_jitter = ((n1.id + n2.id) % 17) - 8.0 
                     
-                    # PROGRESSIVE SPREAD: 48px at 35% zoom, 290px at 100% zoom, 460px at 220% zoom
-                    friend_base = 48.0 + max(0.0, (self.aperture - 0.35) * 225.0)
+                    # PROGRESSIVE SPREAD: 48px at 50% zoom, 123px at 100% zoom, 303px at 220% zoom
+                    friend_base = 48.0 + max(0.0, (self.aperture - 0.50) * 150.0)
                     friend_sep = friend_base + organic_jitter
                     stranger_sep = 340.0 * geom_scale
                     min_sep = friend_sep if same_cluster else stranger_sep
@@ -289,6 +329,7 @@ class PhysicsEngine:
             dist = math.sqrt(dx * dx + dy * dy) or 1.0
 
             rest_len = 150.0 if e.edgeType == "explicit" else (200.0 if e.edgeType == "temporal" else 240.0)
+            rest_len *= geom_scale
             displacement = dist - rest_len
             
             k_spring = 0.85 * min(1.0, e.weight)
@@ -332,8 +373,28 @@ class PhysicsEngine:
 
         # 8. Horizon, Centroid Spring & Viewport Gravitational Anchor
         max_canvas_r = max(self.viewport_w, self.viewport_h) * 0.70
+        
+        # Maintain/Decay summoning targets
+        active_summoning = {}
+        for nid, (tpos, strength) in list(self.summoning_targets.items()):
+            if strength > 0.01:
+                # Slight decay so they settle nicely without oscillating forever
+                active_summoning[nid] = (tpos, strength * 0.995)
+        self.summoning_targets = active_summoning
 
         for node in nodes:
+            # Override forces heavily for summoned nodes
+            if node.id in self.summoning_targets:
+                tpos, strength = self.summoning_targets[node.id]
+                forces[node.id][0] += (tpos[0] - node.x) * strength * 12.0
+                forces[node.id][1] += (tpos[1] - node.y) * strength * 12.0
+
+            if node.id in self.staged_targets:
+                tx, ty = self.staged_targets[node.id]
+                forces[node.id][0] = (tx - node.x) * 15.0
+                forces[node.id][1] = (ty - node.y) * 15.0
+                continue
+
             dx = node.x - self.center_x
             dy = node.y - self.center_y
             dist_to_center = math.hypot(dx, dy) or 1.0
@@ -481,6 +542,8 @@ class PhysicsEngine:
         for node in nodes:
             if has_active_focus and node.id == focused_node_id:
                 continue
+            if node.id in getattr(self, 'staged_targets', {}):
+                continue
 
             # Left border
             if node.x < cushion_zone:
@@ -502,6 +565,14 @@ class PhysicsEngine:
 
         # 9. Viscous Fluid Drag & Integration
         for node in nodes:
+            if node.id in self.staged_targets:
+                tx, ty = self.staged_targets[node.id]
+                node.x = tx
+                node.y = ty
+                node.vx = 0.0
+                node.vy = 0.0
+                continue
+
             if has_active_focus and node.id == focused_node_id:
                 node.vx = 0.0
                 node.vy = 0.0
@@ -575,7 +646,7 @@ class PhysicsEngine:
             return []
 
         # Geometry scaling for visual halo expansion
-        geom_scale = 1.0 + max(0.0, min(1.8, (self.aperture - 0.35) * 2.4))
+        geom_scale = 1.0 + max(0.0, min(1.8, (self.aperture - 0.50) * 1.6))
         
         node_map = {n.id: n for n in nodes}
         components = self._find_connected_components(nodes, edges)
@@ -594,6 +665,10 @@ class PhysicsEngine:
         workbench_nodes = {focused_id} | first_deg | second_deg
 
         for comp_idx, comp_ids in enumerate(components):
+            # Only generate a cluster halo for connected components with N >= 3 nodes
+            if len(comp_ids) < 3:
+                continue
+
             group = [node_map[nid] for nid in comp_ids if nid in node_map and nid not in workbench_nodes]
             if len(group) < 3:
                 continue
@@ -625,10 +700,28 @@ class PhysicsEngine:
             target_w = core_w + padding
             target_h = core_h + padding
 
-            # Minimum size clamp so small clusters don't shrink into tiny dots
-            min_size = 140.0 * geom_scale
-            target_w = max(min_size, target_w)
-            target_h = max(min_size, target_h)
+            # Bounding Radius Hard-Cap: Clamp bounding radius between 90.0 and 260.0
+            calculated_radius_w = target_w / 2.0
+            calculated_radius_h = target_h / 2.0
+            radius_w = max(90.0, min(calculated_radius_w, 260.0))
+            radius_h = max(90.0, min(calculated_radius_h, 260.0))
+            target_w = radius_w * 2.0
+            target_h = radius_h * 2.0
+
+            # Density Metric: Calculate cluster dispersion (average distance of nodes to centroid)
+            cx = sum(n.x for n in group) / len(group)
+            cy = sum(n.y for n in group) / len(group)
+            dispersion = sum(math.hypot(n.x - cx, n.y - cy) for n in group) / len(group)
+            
+            # Scale halo opacity down if dispersion is large (e.g., during startup scatter)
+            disp_min = 110.0
+            disp_max = 280.0
+            if dispersion <= disp_min:
+                density_weight = 1.0
+            elif dispersion >= disp_max:
+                density_weight = 0.0
+            else:
+                density_weight = (disp_max - dispersion) / (disp_max - disp_min)
 
             # 5. Shift visual center to the true center of the mass footprint
             target_cx = (min_x + max_x) / 2.0
@@ -665,6 +758,7 @@ class PhysicsEngine:
                 "color": color_hex,
                 "isFocalCluster": is_focal_cluster,
                 "nodeCount": len(group),
+                "densityWeight": density_weight,
             }
 
             self._smoothed_halos[halo_id] = halo_data

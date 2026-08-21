@@ -22,6 +22,9 @@ class Node(QObject):
         y: float = 0.0,
         focus: float = 0.35,
         cluster_id: int = -1,
+        archetype: str = "document",
+        snippet: str = "",
+        size_bytes: int = 0,
     ):
         super().__init__()
         self._id = id
@@ -34,6 +37,9 @@ class Node(QObject):
         self._cluster_id = cluster_id
         self._depth_z = 0.0
         self._extension = Path(file_path).suffix if file_path else ""
+        self._archetype = archetype
+        self._snippet = snippet
+        self._size_bytes = size_bytes
 
     # --- ID ---
     @pyqtProperty(int, constant=True)
@@ -59,6 +65,18 @@ class Node(QObject):
     @pyqtProperty(str, notify=filePathChanged)
     def extension(self) -> str:
         return self._extension or (Path(self._file_path).suffix if self._file_path else "")
+
+    @pyqtProperty(str, constant=True)
+    def archetype(self) -> str:
+        return self._archetype
+
+    @pyqtProperty(str, constant=True)
+    def snippet(self) -> str:
+        return self._snippet
+
+    @pyqtProperty(int, constant=True)
+    def sizeBytes(self) -> int:
+        return self._size_bytes
 
     # --- Positions & Velocities ---
     @pyqtProperty(float, notify=positionChanged)
