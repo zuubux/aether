@@ -19,30 +19,34 @@ Item {
 
     // Aperture & Semantic Zoom Thresholds
     readonly property real currentAperture: bridge ? bridge.aperture : 1.0
-    readonly property real macroThreshold: 0.35
-    readonly property real secondaryBeadThreshold: 0.74
-    readonly property real compactThreshold: 0.78
+    readonly property real macroThreshold: 0.50
+    readonly property real secondaryBeadThreshold: 1.15
+    readonly property real compactThreshold: 1.20
 
     // Semantic Zoom Classification
-    readonly property bool wouldBeBead: {
-        if (isSelected) return false
+    readonly property int baseTier: {
         if (hasActiveFocus) {
-            if (!isDirectNeighbor) return currentAperture < secondaryBeadThreshold
-            return currentAperture < macroThreshold
+            if (!isDirectNeighbor) return currentAperture < secondaryBeadThreshold ? 4 : 3
+            return currentAperture < macroThreshold ? 4 : (currentAperture < compactThreshold ? 3 : 2)
         }
-        return currentAperture < macroThreshold
+        return currentAperture < macroThreshold ? 4 : (currentAperture < compactThreshold ? 3 : 2)
     }
 
-    readonly property bool isMacroBead: wouldBeBead && !isHovered
-    readonly property bool isHoverBloomed: wouldBeBead && isHovered
-
-    readonly property bool isCompactCapsule: {
-        if (isSelected || isMacroBead || isHoverBloomed) return false
-        if (hasActiveFocus && !isDirectNeighbor) return true
-        return currentAperture < compactThreshold
+    readonly property int effectiveTier: {
+        if (isSelected) return 1
+        if (isStaged || sustainedHover) return 15 // Tier 1.5 Preview Slate
+        if (isHovered) {
+            if (baseTier === 4) return 3
+            if (baseTier === 3) return 2
+            if (baseTier === 2) return 15
+        }
+        return baseTier
     }
 
-    readonly property bool isFullToken: !isSelected && !isMacroBead && !isCompactCapsule && !isHoverBloomed
+    readonly property bool isMacroBead: effectiveTier === 4
+    readonly property bool isCompactCapsule: effectiveTier === 3
+    readonly property bool isFullToken: effectiveTier === 2
+    readonly property bool showPreviewSlate: effectiveTier === 15
 
     // Semantic Extension Colors
     readonly property string ext: nodeModel ? nodeModel.extension.toLowerCase() : ".txt"
@@ -64,6 +68,35 @@ Item {
 
     // Downstream Connection Count
     readonly property int downstreamCount: bridge ? bridge.get_downstream_count(nodeId) : 0
+
+    // Search / Spotlight State
+    readonly property bool isSearchResult: viewportContainer && viewportContainer.searchActive ? (viewportContainer.searchResultIds.indexOf(nodeId.toString()) !== -1) : false
+    readonly property bool isSearchDimmed: viewportContainer && viewportContainer.searchActive && !isSearchResult
+    readonly property int searchResultIndex: isSearchResult && viewportContainer ? viewportContainer.searchResultIds.indexOf(nodeId.toString()) : -1
+    readonly property int totalSlots: viewportContainer && viewportContainer.searchActive ? viewportContainer.searchResultIds.length : 0
+    readonly property int columns: viewportContainer ? Math.max(1, Math.floor((viewportContainer.width * 0.85) / 340)) : 1
+    readonly property int gridRow: searchResultIndex >= 0 ? Math.floor(searchResultIndex / columns) : 0
+    readonly property int gridCol: searchResultIndex >= 0 ? (searchResultIndex % columns) : 0
+    readonly property int itemsInCurrentRow: (searchResultIndex >= 0 && totalSlots > 0) ? Math.min(columns, totalSlots - gridRow * columns) : 1
+    readonly property real slotWidth: 340
+    readonly property real stagedX: viewportContainer ? (viewportContainer.width / 2) + (gridCol - (itemsInCurrentRow - 1) / 2.0) * slotWidth : 0
+    readonly property real stagedY: viewportContainer ? viewportContainer.height * 0.28 + gridRow * 240 : 0
+
+    property bool isStaged: isSearchResult
+    property bool sustainedHover: false
+    Timer {
+        id: dwellTimer
+        interval: 1500
+        running: rootItem.isHovered && !rootItem.isStaged && !rootItem.isSelected
+        onTriggered: {
+            sustainedHover = true
+        }
+    }
+    onIsHoveredChanged: {
+        if (!isHovered) {
+            sustainedHover = false
+        }
+    }
 
     // =========================================================================
     // 2.5D Panoramic Horizon Projection (Decoupled X/Y Spread)
@@ -118,21 +151,23 @@ Item {
     // Target Dimensions
     readonly property real targetWidth: {
         if (isSelected) return bridge ? bridge.workbenchWidth : 1400
-        if (isMacroBead || isHoverBloomed) return 16
+        if (showPreviewSlate) return 320
+        if (isMacroBead) return 16
         if (isCompactCapsule) return 180
         return 280
     }
 
     readonly property real targetHeight: {
         if (isSelected) return bridge ? bridge.workbenchHeight : 900
-        if (isMacroBead || isHoverBloomed) return 16
+        if (showPreviewSlate) return 220
+        if (isMacroBead) return 16
         if (isCompactCapsule) return 48
         return 115
     }
 
     readonly property real cardRadius: {
         if (isSelected) return 14
-        if (isMacroBead || isHoverBloomed) return 8
+        if (isMacroBead) return 8
         if (isCompactCapsule) return 24
         return 10
     }
@@ -143,11 +178,15 @@ Item {
     readonly property real cardCenterX: x + width / 2
     readonly property real cardCenterY: y + height / 2
 
+    property real verticalOffset: (isStaged && !isHovered && !isSelected) ? Math.sin((viewportContainer ? viewportContainer.canvasGlobalTime : 0) * 0.0025 + searchResultIndex * 0.75) * 3.5 : 0.0
+    Behavior on verticalOffset { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
+
     // Projected Coordinate Anchors
-    x: isSelected ? (viewportContainer ? (viewportContainer.width - targetWidth) / 2 : 0) : (projectedX - targetWidth / 2)
-    y: isSelected ? (viewportContainer ? (viewportContainer.height - targetHeight) / 2 : 0) : (projectedY - targetHeight / 2)
-    width: targetWidth
-    height: targetHeight
+    transformOrigin: Item.Center
+    x: isSelected ? (viewportContainer ? (viewportContainer.width - width) / 2 : 0) : (isSearchResult ? (stagedX - width / 2) : (projectedX - width / 2))
+    y: isSelected ? (viewportContainer ? (viewportContainer.height - height) / 2 : 0) : (isSearchResult ? (stagedY - height / 2) + verticalOffset : (projectedY - height / 2))
+    width: Math.round(targetWidth)
+    height: Math.round(targetHeight)
 
     Behavior on x {
         enabled: rootItem.isSelected && !dragArea.isDragging && !resizeMouseArea.isResizing
@@ -167,38 +206,45 @@ Item {
     }
 
     // Strict Scale Lock: Keep selected workbench card at exactly 1.0 to ensure 1:1 resize fidelity
-    scale: isSelected ? 1.0 : ((isHoverBloomed ? 1.15 : (isHovered ? 1.05 : 1.0)) * perspectiveScale)
+    scale: isSelected ? 1.0 : ((isHovered ? 1.05 : 1.0) * perspectiveScale)
     Behavior on scale {
         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
     }
 
     // Depth Stacking
-    z: isSelected ? 9000 : (isHoverBloomed ? 8000 : (isHovered ? 7000 : Math.round((1.0 - depthZ) * 1000 + focusWeight * 100)))
+    z: isSelected ? 9000 : (isHovered ? 7000 : Math.round((1.0 - depthZ) * 1000 + focusWeight * 100))
 
     readonly property real insideClusterFactor: {
         if (!nodeModel || nodeModel.clusterId === undefined || nodeModel.clusterId < 0) return 0.0;
         if (!bridge || !bridge.clusterHalos) return 0.0;
+        
+        var apertureFactor = 1.0 - Math.max(0.0, Math.min(1.0, (currentAperture - 0.30) / 0.20));
+        if (apertureFactor <= 0.0) return 0.0;
+
         var halos = bridge.clusterHalos;
         for (var i = 0; i < halos.length; i++) {
             if (halos[i].id === "component_" + nodeModel.clusterId) {
                 var cx = halos[i].centerX;
                 var cy = halos[i].centerY;
-                var r = Math.min(halos[i].width, halos[i].height) * 0.5;
+                // Expanded fade radius and soft 30px transition buffer
+                var r = Math.max(halos[i].haloWidth, halos[i].haloHeight) * 0.6; 
                 var dx = rawPhysicsX - cx;
                 var dy = rawPhysicsY - cy;
                 var dist = Math.sqrt(dx * dx + dy * dy);
                 
-                var margin = 40.0;
+                var margin = 30.0;
                 var innerR = r - margin;
                 var outerR = r + margin;
                 
+                var baseFactor = 0.0;
                 if (dist <= innerR) {
-                    return 1.0;
+                    baseFactor = 1.0;
                 } else if (dist >= outerR) {
-                    return 0.0;
+                    baseFactor = 0.0;
                 } else {
-                    return (outerR - dist) / (2.0 * margin);
+                    baseFactor = (outerR - dist) / (2.0 * margin);
                 }
+                return baseFactor * apertureFactor;
             }
         }
         return 0.0;
@@ -208,63 +254,27 @@ Item {
 
     readonly property real macroOpacityFade: {
         if (isSelected || isHovered) return 1.0
-        if (currentAperture >= 0.35) return 1.0
         
         var hasValidCluster = nodeModel && nodeModel.clusterId !== undefined && nodeModel.clusterId >= 0;
         if (!hasValidCluster) return 1.0;
         
-        var fadedVal = Math.max(0.0, (currentAperture - 0.20) / 0.15);
-        return 1.0 * (1.0 - insideClusterFactor) + fadedVal * insideClusterFactor;
+        // Do not fade interior nodes to 0.0; clamp at macro aperture to faint star beads
+        var fade = 1.0 - insideClusterFactor;
+        if (currentAperture <= 0.50) {
+            return Math.max(0.45, fade);
+        }
+        return Math.max(0.45, fade);
     }
 
     // Atmospheric Haze Attenuation & Progressive Squeeze Falloff
-    opacity: (isSelected ? 1.0 : (isHovered ? 1.0 : Math.max(0.0, focusWeight * (1.0 - depthZ * 0.35)))) * wingSqueezeOpacity * macroOpacityFade
+    opacity: {
+        if (viewportContainer && viewportContainer.searchActive) {
+            return isSearchResult ? 1.0 : 0.15
+        }
+        return (isSelected ? 1.0 : (isHovered ? 1.0 : Math.max(0.0, focusWeight * (1.0 - depthZ * 0.35)))) * wingSqueezeOpacity * macroOpacityFade
+    }
     Behavior on opacity {
         NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-    }
-
-    // =====================================================================
-    // TIER 4: Hover-Bloomed Preview Capsule Overlay
-    // =====================================================================
-    Rectangle {
-        id: bloomOverlay
-        width: 160
-        height: 32
-        anchors.centerIn: parent
-        radius: 16
-        color: "#161c28"
-        border.color: rootItem.nodeAccentColor
-        border.width: 1.5
-        opacity: rootItem.isHoverBloomed ? 1.0 : 0.0
-        visible: opacity > 0.01
-        z: 9999
-        enabled: false
-
-        Behavior on opacity { NumberAnimation { duration: 150 } }
-
-        Row {
-            anchors.centerIn: parent
-            spacing: 8
-
-            Rectangle {
-                width: 8
-                height: 8
-                radius: 4
-                color: rootItem.nodeAccentColor
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-                text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
-                color: "#f8fafc"
-                font.family: "Monospace"
-                font.pixelSize: 11
-                font.bold: true
-                elide: Text.ElideRight
-                width: 120
-                anchors.verticalCenter: parent.verticalCenter
-            }
-        }
     }
 
     Rectangle {
@@ -272,17 +282,16 @@ Item {
         anchors.fill: parent
         radius: rootItem.cardRadius
         clip: true
-        opacity: rootItem.isHoverBloomed ? 0.0 : 1.0
-        
-        Behavior on opacity { NumberAnimation { duration: 150 } }
 
         Behavior on radius {
             NumberAnimation { duration: 300; easing.type: Easing.OutQuint }
         }
 
         color: rootItem.isSelected ? "#0c0e12" : (rootItem.isMacroBead ? rootItem.nodeAccentColor : (rootItem.isHovered ? "#161c28" : "#0a0c10"))
-        border.color: rootItem.isSelected ? "#38bdf8" : (rootItem.isMacroBead ? Qt.lighter(rootItem.nodeAccentColor, 1.3) : (rootItem.isHovered ? rootItem.nodeAccentColor : (rootItem.isDirectNeighbor ? rootItem.relationAccentColor : "#1e2430")))
-        border.width: rootItem.isMacroBead ? 1.5 : (rootItem.isSelected || rootItem.isHovered ? 1.5 : 1.0)
+        border.color: rootItem.isSearchResult ? "#64d2ff" : (rootItem.isSelected ? "#38bdf8" : (rootItem.isMacroBead ? Qt.lighter(rootItem.nodeAccentColor, 1.3) : (rootItem.isHovered ? rootItem.nodeAccentColor : (rootItem.isDirectNeighbor ? rootItem.relationAccentColor : "#1e2430"))))
+        border.width: rootItem.isSearchResult ? 2.5 : (rootItem.isMacroBead ? 1.5 : (rootItem.isSelected || rootItem.isHovered ? 1.5 : 1.0))
+        antialiasing: true
+        smooth: true
 
         Behavior on color { ColorAnimation { duration: 180 } }
         Behavior on border.color { ColorAnimation { duration: 180 } }
@@ -306,7 +315,7 @@ Item {
             id: deepPillView
             anchors.fill: parent
             anchors.margins: 8
-            opacity: rootItem.isCompactCapsule ? 1.0 : 0.0
+            opacity: rootItem.isCompactCapsule && !rootItem.showPreviewSlate && !rootItem.isSelected ? 1.0 : 0.0
             visible: opacity > 0.01
 
             Behavior on opacity { NumberAnimation { duration: 180 } }
@@ -354,7 +363,7 @@ Item {
             id: tokenView
             anchors.fill: parent
             anchors.margins: 14
-            opacity: rootItem.isFullToken ? rootItem.labelOpacity : 0.0
+            opacity: rootItem.isFullToken && !rootItem.showPreviewSlate && !rootItem.isSelected ? rootItem.labelOpacity : 0.0
             visible: opacity > 0.01
 
             Behavior on opacity { NumberAnimation { duration: 180 } }
@@ -432,6 +441,32 @@ Item {
                     elide: Text.ElideMiddle
                     width: parent.width
                 }
+            }
+        }
+
+        // =====================================================================
+        // TIER 1.5: Preview Slate
+        // =====================================================================
+        Loader {
+            id: previewLoader
+            anchors.centerIn: parent
+            width: 320
+            height: 220
+            active: rootItem.showPreviewSlate && !rootItem.isSelected
+            visible: opacity > 0.01
+            opacity: rootItem.showPreviewSlate && !rootItem.isSelected ? 1.0 : 0.0
+            source: "PreviewSlate.qml"
+            
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+
+            onLoaded: {
+                item.archetype = Qt.binding(function() { return rootItem.nodeModel ? rootItem.nodeModel.archetype : "document" })
+                item.snippet = Qt.binding(function() { return rootItem.nodeModel ? rootItem.nodeModel.snippet : "" })
+                item.fileName = Qt.binding(function() { return rootItem.nodeModel ? rootItem.nodeModel.fileName : "" })
+                item.filePath = Qt.binding(function() { return rootItem.nodeModel ? rootItem.nodeModel.filePath : "" })
+                item.sizeFormatted = Qt.binding(function() { return rootItem.nodeModel ? (rootItem.nodeModel.sizeBytes / 1024).toFixed(1) + " KB" : "0 KB" })
+                item.referenceCount = Qt.binding(function() { return rootItem.downstreamCount })
+                item.accentColor = Qt.binding(function() { return rootItem.nodeAccentColor })
             }
         }
 
@@ -558,6 +593,7 @@ Item {
         MouseArea {
             id: dragArea
             anchors.fill: parent
+            anchors.margins: -16 // Hit-box stabilization padding
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
@@ -634,15 +670,19 @@ Item {
                     isDragging = false
                     if (rootItem.bridge) {
                         rootItem.bridge.release_node(rootItem.nodeId)
-                        if (!isDragMoved) {
-                            rootItem.bridge.select_node(rootItem.nodeId)
-                            rootItem.bridge.set_hovered_node(0)
-                        }
                     }
-                } else if (!rootItem.isSelected && !isDragMoved) {
+                }
+            }
+
+            onClicked: function(mouse) {
+                if (mouse.button === Qt.LeftButton && !rootItem.isSelected) {
                     if (rootItem.bridge) {
                         rootItem.bridge.select_node(rootItem.nodeId)
                         rootItem.bridge.set_hovered_node(0)
+                        
+                        if (rootItem.viewportContainer && typeof rootItem.viewportContainer.closeSearchAndOmniBar === "function") {
+                            rootItem.viewportContainer.closeSearchAndOmniBar()
+                        }
                     }
                 }
             }

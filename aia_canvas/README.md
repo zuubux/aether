@@ -15,7 +15,9 @@ Designed to eliminate traditional window chrome, `aia_canvas` projects files dir
 ## ⚡ Features
 
 * **120Hz Stokes Fluid Dynamics:** Viscous, biological movement using quadratic drag, aspect-conformal orbital docking, and non-penetration potential barriers[cite: 2, 5].
-* **4-Tier Semantic Aperture:** Seamless LOD scaling ranging from live resizable Workbenches ($1400 \times 900\text{px}$) down to $16\text{px}$ luminous Star Beads with fish-eye hover blooms[cite: 2, 8].
+* **4-Tier Semantic Aperture:** Seamless LOD scaling ranging from live resizable Workbenches ($1400 \times 900\text{px}$) down to $16\text{px}$ luminous Star Beads with fish-eye hover blooms[cite: 2, 8]. Tier 1.5 previews (Preview Slates) are used for active search results and sustained hovers.
+* **Focal Lens States:** Strict geometric focus locking that pulls related semantic history directly into view and decouples background clusters to preserve kinetic calm.
+* **Tendril Pacing & Distance Damping:** Temporal and semantic edges breathe organically with slow pulse phases, dimming progressively based on span distance to reduce visual clutter across macro clusters.
 * **Enterprise Shield Membranes:** GPU-native containment bubbles that organically envelop active clusters while rejecting distant outliers[cite: 5, 7].
 * **Decoupled JSON-RPC 2.0 Architecture:** Asynchronous UNIX domain socket client connecting to `aia_weaver` with a 64 KB framing limit and auto-reconnect backoff[cite: 10].
 * **Hardened Path Security:** Strict path canonicalization guaranteeing all file actions are verified within safe workspace boundaries[cite: 2].
@@ -73,6 +75,12 @@ pip install -r requirements.txt
 ```bash
 # Run standalone (Hardware/Mock mode or auto-attaching to live aia_weaver)
 python3 src/main.py
+
+# Available CLI Flags:
+# --fullscreen / --full-screen : Launch the application in native full screen mode.
+# --span-all : Span the window across all connected displays.
+# --screen <idx> : Target specific display index (default: 0).
+# -v / --debug : Enable verbose diagnostic logging.
 ```
 
 ---

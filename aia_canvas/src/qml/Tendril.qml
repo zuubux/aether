@@ -163,8 +163,8 @@ Item {
         }
     }
 
-    readonly property bool sourceIsBead: sourceNode ? (sourceNode.isMacroBead || sourceNode.isHoverBloomed) : false
-    readonly property bool targetIsBead: targetNode ? (targetNode.isMacroBead || targetNode.isHoverBloomed) : false
+    readonly property bool sourceIsBead: sourceNode ? !!(sourceNode.isMacroBead || sourceNode.isHoverBloomed) : false
+    readonly property bool targetIsBead: targetNode ? !!(targetNode.isMacroBead || targetNode.isHoverBloomed) : false
 
     readonly property point startPt: (sourceNode && targetNode) ?
         (sourceIsBead ? Qt.point(sCx, sCy) : calculateSynapticPoint(sCx, sCy, sW, sH, tCx, tCy, jitterSeed)) : Qt.point(0, 0)
@@ -215,30 +215,32 @@ Item {
     // Bioluminescent Respiration Wave (Continuous Calm Biological Breathing)
     // =========================================================================
     property real pulsePhase: 0.0
+    readonly property bool isShortIntra: isIntraCluster && spanDist <= 250.0
+    readonly property real zoomPauseMultiplier: isShortIntra ? (1.0 + Math.max(0.0, currentAperture * 4.0)) : 1.0
 
     SequentialAnimation on pulsePhase {
         loops: Animation.Infinite
         running: true 
 
-        // Massive random delay (2 to 14 seconds) so connections fire sparsely and randomly
-        PauseAnimation { duration: ((rootTendril.sourceId * 313 + rootTendril.targetId * 107) % 12000) + 2000 }
+        // Massive random delay (6 to 24 seconds) so connections fire sparsely and randomly
+        PauseAnimation { duration: (((rootTendril.sourceId * 313 + rootTendril.targetId * 107) % 18000) + 6000) * rootTendril.zoomPauseMultiplier }
         
         // Deep, slow biological inhale
-        NumberAnimation { to: 1.0; duration: 4500; easing.type: Easing.InOutSine }
-        PauseAnimation { duration: 800 }
+        NumberAnimation { to: 1.0; duration: 8500; easing.type: Easing.InOutSine }
+        PauseAnimation { duration: 1500 }
         
         // Long, soft exhale
-        NumberAnimation { to: 0.0; duration: 5500; easing.type: Easing.InOutSine }
+        NumberAnimation { to: 0.0; duration: 9500; easing.type: Easing.InOutSine }
         
         // Long baseline rest before the next possible breath
-        PauseAnimation { duration: 4000 }
+        PauseAnimation { duration: 8000 * rootTendril.zoomPauseMultiplier }
     }
 
     // =========================================================================
     // Dynamic Opacity & Attenuation
     // =========================================================================
     // Reduced by ~40% so lines don't stretch infinitely across the cosmos
-    readonly property real ambientSpanLimit: 1600.0 
+    readonly property real ambientSpanLimit: edgeType === "temporal" ? 900.0 : 1600.0 
 
     readonly property real proximityFactor: {
         if (!isVoidMode) {
@@ -264,7 +266,11 @@ Item {
 
         // High-exponent power curve so edges stay dark for ~80% of their cycle, breathing up briefly to peak opacity of ~0.2
         var spark = Math.pow(Math.max(0.0, Math.sin(pulsePhase * Math.PI * 0.5)), 4.0)
-        var peak = 0.20 * proximityFactor * depthAttenuation * Math.max(0.4, weight)
+        var basePeak = edgeType === "temporal" ? 0.06 : 0.20
+        var peak = basePeak * proximityFactor * depthAttenuation * Math.max(0.4, weight)
+        if (isShortIntra) {
+            peak *= Math.max(0.2, 1.0 - currentAperture * 0.6)
+        }
         return spark * peak
     }
 
@@ -272,6 +278,7 @@ Item {
     readonly property bool isConnectedToHovered: hoveredNodeId > 0 && (sourceId === hoveredNodeId || targetId === hoveredNodeId)
 
     readonly property real targetOpacity: {
+        if (isHoverBloomed) return 1.0
         if (isConnectedToSelected) {
             if (isFirstDegree) {
                 return 1.0
@@ -288,8 +295,7 @@ Item {
     readonly property real macroOpacityFade: {
         if (isConnectedToSelected || isConnectedToHovered) return 1.0
         if (currentAperture >= 0.35) return 1.0
-        var isTrunk = !isIntraCluster && (edgeType === "explicit" || (edgeType === "semantic" && weight >= 0.45))
-        if (isTrunk) return 1.0
+        if (!isIntraCluster) return 1.0
         return Math.max(0.0, (currentAperture - 0.20) / 0.15)
     }
 
@@ -301,14 +307,14 @@ Item {
     }
 
     readonly property color filamentColor: {
-        if (isHoverBloomed) {
+        if (isHoverBloomed || isConnectedToSelected) {
             if (edgeType === "temporal") return "#fef08a"
             if (edgeType === "explicit") return "#7dd3fc"
             if (edgeType === "semantic") return "#c084fc"
             return "#e9d5ff"
         }
         if (edgeType === "explicit") return "#38bdf8"
-        if (edgeType === "temporal") return "#fde047"
+        if (edgeType === "temporal") return "#ca8a04"
         if (edgeType === "semantic") return "#a855f7"
         return "#c084fc"
     }
@@ -384,9 +390,11 @@ Item {
         id: portRoot
         property color glowColor: "#38bdf8"
         property bool isFocalLens: false
+        property bool isPreviewSlate: false
         property real edgeWeight: 1.0
 
-        readonly property real glowSize: isFocalLens ? (14 + 10 * edgeWeight) : (8 + 6 * edgeWeight)
+        readonly property real baseSize: isFocalLens ? (14 + 10 * edgeWeight) : (8 + 6 * edgeWeight)
+        readonly property real glowSize: isPreviewSlate ? baseSize * 0.65 : baseSize
         width: glowSize
         height: glowSize
         opacity: Math.max(0.20, Math.min(1.0, edgeWeight))
@@ -421,13 +429,13 @@ Item {
     }
 
    // Helper properties to handle edge directionality gracefully
-    readonly property bool sourceIsSelected: sourceId === selectedNodeId
+    readonly property bool sourceIsSelected: sourceId === selectedNodeId || (isHoverBloomed && sourceId === hoveredNodeId)
     readonly property point lensPoint: sourceIsSelected ? startPt : endPt
     readonly property point outerPoint: sourceIsSelected ? endPt : startPt
 
     // Lens Frame Synaptic Port (Fires on the lens for Tier 1, Tier 2, and Hover)
     SynapticGlowPort {
-        visible: (isFirstDegree || isSecondDegree || isHoverBloomed) && (sourceId === selectedNodeId || targetId === selectedNodeId) && (edgeType === "semantic" || weight >= 0.25)
+        visible: (isFirstDegree || isSecondDegree || isHoverBloomed) && (sourceId === selectedNodeId || targetId === selectedNodeId || isHoverBloomed) && (edgeType === "semantic" || weight >= 0.25)
         x: lensPoint.x - width / 2
         y: lensPoint.y - height / 2
         glowColor: edgeType === "semantic" ? "#a78bfa" : filamentColor
@@ -438,11 +446,12 @@ Item {
 
     // Outer Node Synaptic Port (ONLY fires on the outer node for Tier 1 and Hover)
     SynapticGlowPort {
-        visible: (isFirstDegree || isHoverBloomed) && (sourceId === selectedNodeId || targetId === selectedNodeId) && (edgeType === "semantic" || weight >= 0.25)
+        visible: (isFirstDegree || isHoverBloomed) && (sourceId === selectedNodeId || targetId === selectedNodeId || isHoverBloomed) && (edgeType === "semantic" || weight >= 0.25)
         x: outerPoint.x - width / 2
         y: outerPoint.y - height / 2
         glowColor: edgeType === "semantic" ? "#a78bfa" : filamentColor
         isFocalLens: false
+        isPreviewSlate: sourceIsSelected ? (targetNode && targetNode.showPreviewSlate) : (sourceNode && sourceNode.showPreviewSlate)
         edgeWeight: edgeType === "semantic" ? Math.max(0.5, weight) : weight
         z: 9500
     }

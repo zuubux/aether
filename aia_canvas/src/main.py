@@ -7,24 +7,38 @@ Entry point, Qt Scene Graph bootstrap, and observability initialization.
 import sys
 import signal
 import logging
+import argparse
 from pathlib import Path
 from PyQt6.QtGui import QGuiApplication, QSurfaceFormat
 from PyQt6.QtQml import QQmlApplicationEngine
 from PyQt6.QtCore import QTimer
 
 from bridge import CanvasBridge
+from aia_intent import IntentEngine
 
-def setup_observability():
+def setup_observability(debug=False):
     """Configure structured stdout logging for systemd-journald."""
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG if debug else logging.WARNING,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S"
     )
     return logging.getLogger("aia_canvas.main")
 
 def main():
-    logger = setup_observability()
+    parser = argparse.ArgumentParser(description="Aether Canvas")
+    parser.add_argument("--fullscreen", "--full-screen", action="store_true", help="Launch in fullscreen mode")
+    parser.add_argument("--span-all", action="store_true", help="Span across all connected displays")
+    parser.add_argument("--screen", type=int, default=0, help="Target display index")
+    parser.add_argument("--width", type=int, default=1920, help="Window width")
+    parser.add_argument("--height", type=int, default=1080, help="Window height")
+    parser.add_argument("-v", "--debug", action="store_true", help="Enable verbose debug logging")
+    parser.add_argument("--watch-dir", type=str, help="Directory to index/watch")
+    
+    # Parse known args so Qt can still parse its own if needed
+    args, unparsed_args = parser.parse_known_args()
+
+    logger = setup_observability(args.debug)
     logger.info("Initializing Aether Canvas...")
 
     # Set 4x hardware MSAA and enable vsync matching your high refresh rate
@@ -34,6 +48,7 @@ def main():
     QSurfaceFormat.setDefaultFormat(surface_format)
 
     # Instantiate QGuiApplication exactly once
+    sys.argv = [sys.argv[0]] + unparsed_args
     app = QGuiApplication(sys.argv)
     app.setApplicationName("Aether Canvas")
     app.setOrganizationName("Aether")
@@ -48,12 +63,45 @@ def main():
 
     engine.rootContext().setContextProperty("canvasBridge", bridge)
 
+    intent_engine = IntentEngine(bridge)
+    # Forward the nodesSummoned signal from intent_engine to the physics engine
+    intent_engine.nodesSummoned.connect(bridge.physics.summon_nodes)
+    engine.rootContext().setContextProperty("intentEngine", intent_engine)
+
+    screens = app.screens()
+    screen_idx = args.screen if 0 <= args.screen < len(screens) else 0
+    engine.rootContext().setContextProperty("targetScreenIdx", screen_idx)
+    engine.rootContext().setContextProperty("isFullscreen", args.fullscreen)
+    engine.rootContext().setContextProperty("isSpanAll", args.span_all)
+    
     qml_file = Path(__file__).parent / "qml" / "Canvas.qml"
     engine.load(str(qml_file))
 
     if not engine.rootObjects():
         logger.error("Failed to load QML interface.")
         sys.exit(-1)
+
+    window = engine.rootObjects()[0]
+    
+    # Wayland requires screen to be set before showing, but QML handles it via bindings now.
+    # We still need to handle span_all explicitly if requested, though Wayland compositor 
+    # typically controls span-all placement natively.
+    if args.span_all and screens:
+        total_rect = screens[0].geometry()
+        for s in screens[1:]:
+            total_rect = total_rect.united(s.geometry())
+        window.setGeometry(total_rect)
+
+    if not args.fullscreen and not args.span_all:
+        target_screen = screens[screen_idx]
+        geo = target_screen.geometry()
+        window.setGeometry(geo.x() + 100, geo.y() + 100, args.width, args.height)
+
+    # Trigger show based on parsed properties (since QML visibility bindings handle the initial map)
+    if args.fullscreen or args.span_all:
+        window.showFullScreen()
+    else:
+        window.show()
 
     logger.info("Aether Canvas UI loaded successfully. Awaiting IPC backend...")
 

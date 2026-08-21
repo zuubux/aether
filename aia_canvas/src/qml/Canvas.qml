@@ -5,24 +5,66 @@ Window {
     id: root
     width: 2560
     height: 1440
-    visibility: Window.Maximized
-    visible: true
     title: "Aether Canvas"
     color: "#07080b"
     property bool showDiagnostics: false
+    
+    screen: Qt.application.screens[targetScreenIdx !== undefined ? targetScreenIdx : 0]
+    visibility: (isFullscreen || isSpanAll) ? Window.FullScreen : Window.Windowed
 
     // Global Hotkeys
     Shortcut {
-        sequence: "Esc"
+        sequence: "Ctrl+Q"
+        onActivated: Qt.quit()
+    }
+
+    Shortcut {
+        sequence: "Escape"
         onActivated: {
-            if (canvasBridge) {
+            if (omniBar.active) {
+                if (omniBar.textLength > 0) {
+                    omniBar.clearTextAndCancel()
+                } else {
+                    omniBar.active = false
+                    if (canvasViewport.searchActive && canvasBridge) {
+                        canvasBridge.clear_search()
+                    }
+                }
+            } else if (canvasViewport.searchActive) {
+                if (canvasBridge) {
+                    canvasBridge.clear_search()
+                }
+            } else if (canvasBridge && canvasBridge.selectedNodeId > 0) {
                 canvasBridge.select_node(0)
+            } else {
+                Qt.quit()
+            }
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Space"
+        onActivated: {
+            if (omniBar.active) {
+                omniBar.active = false
+            } else {
+                omniBar.active = true
             }
         }
     }
     Shortcut {
         sequence: "F3"
         onActivated: showDiagnostics = !showDiagnostics
+    }
+    
+    Shortcut {
+        sequence: "Ctrl+I"
+        onActivated: {
+            if (intentEngine) {
+                // Summoning test trigger
+                intentEngine.process_query("database architecture")
+            }
+        }
     }
 
     // Viewport Dimension Sync
@@ -66,7 +108,87 @@ Window {
             id: canvasViewport
             anchors.fill: parent
 
+            property real canvasGlobalTime: 0.0
+            FrameAnimation {
+                running: canvasViewport.searchActive
+                onTriggered: canvasViewport.canvasGlobalTime += frameTime * 1000.0
+            }
+
+            OmniBar {
+                id: omniBar
+                anchors.horizontalCenter: parent.horizontalCenter
+                z: 10000
+
+                onQuerySubmitted: function(text) {
+                    if (canvasBridge) {
+                        canvasBridge.submit_query(text)
+                    }
+                }
+
+                onCancelQuery: {
+                    if (canvasBridge) {
+                        canvasBridge.clear_search()
+                    }
+                }
+
+                onDismissed: {
+                    active = false
+                    if (canvasBridge) {
+                        canvasBridge.clear_search()
+                    }
+                }
+            }
+
             property var nodeRegistry: ({})
+            property var searchResultIds: []
+            property bool searchActive: false
+
+            Connections {
+                target: canvasBridge
+                function onSearchResultsReceived(results) {
+                    canvasViewport.searchResultIds = results
+                    canvasViewport.searchActive = true
+
+                    var sumX = 0
+                    var sumY = 0
+                    var count = 0
+
+                    for (var i = 0; i < results.length; i++) {
+                        var node = canvasViewport.getNode(results[i])
+                        if (node) {
+                            sumX += node.x + node.width / 2
+                            sumY += node.y + node.height / 2
+                            count++
+                        }
+                    }
+
+                    if (count > 0 && canvasBridge) {
+                        var shelfY = root.height * 0.35;
+                        canvasBridge.set_staged_nodes(results, root.width, shelfY);
+                    }
+                }
+
+                function onSearchCleared() {
+                    canvasViewport.searchActive = false
+                    canvasViewport.searchResultIds = []
+                    // Retain target defaults explicitly
+                    canvasViewport.targetX = 0
+                    canvasViewport.targetY = 0
+                    canvasViewport.targetScale = 1.0
+                }
+            }
+
+            property real targetX: 0
+            property real targetY: 0
+            property real targetScale: 1.0
+
+            x: targetX
+            y: targetY
+            scale: targetScale
+
+            Behavior on x { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+            Behavior on y { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: 450; easing.type: Easing.OutCubic } }
             property int registryEpoch: 0
 
             function registerNode(id, item) {
@@ -82,6 +204,15 @@ Window {
             function getNode(id) {
                 var _dummy = registryEpoch
                 return nodeRegistry[id] || null
+            }
+
+            function closeSearchAndOmniBar() {
+                omniBar.active = false
+                omniBar.clearTextAndCancel()
+                if (searchActive && canvasBridge) {
+                    canvasBridge.clear_search()
+                }
+                canvasSpace.forceActiveFocus()
             }
             
             // 1. Atmospheric Cluster Halos (Background Layer)
@@ -102,6 +233,7 @@ Window {
                     isFocalCluster: modelData.isFocalCluster
                     nodeCount: modelData.nodeCount
                     currentAperture: canvasBridge ? canvasBridge.aperture : 1.0
+                    densityWeight: modelData.densityWeight !== undefined ? modelData.densityWeight : 1.0
                 }
             }
 
