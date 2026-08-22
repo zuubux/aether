@@ -29,22 +29,39 @@ Designed to eliminate traditional window chrome, `aia_canvas` projects files dir
 
 ```text
 aia_canvas/
-├── ipc/
-│   └── client.py        # Asynchronous UNIX domain socket JSON-RPC 2.0 client[cite: 10]
-├── physics/
-│   └── engine.py        # 120Hz Stokes physics, clustering, and horizon anchors[cite: 5]
-├── qml/
-│   ├── Canvas.qml       # Root window, SRE HUD, and viewport orchestrator[cite: 6]
-│   ├── ClusterHalo.qml  # GPU-accelerated shield membrane component[cite: 7]
-│   ├── Node.qml         # 4-tier semantic card and Star Bead implementation[cite: 8]
-│   └── Tendril.qml      # Synaptic cubic Bezier connection lines[cite: 9]
-├── utils/
-│   └── security.py      # Path canonicalization & boundary traversal guards
-├── bridge.py            # Python/QML adapter, salience mapping, and telemetry[cite: 2]
-├── models.py            # Reactive QObject data models (Node, Edge)[cite: 3]
-├── store.py             # In-memory graph ledger and neighborhood store[cite: 4]
-├── main.py              # Application entrypoint & systemd logger bootstrap[cite: 1]
-├── ARCHITECTURE.md      # Detailed system design specification
+├── src/
+│   ├── controllers/         # Domain Controller Hierarchy
+│   │   ├── base_controller.py
+│   │   ├── canvas_controller.py
+│   │   ├── node_controller.py
+│   │   ├── physics_controller.py
+│   │   └── search_controller.py
+│   ├── ipc/
+│   │   └── client.py        # Asynchronous UNIX domain socket JSON-RPC 2.0 client[cite: 10]
+│   ├── physics/
+│   │   └── engine.py        # 120Hz Stokes physics, clustering, and horizon anchors[cite: 5]
+│   ├── qml/
+│   │   ├── node/            # Modular Leaf Delegates
+│   │   │   ├── NodeAura.qml # GPU-native semantic glow and selection halos
+│   │   │   ├── NodePill.qml # Tier 3 compact capsules and extension badges
+│   │   │   └── NodePreview.qml # Tier 1.5 hover-dwell preview cards
+│   │   ├── slates/          # Specialized Media Slates
+│   │   │   ├── ImageSlate.qml
+│   │   │   ├── PdfSlate.qml
+│   │   │   └── TableSlate.qml
+│   │   ├── Canvas.qml       # Root window, SRE HUD, and viewport orchestrator[cite: 6]
+│   │   ├── ClusterHalo.qml  # GPU-accelerated shield membrane component[cite: 7]
+│   │   ├── Node.qml         # 4-tier semantic card and Star Bead implementation coordinator[cite: 8]
+│   │   └── Tendril.qml      # Synaptic cubic Bezier connection lines[cite: 9]
+│   ├── utils/
+│   │   └── security.py      # Path canonicalization & boundary traversal guards
+│   ├── workers/             # Asynchronous QThreadPool Pipelines
+│   │   └── media_worker.py  # Non-blocking PDF, CSV, Image offloading tasks
+│   ├── bridge.py            # Composite Root Coordinator & Python/QML adapter[cite: 2]
+│   ├── models.py            # Reactive QObject data models (Node, Edge)[cite: 3]
+│   ├── store.py             # In-memory graph ledger and neighborhood store[cite: 4]
+│   └── main.py              # Application entrypoint & systemd logger bootstrap[cite: 1]
+├── ARCHITECTURE.md          # Detailed system design specification
 └── requirements.txt
 ```
 
