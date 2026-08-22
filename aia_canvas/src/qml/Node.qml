@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.Basic as Basic
+import Aether.Content 1.0
 
 Item {
     id: rootItem
@@ -50,6 +52,8 @@ Item {
 
     // Semantic Extension Colors
     readonly property string ext: nodeModel ? nodeModel.extension.toLowerCase() : ".txt"
+    readonly property string filePath: nodeModel ? nodeModel.filePath : ""
+    readonly property bool isImageFile: (filePath && typeof bridge !== "undefined") ? bridge.is_image_file(filePath.toString()) : false
     readonly property color nodeAccentColor: {
         if (ext === ".py") return "#38bdf8"
         if (ext === ".sh" || ext === ".bash" || ext === ".zsh") return "#fbbf24"
@@ -68,6 +72,10 @@ Item {
 
     // Downstream Connection Count
     readonly property int downstreamCount: bridge ? bridge.get_downstream_count(nodeId) : 0
+
+    readonly property string snippet: nodeModel ? nodeModel.snippet : ""
+    readonly property string initialText: (rootItem.isSelected && textStreamer.content) ? textStreamer.content : snippet
+    readonly property int referenceCount: downstreamCount
 
     // Search / Spotlight State
     readonly property bool isSearchResult: viewportContainer && viewportContainer.searchActive ? (viewportContainer.searchResultIds.indexOf(nodeId.toString()) !== -1) : false
@@ -150,7 +158,10 @@ Item {
 
     // Target Dimensions
     readonly property real targetWidth: {
-        if (isSelected) return bridge ? bridge.workbenchWidth : 1400
+        if (isSelected) {
+            if (isImageFile && focalSlateLoader.item && focalSlateLoader.item.hasError) return 520 + 24
+            return bridge ? bridge.workbenchWidth : 1400
+        }
         if (showPreviewSlate) return 320
         if (isMacroBead) return 16
         if (isCompactCapsule) return 180
@@ -158,7 +169,10 @@ Item {
     }
 
     readonly property real targetHeight: {
-        if (isSelected) return bridge ? bridge.workbenchHeight : 900
+        if (isSelected) {
+            if (isImageFile && focalSlateLoader.item && focalSlateLoader.item.hasError) return 340 + 24
+            return bridge ? bridge.workbenchHeight : 900
+        }
         if (showPreviewSlate) return 220
         if (isMacroBead) return 16
         if (isCompactCapsule) return 48
@@ -183,8 +197,8 @@ Item {
 
     // Projected Coordinate Anchors
     transformOrigin: Item.Center
-    x: isSelected ? (viewportContainer ? (viewportContainer.width - width) / 2 : 0) : (isSearchResult ? (stagedX - width / 2) : (projectedX - width / 2))
-    y: isSelected ? (viewportContainer ? (viewportContainer.height - height) / 2 : 0) : (isSearchResult ? (stagedY - height / 2) + verticalOffset : (projectedY - height / 2))
+    x: Math.round(isSelected ? (viewportContainer ? (viewportContainer.width - targetWidth) / 2 : 0) : (isSearchResult ? (stagedX - width / 2) : (projectedX - width / 2)))
+    y: Math.round(isSelected ? (viewportContainer ? (viewportContainer.height - targetHeight) / 2 : 0) : (isSearchResult ? (stagedY - height / 2) + verticalOffset : (projectedY - height / 2)))
     width: Math.round(targetWidth)
     height: Math.round(targetHeight)
 
@@ -212,7 +226,7 @@ Item {
     }
 
     // Depth Stacking
-    z: isSelected ? 9000 : (isHovered ? 7000 : Math.round((1.0 - depthZ) * 1000 + focusWeight * 100))
+    z: isSelected ? 99999 : (isHovered ? 7000 : Math.round((1.0 - depthZ) * 1000 + focusWeight * 100))
 
     readonly property real insideClusterFactor: {
         if (!nodeModel || nodeModel.clusterId === undefined || nodeModel.clusterId < 0) return 0.0;
@@ -444,112 +458,57 @@ Item {
             }
         }
 
-        // =====================================================================
-        // TIER 1.5: Preview Slate
-        // =====================================================================
-        Loader {
-            id: previewLoader
-            anchors.centerIn: parent
-            width: 320
-            height: 220
-            active: rootItem.showPreviewSlate && !rootItem.isSelected
-            visible: opacity > 0.01
-            opacity: rootItem.showPreviewSlate && !rootItem.isSelected ? 1.0 : 0.0
-            source: "PreviewSlate.qml"
-            
-            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+        MmapTextStreamer {
+            id: textStreamer
+        }
 
-            onLoaded: {
-                item.archetype = Qt.binding(function() { return rootItem.nodeModel ? rootItem.nodeModel.archetype : "document" })
-                item.snippet = Qt.binding(function() { return rootItem.nodeModel ? rootItem.nodeModel.snippet : "" })
-                item.fileName = Qt.binding(function() { return rootItem.nodeModel ? rootItem.nodeModel.fileName : "" })
-                item.filePath = Qt.binding(function() { return rootItem.nodeModel ? rootItem.nodeModel.filePath : "" })
-                item.sizeFormatted = Qt.binding(function() { return rootItem.nodeModel ? (rootItem.nodeModel.sizeBytes / 1024).toFixed(1) + " KB" : "0 KB" })
-                item.referenceCount = Qt.binding(function() { return rootItem.downstreamCount })
-                item.accentColor = Qt.binding(function() { return rootItem.nodeAccentColor })
+        Connections {
+            target: rootItem
+            function onIsSelectedChanged() {
+                if (rootItem.isSelected && rootItem.nodeModel && rootItem.nodeModel.filePath) {
+                    if (rootItem.nodeModel.filePath !== textStreamer.filePath) {
+                        textStreamer.load_file(rootItem.nodeModel.filePath, -1);
+                    }
+                }
             }
         }
 
         // =====================================================================
-        // TIER 1: Focal Workbench
+        // TIER 1.5 Hover Snippet
         // =====================================================================
         Item {
-            id: workbenchView
+            id: hoverSnippetContainer
             anchors.fill: parent
-            anchors.margins: 18
-
-            readonly property bool isExpandedEnough: cardBody.width > 600
-            opacity: (rootItem.isSelected && isExpandedEnough) ? 1.0 : 0.0
+            anchors.margins: 16
             visible: opacity > 0.01
-            z: 10
+            opacity: (rootItem.showPreviewSlate && !rootItem.isSelected) ? 1.0 : 0.0
+            z: 9
 
             Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
 
+            function formatMarkdownWithWikilinks(text) {
+                if (!text) return "";
+                var formatted = text.replace(/\[\[(.*?)\]\]/g, function(match, p1) {
+                    var parts = p1.split('|');
+                    var target = parts[0];
+                    var display = parts.length > 1 ? parts[1] : target;
+                    return `<a href="obsidian://open?file=${encodeURIComponent(target)}" style="color: #60a5fa; text-decoration: none;">${display}</a>`;
+                });
+                return formatted;
+            }
+
             Column {
                 anchors.fill: parent
-                spacing: 12
+                spacing: 8
 
-                Row {
+                Text {
+                    text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
+                    color: "#ffffff"
+                    font.family: "Monospace"
+                    font.pixelSize: 14
+                    font.bold: true
+                    elide: Text.ElideRight
                     width: parent.width
-                    spacing: 10
-
-                    Rectangle {
-                        width: 46
-                        height: 22
-                        radius: 4
-                        color: "#1e293b"
-                        border.color: rootItem.nodeAccentColor
-                        border.width: 1
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: rootItem.ext
-                            color: rootItem.nodeAccentColor
-                            font.family: "Monospace"
-                            font.pixelSize: 11
-                            font.bold: true
-                        }
-                    }
-
-                    Text {
-                        text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
-                        color: "#f8fafc"
-                        font.family: "Monospace"
-                        font.pixelSize: 15
-                        font.bold: true
-                        elide: Text.ElideRight
-                        width: parent.width - 160
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    Rectangle {
-                        width: 90
-                        height: 24
-                        radius: 4
-                        color: "#161b22"
-                        border.color: "#30363d"
-                        border.width: 1
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Reveal File"
-                            color: "#94a3b8"
-                            font.family: "Monospace"
-                            font.pixelSize: 10
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (rootItem.bridge && rootItem.nodeModel) {
-                                    rootItem.bridge.open_in_file_manager(rootItem.nodeModel.filePath)
-                                }
-                            }
-                        }
-                    }
                 }
 
                 Rectangle {
@@ -558,33 +517,205 @@ Item {
                     color: "#1f242d"
                 }
 
-                Text {
-                    text: rootItem.nodeModel ? rootItem.nodeModel.filePath : ""
-                    color: "#94a3b8"
-                    font.family: "Monospace"
-                    font.pixelSize: 10
-                    elide: Text.ElideMiddle
+                property bool isRichText: rootItem.ext === ".md" || rootItem.ext === ".markdown" || rootItem.ext === ".txt" || rootItem.ext === ".org"
+                
+                Item {
                     width: parent.width
+                    height: parent.height - 30
+                    visible: !rootItem.isImageFile
+                    
+                    Text {
+                        anchors.fill: parent
+                        text: parent.parent.isRichText ? hoverSnippetContainer.formatMarkdownWithWikilinks(rootItem.nodeModel ? rootItem.nodeModel.snippet : "") : (rootItem.nodeModel ? rootItem.nodeModel.snippet : "")
+                        color: parent.parent.isRichText ? "#cbd5e1" : "#8b949e"
+                        textFormat: parent.parent.isRichText ? Text.MarkdownText : Text.PlainText
+                        wrapMode: Text.Wrap
+                        elide: Text.ElideRight
+                        clip: true
+                        font.pixelSize: parent.parent.isRichText ? 12 : 11
+                        font.family: parent.parent.isRichText ? "Inter, sans-serif" : "JetBrains Mono, Fira Code, monospace"
+                    }
                 }
 
-                Rectangle {
+                Loader {
+                    id: imageHoverLoader
+                    objectName: "imageHoverLoader"
                     width: parent.width
-                    height: parent.height - 75
-                    color: "#08090c"
-                    radius: 8
-                    border.color: "#161922"
-                    border.width: 1
+                    height: parent.height - 30
+                    active: rootItem.showPreviewSlate && rootItem.isImageFile
+                    visible: active
+                    sourceComponent: Rectangle {
+                        anchors.fill: parent
+                        color: "#0a0c10"
+                        radius: 8
+                        clip: true
+                        border.color: "#30363d"
+                        border.width: 1
+                        
+                        AnimatedImage {
+                            id: previewImg
+                            objectName: "previewImg"
+                            anchors.fill: parent
+                            playing: rootItem.isHovered
+                            paused: !rootItem.isHovered
+                            source: {
+                                if (!rootItem.isImageFile || !rootItem.nodeModel || !rootItem.nodeModel.filePath) return "";
+                                return (typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge.get_image_source(rootItem.nodeModel.filePath) : "file://" + rootItem.nodeModel.filePath;
+                            }
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            visible: status !== Image.Error && source !== ""
+                        }
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: "[ Live Workbench Canvas: " + (rootItem.nodeModel ? rootItem.nodeModel.fileName : "") + " ]\nReady for active text buffer, terminal shell, or media viewport."
-                        color: "#3b4252"
-                        font.family: "Monospace"
-                        font.pixelSize: 13
-                        horizontalAlignment: Text.AlignHCenter
+                        // Preview Error Fallback
+                        Rectangle {
+                            visible: previewImg.status === Image.Error
+                            anchors.fill: parent
+                            color: "#0d1117"
+
+                            Column {
+                                anchors.centerIn: parent
+                                spacing: 8
+                                width: parent.width - 16
+
+                                Row {
+                                    spacing: 8
+                                    anchors.horizontalCenter: parent.horizontalCenter
+
+                                    Rectangle {
+                                        width: 24
+                                        height: 24
+                                        radius: 4
+                                        color: "#161b22"
+                                        border.color: rootItem.nodeAccentColor
+                                        border.width: 1
+                                        anchors.verticalCenter: parent.verticalCenter
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: rootItem.ext.replace(".", "").toUpperCase().slice(0, 3)
+                                            color: rootItem.nodeAccentColor
+                                            font.family: "Monospace"
+                                            font.pixelSize: 8
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    Column {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 1
+
+                                        Text {
+                                            text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
+                                            color: "#f8fafc"
+                                            font.family: "Monospace"
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            elide: Text.ElideRight
+                                            width: 120
+                                        }
+
+                                        Text {
+                                            text: "Decoder not available"
+                                            color: "#f87171"
+                                            font.family: "Monospace"
+                                            font.pixelSize: 8
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    id: miniOpenBtn
+                                    width: 120
+                                    height: 20
+                                    radius: 4
+                                    color: "#161b22"
+                                    border.color: "#30363d"
+                                    border.width: 1
+                                    anchors.horizontalCenter: parent.horizontalCenter
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "Open in External App"
+                                        color: "#cbd5e1"
+                                        font.family: "Monospace"
+                                        font.pixelSize: 8
+                                        font.bold: true
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        hoverEnabled: true
+                                        onEntered: miniOpenBtn.color = "#21262d"
+                                        onExited: miniOpenBtn.color = "#161b22"
+                                        onClicked: {
+                                            if (rootItem.bridge && rootItem.nodeModel) {
+                                                rootItem.bridge.open_in_external_editor(rootItem.nodeModel.filePath)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
+        }
+
+        // =====================================================================
+        // TIER 1: Editor / Preview Slate
+        // =====================================================================
+        Loader {
+            id: focalSlateLoader
+            focus: rootItem.isSelected
+            anchors.centerIn: parent
+            width: rootItem.isSelected ? (parent.width - 24) : 320
+            height: rootItem.isSelected ? (parent.height - 24) : 220
+            active: rootItem.isSelected
+            visible: opacity > 0.01
+            opacity: rootItem.isSelected ? 1.0 : 0.0
+            source: rootItem.isImageFile ? "ImageSlate.qml" : "PreviewSlate.qml"
+            z: 10
+            
+            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
+
+            onLoaded: {
+                if (item) {
+                    if (item.hasOwnProperty("width")) item.width = Qt.binding(function() { return focalSlateLoader.width });
+                    if (item.hasOwnProperty("height")) item.height = Qt.binding(function() { return focalSlateLoader.height });
+                }
+            }
+
+            Binding { target: focalSlateLoader.item; property: "nodeId"; value: rootItem.nodeId; restoreMode: Binding.RestoreBinding }
+            Binding { target: focalSlateLoader.item; property: "isSelected"; value: rootItem.isSelected; restoreMode: Binding.RestoreBinding }
+            Binding { target: focalSlateLoader.item; property: "viewportContainer"; value: rootItem.viewportContainer; restoreMode: Binding.RestoreBinding }
+            Binding { target: focalSlateLoader.item; property: "archetype"; value: rootItem.nodeModel ? rootItem.nodeModel.archetype : "document"; restoreMode: Binding.RestoreBinding }
+            Binding {
+                target: focalSlateLoader.item
+                property: "snippet"
+                value: rootItem.snippet
+                when: !rootItem.isImageFile && focalSlateLoader.item !== null
+                restoreMode: Binding.RestoreBinding
+            }
+            Binding {
+                target: focalSlateLoader.item
+                property: "initialText"
+                value: rootItem.initialText
+                when: !rootItem.isImageFile && focalSlateLoader.item !== null
+                restoreMode: Binding.RestoreBinding
+            }
+            Binding { target: focalSlateLoader.item; property: "fileName"; value: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""; restoreMode: Binding.RestoreBinding }
+            Binding { target: focalSlateLoader.item; property: "filePath"; value: rootItem.nodeModel ? rootItem.nodeModel.filePath : ""; restoreMode: Binding.RestoreBinding }
+            Binding { target: focalSlateLoader.item; property: "sizeFormatted"; value: rootItem.nodeModel ? (rootItem.nodeModel.sizeBytes / 1024).toFixed(1) + " KB" : "0 KB"; restoreMode: Binding.RestoreBinding }
+            Binding {
+                target: focalSlateLoader.item
+                property: "referenceCount"
+                value: rootItem.referenceCount
+                when: !rootItem.isImageFile && focalSlateLoader.item !== null
+                restoreMode: Binding.RestoreBinding
+            }
+            Binding { target: focalSlateLoader.item; property: "accentColor"; value: rootItem.nodeAccentColor; restoreMode: Binding.RestoreBinding }
         }
 
         // =====================================================================
@@ -592,13 +723,15 @@ Item {
         // =====================================================================
         MouseArea {
             id: dragArea
+            z: 99
             anchors.fill: parent
             anchors.margins: -16 // Hit-box stabilization padding
             hoverEnabled: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
             // Disable drag handling when clicking near the bottom-right resize corner on selected cards
-            enabled: !resizeMouseArea.isResizing
+            enabled: !resizeMouseArea.isResizing && !rootItem.isSelected
+            visible: !rootItem.isSelected
 
             property real pressStartX: 0
             property real pressStartY: 0
@@ -752,8 +885,8 @@ Item {
                         var deltaX = (globalPt.x - startMouseX) * 2.0
                         var deltaY = (globalPt.y - startMouseY) * 2.0
                         rootItem.bridge.set_workbench_dimensions(
-                            Math.max(650, Math.min(2400, startW + deltaX)),
-                            Math.max(400, Math.min(1400, startH + deltaY))
+                            Math.max(480, Math.min(2600, startW + deltaX)),
+                            Math.max(320, Math.min(1600, startH + deltaY))
                         )
                     }
                 }

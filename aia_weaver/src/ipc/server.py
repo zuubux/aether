@@ -19,6 +19,7 @@ class IPCServer:
         neighbors_handler: Callable[[int], Awaitable[dict]] = None,
         all_nodes_handler: Callable[[], Awaitable[list]] = None,
         touch_handler: Callable[[int, str], Awaitable[dict]] = None,
+        save_node_handler: Callable[[int, str], Awaitable[dict]] = None,
         allowed_directories: list[Path] | None = None,
     ):
         if socket_path is None:
@@ -34,6 +35,7 @@ class IPCServer:
         self.neighbors_handler = neighbors_handler
         self.all_nodes_handler = all_nodes_handler
         self.touch_handler = touch_handler
+        self.save_node_handler = save_node_handler
         self.allowed_directories = allowed_directories or []
         self.server: asyncio.Server | None = None
         self._clients: set[asyncio.StreamWriter] = set()
@@ -165,6 +167,21 @@ class IPCServer:
 
                 if self.touch_handler:
                     result = await self.touch_handler(node_id, event_type)
+                    return {"jsonrpc": "2.0", "result": result, "id": req_id}
+                return {"jsonrpc": "2.0", "result": {"status": "noop"}, "id": req_id}
+
+            elif method == "save_node_content":
+                node_id = params.get("node_id")
+                content = params.get("content", "")
+                if node_id is None or not isinstance(node_id, int):
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32602, "message": "Invalid params: 'node_id' required"},
+                        "id": req_id,
+                    }
+
+                if self.save_node_handler:
+                    result = await self.save_node_handler(node_id, content)
                     return {"jsonrpc": "2.0", "result": result, "id": req_id}
                 return {"jsonrpc": "2.0", "result": {"status": "noop"}, "id": req_id}
 

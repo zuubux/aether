@@ -21,7 +21,9 @@ Window {
     Shortcut {
         sequence: "Escape"
         onActivated: {
-            if (omniBar.active) {
+            if (canvasBridge && canvasBridge.selectedNodeId > 0) {
+                canvasBridge.select_node(0)
+            } else if (omniBar.active) {
                 if (omniBar.textLength > 0) {
                     omniBar.clearTextAndCancel()
                 } else {
@@ -34,8 +36,6 @@ Window {
                 if (canvasBridge) {
                     canvasBridge.clear_search()
                 }
-            } else if (canvasBridge && canvasBridge.selectedNodeId > 0) {
-                canvasBridge.select_node(0)
             } else {
                 Qt.quit()
             }
@@ -44,6 +44,7 @@ Window {
 
     Shortcut {
         sequence: "Ctrl+Space"
+        context: Qt.ApplicationShortcut
         onActivated: {
             if (omniBar.active) {
                 omniBar.active = false
@@ -81,9 +82,12 @@ Window {
     Item {
         id: canvasSpace
         anchors.fill: parent
+        z: 100
 
         // Background Horizon Plane & Iso-lines
-        HorizonGrid {}
+        HorizonGrid {
+            z: -1
+        }
 
         // Void Click & Aperture Scroll Controller
         MouseArea {
@@ -104,6 +108,31 @@ Window {
             }
         }
 
+        OmniBar {
+            id: omniBar
+            anchors.horizontalCenter: parent.horizontalCenter
+            z: 10000
+
+            onQuerySubmitted: function(text) {
+                if (canvasBridge) {
+                    canvasBridge.submit_query(text)
+                }
+            }
+
+            onCancelQuery: {
+                if (canvasBridge) {
+                    canvasBridge.clear_search()
+                }
+            }
+
+            onDismissed: {
+                active = false
+                if (canvasBridge) {
+                    canvasBridge.clear_search()
+                }
+            }
+        }
+
         Item {
             id: canvasViewport
             anchors.fill: parent
@@ -112,31 +141,6 @@ Window {
             FrameAnimation {
                 running: canvasViewport.searchActive
                 onTriggered: canvasViewport.canvasGlobalTime += frameTime * 1000.0
-            }
-
-            OmniBar {
-                id: omniBar
-                anchors.horizontalCenter: parent.horizontalCenter
-                z: 10000
-
-                onQuerySubmitted: function(text) {
-                    if (canvasBridge) {
-                        canvasBridge.submit_query(text)
-                    }
-                }
-
-                onCancelQuery: {
-                    if (canvasBridge) {
-                        canvasBridge.clear_search()
-                    }
-                }
-
-                onDismissed: {
-                    active = false
-                    if (canvasBridge) {
-                        canvasBridge.clear_search()
-                    }
-                }
             }
 
             property var nodeRegistry: ({})
@@ -208,6 +212,7 @@ Window {
 
             function closeSearchAndOmniBar() {
                 omniBar.active = false
+                omniBar.visible = false
                 omniBar.clearTextAndCancel()
                 if (searchActive && canvasBridge) {
                     canvasBridge.clear_search()
@@ -283,10 +288,12 @@ Window {
     // Bottom Controls: IPC Status & Aperture Gauge
     // =========================================================================
     Row {
+        id: bottomHud
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.margins: 20
         spacing: 12
+        z: 10
 
         // IPC Status Pill
         Rectangle {

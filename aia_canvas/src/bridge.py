@@ -3,12 +3,15 @@ Aether Canvas - Python to QML Bridge
 Live temporal co-attention ingestion, priority edge sorting, and telemetry.
 """
 
+import os
 import math
 import time
 import logging
 import subprocess
+import urllib.parse
 from typing import List, Optional, Set, Dict, Any
 from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot, QTimer
+from PyQt6.QtGui import QGuiApplication
 
 from models import Node, Edge
 from store import GraphStore
@@ -36,6 +39,13 @@ class CanvasBridge(QObject):
         super().__init__()
         self.store = GraphStore()
         self.physics = PhysicsEngine()
+
+        self._SUPPORTED_IMAGE_EXTS = {
+            "bmp", "gif", "ico", "jpeg", "jpg", "png", "pbm", "pgm", "ppm", "xbm", "xpm",
+            "svg", "svgz", "webp", "tif", "tiff", "heic", "heif"
+        }
+
+        self._failed_image_conversions: Set[str] = set()
 
         self._selected_node_id: int = 0
         self._hovered_node_id: int = 0
@@ -285,6 +295,66 @@ class CanvasBridge(QObject):
 
     # --- Slots Invoked from QML ---
 
+    @pyqtSlot(str, result=bool)
+    def copy_image_to_clipboard(self, file_path: str) -> bool:
+        if not file_path:
+            return False
+        from PyQt6.QtGui import QImage
+        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+        image = QImage(clean_path)
+        if image.isNull():
+            return False
+        clipboard = QGuiApplication.clipboard()
+        clipboard.setImage(image)
+        return True
+
+    @pyqtSlot(str, result=bool)
+    def is_image_file(self, file_path: str) -> bool:
+        if not file_path:
+            return False
+        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+        ext = os.path.splitext(clean_path)[1].lstrip(".").lower()
+        return ext in self._SUPPORTED_IMAGE_EXTS
+
+    @pyqtSlot(str, result=str)
+    def get_image_source(self, file_path: str) -> str:
+        if not file_path:
+            return ""
+        
+        if file_path in self._failed_image_conversions:
+            return ""
+        
+        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+        if not os.path.exists(clean_path):
+            return file_path
+            
+        ext = os.path.splitext(clean_path)[1].lstrip(".").lower()
+        if ext in ["ico", "icon"]:
+            try:
+                from PIL import Image as PILImage
+                cache_dir = os.path.expanduser("~/.cache/aether")
+                os.makedirs(cache_dir, exist_ok=True)
+                
+                mtime = os.path.getmtime(clean_path)
+                cache_key = f"{clean_path}_{mtime}"
+                import hashlib
+                h = hashlib.md5(cache_key.encode('utf-8')).hexdigest()
+                cached_png = os.path.join(cache_dir, f"{h}.png")
+                
+                if not os.path.exists(cached_png):
+                    with PILImage.open(clean_path) as img:
+                        img.save(cached_png, "PNG")
+                
+                return "file://" + cached_png
+            except Exception as e:
+                self._failed_image_conversions.add(file_path)
+                logger.debug(f"Failed to convert image via Pillow ({file_path}): {e}")
+                return ""
+                
+        if not file_path.startswith("file://"):
+            return "file://" + file_path
+        return file_path
+
     @pyqtSlot(str)
     def submit_query(self, query: str):
         logger.debug(f"OmniBar query submitted: {query}")
@@ -365,8 +435,8 @@ class CanvasBridge(QObject):
     @pyqtSlot(float, float)
     def set_workbench_dimensions(self, width: float, height: float):
         self._wake_physics()
-        clamped_w = max(680.0, min(2600.0, width))
-        clamped_h = max(420.0, min(1600.0, height))
+        clamped_w = max(480.0, min(2600.0, width))
+        clamped_h = max(320.0, min(1600.0, height))
 
         if abs(self._workbench_width - clamped_w) > 1.0 or abs(self._workbench_height - clamped_h) > 1.0:
             self._workbench_width = clamped_w
@@ -379,6 +449,23 @@ class CanvasBridge(QObject):
         self._wake_physics()
         self.physics.set_viewport_dimensions(width, height)
         self.workbenchDimensionsChanged.emit()
+
+    @pyqtSlot(str)
+    def navigate_to_link(self, target_name: str):
+        self._wake_physics()
+        target_clean = target_name.lower().strip()
+        if target_clean.endswith(".md") or target_clean.endswith(".txt"):
+            target_clean = target_clean.rsplit(".", 1)[0]
+            
+        nodes = self.store.get_all_nodes()
+        for node in nodes:
+            node_file = node.fileName.lower()
+            if node_file.endswith(".md") or node_file.endswith(".txt"):
+                node_file = node_file.rsplit(".", 1)[0]
+                
+            if node_file == target_clean or node.fileName.lower() == target_clean:
+                self.select_node(node.id)
+                break
 
     @pyqtSlot(int)
     def select_node(self, node_id: int):
@@ -449,6 +536,23 @@ class CanvasBridge(QObject):
     def set_custom_anchor(self, node_id: int, x: float, y: float):
         self.physics.set_custom_anchor(node_id, x, y)
 
+    @pyqtSlot(int, str)
+    def save_node_content(self, node_id: int, new_content: str):
+        if not self._is_connected or node_id <= 0:
+            return
+            
+        def _handle_save(result: Any, error: Optional[str]):
+            if error:
+                logger.error(f"Failed to save node {node_id}: {error}")
+            else:
+                logger.info(f"Node {node_id} successfully saved to disk and DB.")
+
+        self.ipc.call_rpc_sync(
+            "save_node_content",
+            {"node_id": node_id, "content": new_content},
+            callback=_handle_save
+        )
+
     @pyqtSlot(str)
     def open_in_file_manager(self, file_path: str):
         safe_path = canonicalize_safe_path(file_path)
@@ -459,6 +563,20 @@ class CanvasBridge(QObject):
         if target_dir.exists():
             subprocess.Popen(
                 ["xdg-open", str(target_dir)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+
+    @pyqtSlot(str)
+    def open_in_external_editor(self, file_path: str):
+        safe_path = canonicalize_safe_path(file_path)
+        if not safe_path:
+            return
+
+        if safe_path.exists():
+            subprocess.Popen(
+                ["xdg-open", str(safe_path)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,

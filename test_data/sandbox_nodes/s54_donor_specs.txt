@@ -1,0 +1,6 @@
+S54B32 Engine Specifications & Donor Checklist
+Displacement: 3,246 cc
+Bore x Stroke: 87.0 mm x 91.0 mm
+Compression: 11.5:1
+Output: 338 hp @ 7,900 RPM / 269 lb-ft @ 4,900 RPM
+Check oil pan clearance against E39 front subframe.

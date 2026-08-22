@@ -5,15 +5,17 @@ Entry point, Qt Scene Graph bootstrap, and observability initialization.
 """
 
 import sys
+import os
 import signal
 import logging
 import argparse
 from pathlib import Path
 from PyQt6.QtGui import QGuiApplication, QSurfaceFormat
-from PyQt6.QtQml import QQmlApplicationEngine
-from PyQt6.QtCore import QTimer
+from PyQt6.QtQml import QQmlApplicationEngine, qmlRegisterType
+from PyQt6.QtCore import QTimer, QCoreApplication, QLibraryInfo
 
 from bridge import CanvasBridge
+from content.streamer import MmapTextStreamer
 from aia_intent import IntentEngine
 
 def setup_observability(debug=False):
@@ -47,6 +49,22 @@ def main():
     surface_format.setSwapInterval(1)
     QSurfaceFormat.setDefaultFormat(surface_format)
 
+    # Set global Qt Quick Controls style to Basic to bypass KDE Breeze coercion warnings
+    os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic"
+
+    # Ensure Qt imageformats plugins are registered
+    plugin_path = QLibraryInfo.path(QLibraryInfo.LibraryPath.PluginsPath)
+    QCoreApplication.addLibraryPath(plugin_path)
+
+    system_plugin_candidates = [
+        "/usr/lib64/qt6/plugins",
+        "/usr/lib/qt6/plugins",
+        "/usr/lib/x86_64-linux-gnu/qt6/plugins"
+    ]
+    for path in system_plugin_candidates:
+        if os.path.isdir(path):
+            QCoreApplication.addLibraryPath(path)
+
     # Instantiate QGuiApplication exactly once
     sys.argv = [sys.argv[0]] + unparsed_args
     app = QGuiApplication(sys.argv)
@@ -55,6 +73,8 @@ def main():
 
     # Allow clean Ctrl+C termination from terminal
     signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+    qmlRegisterType(MmapTextStreamer, "Aether.Content", 1, 0, "MmapTextStreamer")
 
     engine = QQmlApplicationEngine()
 

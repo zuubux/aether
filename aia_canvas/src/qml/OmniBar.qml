@@ -40,6 +40,7 @@ Item {
     }
     
     opacity: active ? 1.0 : 0.0
+    visible: active || opacity > 0.0
     y: active ? parent.height * 0.15 : parent.height * 0.10
     
     Behavior on opacity {
@@ -98,6 +99,8 @@ Item {
                         root.querySubmitted(text)
                     }
                     event.accepted = true
+                } else {
+                    event.accepted = false
                 }
             }
         }

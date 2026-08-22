@@ -283,10 +283,10 @@ Item {
             if (isFirstDegree) {
                 return 1.0
             } else {
-                return 0.6
+                return 0.25 // Subdued secondary edge opacity
             }
         } else if (isConnectedToHovered) {
-            return 0.6
+            return 1.0
         } else {
             return ambientOpacity
         }
@@ -361,7 +361,7 @@ Item {
         asynchronous: true
         preferredRendererType: Shape.CurveRenderer
         visible: rootTendril.isHoverBloomed || (rootTendril.isFirstDegree && (rootTendril.edgeType === "semantic" || rootTendril.weight >= 0.55)) || (rootTendril.isVoidMode && rootTendril.pulsePhase > 0.80)
-        opacity: rootTendril.isHoverBloomed ? 0.65 : (rootTendril.isVoidMode ? 0.18 : Math.max(0.15, (rootTendril.edgeType === "semantic" ? Math.max(0.6, rootTendril.weight) : rootTendril.weight) * 0.40))
+        opacity: rootTendril.isHoverBloomed ? 0.65 : (rootTendril.isVoidMode ? 0.18 : (rootTendril.isConnectedToSelected && !rootTendril.isFirstDegree ? 0.10 : Math.max(0.15, (rootTendril.edgeType === "semantic" ? Math.max(0.6, rootTendril.weight) : rootTendril.weight) * 0.40)))
 
         ShapePath {
             strokeColor: rootTendril.filamentColor
@@ -392,12 +392,14 @@ Item {
         property bool isFocalLens: false
         property bool isPreviewSlate: false
         property real edgeWeight: 1.0
+        property real targetOpacity: 1.0
 
         readonly property real baseSize: isFocalLens ? (14 + 10 * edgeWeight) : (8 + 6 * edgeWeight)
         readonly property real glowSize: isPreviewSlate ? baseSize * 0.65 : baseSize
         width: glowSize
         height: glowSize
-        opacity: Math.max(0.20, Math.min(1.0, edgeWeight))
+        opacity: targetOpacity
+        visible: targetOpacity > 0.005
 
         Rectangle {
             anchors.centerIn: parent
@@ -435,24 +437,24 @@ Item {
 
     // Lens Frame Synaptic Port (Fires on the lens for Tier 1, Tier 2, and Hover)
     SynapticGlowPort {
-        visible: (isFirstDegree || isSecondDegree || isHoverBloomed) && (sourceId === selectedNodeId || targetId === selectedNodeId || isHoverBloomed) && (edgeType === "semantic" || weight >= 0.25)
         x: lensPoint.x - width / 2
         y: lensPoint.y - height / 2
         glowColor: edgeType === "semantic" ? "#a78bfa" : filamentColor
         isFocalLens: true
         edgeWeight: edgeType === "semantic" ? Math.max(0.5, weight) : weight
+        targetOpacity: rootTendril.opacity
         z: 9500
     }
 
     // Outer Node Synaptic Port (ONLY fires on the outer node for Tier 1 and Hover)
     SynapticGlowPort {
-        visible: (isFirstDegree || isHoverBloomed) && (sourceId === selectedNodeId || targetId === selectedNodeId || isHoverBloomed) && (edgeType === "semantic" || weight >= 0.25)
         x: outerPoint.x - width / 2
         y: outerPoint.y - height / 2
         glowColor: edgeType === "semantic" ? "#a78bfa" : filamentColor
         isFocalLens: false
         isPreviewSlate: sourceIsSelected ? (targetNode && targetNode.showPreviewSlate) : (sourceNode && sourceNode.showPreviewSlate)
         edgeWeight: edgeType === "semantic" ? Math.max(0.5, weight) : weight
+        targetOpacity: (isFirstDegree || isHoverBloomed) ? rootTendril.opacity : 0.0
         z: 9500
     }
 }
