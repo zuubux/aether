@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Basic as Basic
 import Aether.Content 1.0
+import "node"
 
 Item {
     id: rootItem
@@ -10,10 +11,33 @@ Item {
     property Item viewportContainer: null
     property var nodeModel: null
 
+    readonly property var activeBridge: rootItem.bridge ? rootItem.bridge : (typeof canvasBridge !== "undefined" ? canvasBridge : null)
+
     readonly property int nodeId: nodeModel ? nodeModel.id : 0
     readonly property bool isSelected: bridge ? (bridge.selectedNodeId === nodeId && nodeId > 0) : false
-    readonly property bool isHovered: bridge ? (bridge.hoveredNodeId === nodeId) : false
+    property bool isHovered: false
+    property bool isDwellTriggered: false
     readonly property real focusWeight: nodeModel ? nodeModel.focus : 0.35
+
+    readonly property real focalWidth: {
+        if (rootItem.isSelected) {
+            if ((rootItem.isImageFile || rootItem.isPdfFile || rootItem.isTableFile) && focalSlateLoader.item && focalSlateLoader.item.hasError) return 520 + 24
+            return rootItem.activeBridge ? rootItem.activeBridge.workbenchWidth : 1400
+        }
+        if (rootItem.isMacroBead) return 16
+        if (rootItem.isCompactCapsule) return (nodePill.implicitWidth > 0 ? nodePill.implicitWidth + 24 : 140)
+        return 280
+    }
+
+    readonly property real focalHeight: {
+        if (rootItem.isSelected) {
+            if ((rootItem.isImageFile || rootItem.isPdfFile || rootItem.isTableFile) && focalSlateLoader.item && focalSlateLoader.item.hasError) return 340 + 24
+            return rootItem.activeBridge ? rootItem.activeBridge.workbenchHeight : 900
+        }
+        if (rootItem.isMacroBead) return 16
+        if (rootItem.isCompactCapsule) return 32
+        return 115
+    }
 
     // Relational Focus Classification
     readonly property bool hasActiveFocus: bridge ? (bridge.selectedNodeId > 0) : false
@@ -26,41 +50,41 @@ Item {
     readonly property real compactThreshold: 1.20
 
     // Semantic Zoom Classification
-    readonly property int baseTier: {
-        if (hasActiveFocus) {
-            if (!isDirectNeighbor) return currentAperture < secondaryBeadThreshold ? 4 : 3
-            return currentAperture < macroThreshold ? 4 : (currentAperture < compactThreshold ? 3 : 2)
-        }
-        return currentAperture < macroThreshold ? 4 : (currentAperture < compactThreshold ? 3 : 2)
-    }
+    readonly property int baseTier: currentAperture < 0.40 ? 4 : (currentAperture > 1.00 ? 2 : 3)
 
-    readonly property int effectiveTier: {
-        if (isSelected) return 1
-        if (isStaged || sustainedHover) return 15 // Tier 1.5 Preview Slate
-        if (isHovered) {
-            if (baseTier === 4) return 3
-            if (baseTier === 3) return 2
-            if (baseTier === 2) return 15
-        }
-        return baseTier
-    }
+    readonly property bool isPreviewMode: !isSelected && (isSearchResult || (isHovered && isDwellTriggered))
+    readonly property bool isSlateMode: !isSelected && !isPreviewMode && (baseTier === 2)
+    readonly property bool isCapsuleMode: !isSelected && !isPreviewMode && !isSlateMode && (baseTier === 3 || (baseTier === 4 && isHovered))
+    readonly property bool isBeadMode: !isSelected && !isPreviewMode && (baseTier === 4 && !isHovered)
 
-    readonly property bool isMacroBead: effectiveTier === 4
-    readonly property bool isCompactCapsule: effectiveTier === 3
-    readonly property bool isFullToken: effectiveTier === 2
-    readonly property bool showPreviewSlate: effectiveTier === 15
+    // Old mode properties mapped to new strict flags for compatibility if needed elsewhere
+    readonly property bool showPreviewSlate: isPreviewMode
+    readonly property bool isMacroBead: isBeadMode
+    readonly property bool isCompactCapsule: isCapsuleMode
+    readonly property bool isFullToken: isSlateMode
+
+    property real radius: isSelected ? cardRadius :
+                          isPreviewMode ? 12 :
+                          isSlateMode ? 8 :
+                          isBeadMode ? 7 : 16
 
     // Semantic Extension Colors
     readonly property string ext: nodeModel ? nodeModel.extension.toLowerCase() : ".txt"
     readonly property string filePath: nodeModel ? nodeModel.filePath : ""
     readonly property bool isImageFile: (filePath && typeof bridge !== "undefined") ? bridge.is_image_file(filePath.toString()) : false
+    readonly property bool isPdfFile: ext === ".pdf"
+    readonly property bool isTableFile: ext === ".csv" || ext === ".tsv"
     readonly property color nodeAccentColor: {
         if (ext === ".py") return "#38bdf8"
         if (ext === ".sh" || ext === ".bash" || ext === ".zsh") return "#fbbf24"
         if (ext === ".md" || ext === ".org" || ext === ".txt") return "#a78bfa"
         if (ext === ".json" || ext === ".yaml" || ext === ".toml") return "#34d399"
+        if (ext === ".pdf") return "#ef4444"
+        if (ext === ".csv" || ext === ".tsv") return "#fb7185" // rose for table data
         return "#94a3b8"
     }
+
+    readonly property color accentColor: nodeAccentColor
 
     readonly property string relationType: bridge ? bridge.get_relation_type(nodeId) : ""
     readonly property color relationAccentColor: {
@@ -91,18 +115,15 @@ Item {
     readonly property real stagedY: viewportContainer ? viewportContainer.height * 0.28 + gridRow * 240 : 0
 
     property bool isStaged: isSearchResult
-    property bool sustainedHover: false
+
     Timer {
-        id: dwellTimer
-        interval: 1500
-        running: rootItem.isHovered && !rootItem.isStaged && !rootItem.isSelected
+        id: hoverDwellTimer
+        interval: 400
+        repeat: false
         onTriggered: {
-            sustainedHover = true
-        }
-    }
-    onIsHoveredChanged: {
-        if (!isHovered) {
-            sustainedHover = false
+            if (rootItem.isHovered && !rootItem.isSelected) {
+                rootItem.isDwellTriggered = true
+            }
         }
     }
 
@@ -159,30 +180,30 @@ Item {
     // Target Dimensions
     readonly property real targetWidth: {
         if (isSelected) {
-            if (isImageFile && focalSlateLoader.item && focalSlateLoader.item.hasError) return 520 + 24
+            if ((isImageFile || isPdfFile || isTableFile) && focalSlateLoader.item && focalSlateLoader.item.hasError) return 520 + 24
             return bridge ? bridge.workbenchWidth : 1400
         }
         if (showPreviewSlate) return 320
         if (isMacroBead) return 16
-        if (isCompactCapsule) return 180
+        if (isCompactCapsule) return (nodePill.implicitWidth > 0 ? nodePill.implicitWidth + 24 : 140)
         return 280
     }
 
     readonly property real targetHeight: {
         if (isSelected) {
-            if (isImageFile && focalSlateLoader.item && focalSlateLoader.item.hasError) return 340 + 24
+            if ((isImageFile || isPdfFile || isTableFile) && focalSlateLoader.item && focalSlateLoader.item.hasError) return 340 + 24
             return bridge ? bridge.workbenchHeight : 900
         }
         if (showPreviewSlate) return 220
         if (isMacroBead) return 16
-        if (isCompactCapsule) return 48
+        if (isCompactCapsule) return 32
         return 115
     }
 
     readonly property real cardRadius: {
         if (isSelected) return 14
         if (isMacroBead) return 8
-        if (isCompactCapsule) return 24
+        if (isCompactCapsule) return 16
         return 10
     }
 
@@ -197,31 +218,40 @@ Item {
 
     // Projected Coordinate Anchors
     transformOrigin: Item.Center
-    x: Math.round(isSelected ? (viewportContainer ? (viewportContainer.width - targetWidth) / 2 : 0) : (isSearchResult ? (stagedX - width / 2) : (projectedX - width / 2)))
-    y: Math.round(isSelected ? (viewportContainer ? (viewportContainer.height - targetHeight) / 2 : 0) : (isSearchResult ? (stagedY - height / 2) + verticalOffset : (projectedY - height / 2)))
-    width: Math.round(targetWidth)
-    height: Math.round(targetHeight)
+    x: Math.round(isSelected ? (viewportContainer ? (viewportContainer.width - width) / 2 : 0) : (isSearchResult ? (stagedX - width / 2) : (projectedX - width / 2)))
+    y: Math.round(isSelected ? (viewportContainer ? (viewportContainer.height - height) / 2 : 0) : (isSearchResult ? (stagedY - height / 2) + verticalOffset : (projectedY - height / 2)))
+    width: isSelected ? focalWidth :
+           isPreviewMode ? 320 :
+           isSlateMode ? 220 :
+           isBeadMode ? 14 :
+           (nodePill.implicitWidth > 0 ? nodePill.implicitWidth + 24 : 140)
+
+    height: isSelected ? focalHeight :
+            isPreviewMode ? 220 :
+            isSlateMode ? 64 :
+            isBeadMode ? 14 : 32
 
     Behavior on x {
-        enabled: rootItem.isSelected && !dragArea.isDragging && !resizeMouseArea.isResizing
+        enabled: rootItem.isSelected && !nodeMouseArea.isDragging && !resizeMouseArea.isResizing
         NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
     }
     Behavior on y {
-        enabled: rootItem.isSelected && !dragArea.isDragging && !resizeMouseArea.isResizing
+        enabled: rootItem.isSelected && !nodeMouseArea.isDragging && !resizeMouseArea.isResizing
         NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
     }
     Behavior on width {
         enabled: !resizeMouseArea.isResizing
-        NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: 220; easing.type: Easing.OutQuint }
     }
     Behavior on height {
         enabled: !resizeMouseArea.isResizing
-        NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: 220; easing.type: Easing.OutQuint }
     }
 
     // Strict Scale Lock: Keep selected workbench card at exactly 1.0 to ensure 1:1 resize fidelity
-    scale: isSelected ? 1.0 : ((isHovered ? 1.05 : 1.0) * perspectiveScale)
+    scale: (isSelected ? 1.0 : ((isHovered ? 1.05 : 1.0) * perspectiveScale)) * nodeAura.spawnScaleMultiplier * nodeAura.deleteScaleMultiplier
     Behavior on scale {
+        enabled: !nodeAura.isSpawnActive && !nodeAura.isDeleteActive && !rootItem.isSelected && !nodeMouseArea.isDragging && !resizeMouseArea.isResizing
         NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
     }
 
@@ -282,23 +312,27 @@ Item {
 
     // Atmospheric Haze Attenuation & Progressive Squeeze Falloff
     opacity: {
+        var baseOpacity = 1.0;
         if (viewportContainer && viewportContainer.searchActive) {
-            return isSearchResult ? 1.0 : 0.15
+            baseOpacity = isSearchResult ? 1.0 : 0.15;
+        } else {
+            baseOpacity = (isSelected ? 1.0 : (isHovered ? 1.0 : Math.max(0.0, focusWeight * (1.0 - depthZ * 0.35)))) * wingSqueezeOpacity * macroOpacityFade;
         }
-        return (isSelected ? 1.0 : (isHovered ? 1.0 : Math.max(0.0, focusWeight * (1.0 - depthZ * 0.35)))) * wingSqueezeOpacity * macroOpacityFade
+        return baseOpacity * nodeAura.spawnOpacityMultiplier * nodeAura.deleteOpacityMultiplier
     }
     Behavior on opacity {
+        enabled: !nodeAura.isSpawnActive && !nodeAura.isDeleteActive
         NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
     }
 
     Rectangle {
         id: cardBody
         anchors.fill: parent
-        radius: rootItem.cardRadius
+        radius: rootItem.radius
         clip: true
 
         Behavior on radius {
-            NumberAnimation { duration: 300; easing.type: Easing.OutQuint }
+            NumberAnimation { duration: 220; easing.type: Easing.OutQuint }
         }
 
         color: rootItem.isSelected ? "#0c0e12" : (rootItem.isMacroBead ? rootItem.nodeAccentColor : (rootItem.isHovered ? "#161c28" : "#0a0c10"))
@@ -309,6 +343,15 @@ Item {
 
         Behavior on color { ColorAnimation { duration: 180 } }
         Behavior on border.color { ColorAnimation { duration: 180 } }
+
+        // NodeAura Component Integration
+        NodeAura {
+            id: nodeAura
+            isNew: (typeof model !== "undefined" && model) ? (model.isNew || false) : (nodeModel ? nodeModel.isNew || false : false)
+            isDeleted: (typeof model !== "undefined" && model) ? (model.isDeleted || false) : (nodeModel ? nodeModel.isDeleted || false : false)
+            accentColor: rootItem.accentColor
+            radius: rootItem.radius
+        }
 
         // Star Bead Core Dot
         Rectangle {
@@ -325,49 +368,18 @@ Item {
         // =====================================================================
         // TIER 3: Compact Capsule
         // =====================================================================
-        Item {
-            id: deepPillView
+        NodePill {
+            id: nodePill
             anchors.fill: parent
-            anchors.margins: 8
-            opacity: rootItem.isCompactCapsule && !rootItem.showPreviewSlate && !rootItem.isSelected ? 1.0 : 0.0
-            visible: opacity > 0.01
-
-            Behavior on opacity { NumberAnimation { duration: 180 } }
-
-            Row {
-                anchors.centerIn: parent
-                spacing: 8
-
-                Rectangle {
-                    width: 32
-                    height: 18
-                    radius: 4
-                    color: "#111827"
-                    border.color: rootItem.nodeAccentColor
-                    border.width: 1
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: rootItem.ext
-                        color: rootItem.nodeAccentColor
-                        font.family: "Monospace"
-                        font.pixelSize: 8
-                        font.bold: true
-                    }
-                }
-
-                Text {
-                    text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
-                    color: rootItem.isHovered ? "#ffffff" : (rootItem.isDirectNeighbor ? "#cbd5e1" : "#64748b")
-                    font.family: "Monospace"
-                    font.pixelSize: 11
-                    font.bold: true
-                    elide: Text.ElideRight
-                    width: 115
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
+            fileName: (typeof model !== "undefined" && model && model.fileName) ? model.fileName : (rootItem.nodeModel ? rootItem.nodeModel.fileName : "")
+            extensionStr: (typeof model !== "undefined" && model && model.extension) ? model.extension : (rootItem.ext || "")
+            archetype: (typeof model !== "undefined" && model && model.archetype) ? model.archetype : (rootItem.nodeModel ? rootItem.nodeModel.archetype : "")
+            accentColor: rootItem.accentColor
+            cardRadius: rootItem.radius
+            isHovered: rootItem.isHovered
+            isSearchResult: rootItem.isSearchResult
+            visible: rootItem.isCapsuleMode
+            opacity: rootItem.isCapsuleMode ? 1.0 : 0.0
         }
 
         // =====================================================================
@@ -376,82 +388,46 @@ Item {
         Item {
             id: tokenView
             anchors.fill: parent
-            anchors.margins: 14
-            opacity: rootItem.isFullToken && !rootItem.showPreviewSlate && !rootItem.isSelected ? rootItem.labelOpacity : 0.0
-            visible: opacity > 0.01
-
-            Behavior on opacity { NumberAnimation { duration: 180 } }
+            visible: rootItem.isSlateMode
+            opacity: rootItem.isSlateMode ? 1.0 : 0.0
 
             Column {
                 anchors.fill: parent
+                anchors.margins: 10
                 spacing: 6
 
                 Row {
-                    width: parent.width
                     spacing: 8
+                    width: parent.width
 
                     Rectangle {
-                        width: 38
-                        height: 18
-                        radius: 4
-                        color: "#111827"
-                        border.color: rootItem.isDirectNeighbor ? rootItem.relationAccentColor : "#1e293b"
-                        border.width: 1
-                        anchors.verticalCenter: parent.verticalCenter
-
+                        width: 18
+                        height: 16
+                        radius: 3
+                        color: rootItem.accentColor || "#00E5FF"
                         Text {
                             anchors.centerIn: parent
-                            text: rootItem.ext
-                            color: rootItem.nodeAccentColor
-                            font.family: "Monospace"
-                            font.pixelSize: 9
+                            text: (rootItem.nodeModel && rootItem.nodeModel.extension ? rootItem.nodeModel.extension : "md").replace(".", "").toUpperCase()
+                            font.pixelSize: 8
                             font.bold: true
+                            color: "#0D1117"
                         }
                     }
 
                     Text {
                         text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
-                        color: rootItem.isHovered ? "#ffffff" : (rootItem.isDirectNeighbor ? "#f1f5f9" : "#64748b")
-                        font.family: "Monospace"
-                        font.pixelSize: 13
-                        font.bold: true
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        color: "#E6EDF3"
                         elide: Text.ElideRight
-                        width: parent.width - (rootItem.downstreamCount > 0 ? 86 : 46)
-                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 26
                     }
-
-                    Rectangle {
-                        visible: rootItem.downstreamCount > 0
-                        width: 30
-                        height: 18
-                        radius: 9
-                        color: rootItem.isHovered ? "#0369a1" : "#162032"
-                        border.color: rootItem.isHovered ? "#38bdf8" : "#1e293b"
-                        border.width: 1
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "⤹ " + rootItem.downstreamCount
-                            color: rootItem.isHovered ? "#f0f9ff" : "#60a5fa"
-                            font.family: "Monospace"
-                            font.pixelSize: 9
-                            font.bold: true
-                        }
-                    }
-                }
-
-                Rectangle {
-                    width: parent.width
-                    height: 1
-                    color: rootItem.isDirectNeighbor ? "#1f242d" : "#14171f"
                 }
 
                 Text {
-                    text: rootItem.nodeModel ? rootItem.nodeModel.filePath : ""
-                    color: rootItem.isHovered ? "#94a3b8" : (rootItem.isDirectNeighbor ? "#64748b" : "#334155")
-                    font.family: "Monospace"
+                    text: rootItem.nodeModel && rootItem.nodeModel.filePath ? rootItem.nodeModel.filePath : ""
                     font.pixelSize: 10
+                    color: "#8B949E"
                     elide: Text.ElideMiddle
                     width: parent.width
                 }
@@ -473,194 +449,19 @@ Item {
             }
         }
 
-        // =====================================================================
-        // TIER 1.5 Hover Snippet
-        // =====================================================================
-        Item {
-            id: hoverSnippetContainer
+        NodePreview {
+            id: nodePreview
             anchors.fill: parent
-            anchors.margins: 16
-            visible: opacity > 0.01
-            opacity: (rootItem.showPreviewSlate && !rootItem.isSelected) ? 1.0 : 0.0
-            z: 9
-
-            Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
-
-            function formatMarkdownWithWikilinks(text) {
-                if (!text) return "";
-                var formatted = text.replace(/\[\[(.*?)\]\]/g, function(match, p1) {
-                    var parts = p1.split('|');
-                    var target = parts[0];
-                    var display = parts.length > 1 ? parts[1] : target;
-                    return `<a href="obsidian://open?file=${encodeURIComponent(target)}" style="color: #60a5fa; text-decoration: none;">${display}</a>`;
-                });
-                return formatted;
-            }
-
-            Column {
-                anchors.fill: parent
-                spacing: 8
-
-                Text {
-                    text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
-                    color: "#ffffff"
-                    font.family: "Monospace"
-                    font.pixelSize: 14
-                    font.bold: true
-                    elide: Text.ElideRight
-                    width: parent.width
-                }
-
-                Rectangle {
-                    width: parent.width
-                    height: 1
-                    color: "#1f242d"
-                }
-
-                property bool isRichText: rootItem.ext === ".md" || rootItem.ext === ".markdown" || rootItem.ext === ".txt" || rootItem.ext === ".org"
-                
-                Item {
-                    width: parent.width
-                    height: parent.height - 30
-                    visible: !rootItem.isImageFile
-                    
-                    Text {
-                        anchors.fill: parent
-                        text: parent.parent.isRichText ? hoverSnippetContainer.formatMarkdownWithWikilinks(rootItem.nodeModel ? rootItem.nodeModel.snippet : "") : (rootItem.nodeModel ? rootItem.nodeModel.snippet : "")
-                        color: parent.parent.isRichText ? "#cbd5e1" : "#8b949e"
-                        textFormat: parent.parent.isRichText ? Text.MarkdownText : Text.PlainText
-                        wrapMode: Text.Wrap
-                        elide: Text.ElideRight
-                        clip: true
-                        font.pixelSize: parent.parent.isRichText ? 12 : 11
-                        font.family: parent.parent.isRichText ? "Inter, sans-serif" : "JetBrains Mono, Fira Code, monospace"
-                    }
-                }
-
-                Loader {
-                    id: imageHoverLoader
-                    objectName: "imageHoverLoader"
-                    width: parent.width
-                    height: parent.height - 30
-                    active: rootItem.showPreviewSlate && rootItem.isImageFile
-                    visible: active
-                    sourceComponent: Rectangle {
-                        anchors.fill: parent
-                        color: "#0a0c10"
-                        radius: 8
-                        clip: true
-                        border.color: "#30363d"
-                        border.width: 1
-                        
-                        AnimatedImage {
-                            id: previewImg
-                            objectName: "previewImg"
-                            anchors.fill: parent
-                            playing: rootItem.isHovered
-                            paused: !rootItem.isHovered
-                            source: {
-                                if (!rootItem.isImageFile || !rootItem.nodeModel || !rootItem.nodeModel.filePath) return "";
-                                return (typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge.get_image_source(rootItem.nodeModel.filePath) : "file://" + rootItem.nodeModel.filePath;
-                            }
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            visible: status !== Image.Error && source !== ""
-                        }
-
-                        // Preview Error Fallback
-                        Rectangle {
-                            visible: previewImg.status === Image.Error
-                            anchors.fill: parent
-                            color: "#0d1117"
-
-                            Column {
-                                anchors.centerIn: parent
-                                spacing: 8
-                                width: parent.width - 16
-
-                                Row {
-                                    spacing: 8
-                                    anchors.horizontalCenter: parent.horizontalCenter
-
-                                    Rectangle {
-                                        width: 24
-                                        height: 24
-                                        radius: 4
-                                        color: "#161b22"
-                                        border.color: rootItem.nodeAccentColor
-                                        border.width: 1
-                                        anchors.verticalCenter: parent.verticalCenter
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: rootItem.ext.replace(".", "").toUpperCase().slice(0, 3)
-                                            color: rootItem.nodeAccentColor
-                                            font.family: "Monospace"
-                                            font.pixelSize: 8
-                                            font.bold: true
-                                        }
-                                    }
-
-                                    Column {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 1
-
-                                        Text {
-                                            text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
-                                            color: "#f8fafc"
-                                            font.family: "Monospace"
-                                            font.pixelSize: 10
-                                            font.bold: true
-                                            elide: Text.ElideRight
-                                            width: 120
-                                        }
-
-                                        Text {
-                                            text: "Decoder not available"
-                                            color: "#f87171"
-                                            font.family: "Monospace"
-                                            font.pixelSize: 8
-                                        }
-                                    }
-                                }
-
-                                Rectangle {
-                                    id: miniOpenBtn
-                                    width: 120
-                                    height: 20
-                                    radius: 4
-                                    color: "#161b22"
-                                    border.color: "#30363d"
-                                    border.width: 1
-                                    anchors.horizontalCenter: parent.horizontalCenter
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: "Open in External App"
-                                        color: "#cbd5e1"
-                                        font.family: "Monospace"
-                                        font.pixelSize: 8
-                                        font.bold: true
-                                    }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        hoverEnabled: true
-                                        onEntered: miniOpenBtn.color = "#21262d"
-                                        onExited: miniOpenBtn.color = "#161b22"
-                                        onClicked: {
-                                            if (rootItem.bridge && rootItem.nodeModel) {
-                                                rootItem.bridge.open_in_external_editor(rootItem.nodeModel.filePath)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            fileName: (typeof model !== "undefined" && model && model.fileName) ? model.fileName : (rootItem.nodeModel ? rootItem.nodeModel.fileName : "")
+            snippetText: (typeof model !== "undefined" && model && (model.snippet || model.summary)) ? (model.snippet || model.summary) : (rootItem.nodeModel ? rootItem.nodeModel.snippet : "")
+            archetype: (typeof model !== "undefined" && model && model.archetype) ? model.archetype : (rootItem.nodeModel ? rootItem.nodeModel.archetype : "")
+            accentColor: rootItem.accentColor
+            cardRadius: rootItem.radius
+            isSearchResult: rootItem.isSearchResult
+            isHovered: rootItem.isHovered
+            showPreviewSlate: rootItem.showPreviewSlate
+            visible: rootItem.isPreviewMode
+            opacity: rootItem.isPreviewMode ? 1.0 : 0.0
         }
 
         // =====================================================================
@@ -675,7 +476,7 @@ Item {
             active: rootItem.isSelected
             visible: opacity > 0.01
             opacity: rootItem.isSelected ? 1.0 : 0.0
-            source: rootItem.isImageFile ? "ImageSlate.qml" : "PreviewSlate.qml"
+            source: rootItem.isImageFile ? "ImageSlate.qml" : (rootItem.isPdfFile ? "PdfSlate.qml" : (rootItem.isTableFile ? "TableSlate.qml" : "PreviewSlate.qml"))
             z: 10
             
             Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
@@ -689,20 +490,26 @@ Item {
 
             Binding { target: focalSlateLoader.item; property: "nodeId"; value: rootItem.nodeId; restoreMode: Binding.RestoreBinding }
             Binding { target: focalSlateLoader.item; property: "isSelected"; value: rootItem.isSelected; restoreMode: Binding.RestoreBinding }
-            Binding { target: focalSlateLoader.item; property: "viewportContainer"; value: rootItem.viewportContainer; restoreMode: Binding.RestoreBinding }
+            Binding {
+                target: focalSlateLoader.item
+                property: "viewportContainer"
+                value: rootItem.viewportContainer
+                when: focalSlateLoader.item !== null && typeof focalSlateLoader.item.viewportContainer !== "undefined"
+                restoreMode: Binding.RestoreBinding
+            }
             Binding { target: focalSlateLoader.item; property: "archetype"; value: rootItem.nodeModel ? rootItem.nodeModel.archetype : "document"; restoreMode: Binding.RestoreBinding }
             Binding {
                 target: focalSlateLoader.item
                 property: "snippet"
                 value: rootItem.snippet
-                when: !rootItem.isImageFile && focalSlateLoader.item !== null
+                when: !rootItem.isImageFile && !rootItem.isPdfFile && !rootItem.isTableFile && focalSlateLoader.item !== null
                 restoreMode: Binding.RestoreBinding
             }
             Binding {
                 target: focalSlateLoader.item
                 property: "initialText"
                 value: rootItem.initialText
-                when: !rootItem.isImageFile && focalSlateLoader.item !== null
+                when: !rootItem.isImageFile && !rootItem.isPdfFile && !rootItem.isTableFile && focalSlateLoader.item !== null
                 restoreMode: Binding.RestoreBinding
             }
             Binding { target: focalSlateLoader.item; property: "fileName"; value: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""; restoreMode: Binding.RestoreBinding }
@@ -712,17 +519,24 @@ Item {
                 target: focalSlateLoader.item
                 property: "referenceCount"
                 value: rootItem.referenceCount
-                when: !rootItem.isImageFile && focalSlateLoader.item !== null
+                when: !rootItem.isImageFile && !rootItem.isPdfFile && !rootItem.isTableFile && focalSlateLoader.item !== null
                 restoreMode: Binding.RestoreBinding
             }
             Binding { target: focalSlateLoader.item; property: "accentColor"; value: rootItem.nodeAccentColor; restoreMode: Binding.RestoreBinding }
+            Binding {
+                target: focalSlateLoader.item
+                property: "bridge"
+                value: (typeof bridge !== "undefined" ? bridge : rootItem.bridge)
+                when: focalSlateLoader.item !== null && ("bridge" in focalSlateLoader.item || typeof focalSlateLoader.item.bridge !== "undefined")
+                restoreMode: Binding.RestoreBinding
+            }
         }
 
         // =====================================================================
         // Main Card Drag & Interaction Handler
         // =====================================================================
         MouseArea {
-            id: dragArea
+            id: nodeMouseArea
             z: 99
             anchors.fill: parent
             anchors.margins: -16 // Hit-box stabilization padding
@@ -741,12 +555,20 @@ Item {
             property bool isDragMoved: false
 
             onEntered: {
+                rootItem.isHovered = true
+                rootItem.isDwellTriggered = false
+                if (!rootItem.isSearchResult && !rootItem.isSelected) {
+                    hoverDwellTimer.restart()
+                }
                 if (rootItem.bridge && !rootItem.isSelected) {
                     rootItem.bridge.set_hovered_node(rootItem.nodeId)
                 }
             }
 
             onExited: {
+                rootItem.isHovered = false
+                rootItem.isDwellTriggered = false
+                hoverDwellTimer.stop()
                 if (rootItem.bridge && !isDragging) {
                     rootItem.bridge.set_hovered_node(0)
                 }

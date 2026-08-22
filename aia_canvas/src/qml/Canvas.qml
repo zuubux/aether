@@ -27,7 +27,7 @@ Window {
                 if (omniBar.textLength > 0) {
                     omniBar.clearTextAndCancel()
                 } else {
-                    omniBar.active = false
+                    omniBar.dismiss()
                     if (canvasViewport.searchActive && canvasBridge) {
                         canvasBridge.clear_search()
                     }
@@ -44,12 +44,14 @@ Window {
 
     Shortcut {
         sequence: "Ctrl+Space"
-        context: Qt.ApplicationShortcut
+        context: Qt.ApplicationShortcut // Global across all child focus scopes
         onActivated: {
-            if (omniBar.active) {
-                omniBar.active = false
-            } else {
-                omniBar.active = true
+            if (typeof omniBar !== "undefined" && omniBar) {
+                if (omniBar.visible) {
+                    omniBar.dismiss();
+                } else {
+                    omniBar.open();
+                }
             }
         }
     }
@@ -180,6 +182,10 @@ Window {
                     canvasViewport.targetY = 0
                     canvasViewport.targetScale = 1.0
                 }
+
+                function onNodeRemoved(nodeId) {
+                    console.log("QML: Node with ID " + nodeId + " was removed dynamically from canvas view.")
+                }
             }
 
             property real targetX: 0
@@ -211,9 +217,9 @@ Window {
             }
 
             function closeSearchAndOmniBar() {
-                omniBar.active = false
-                omniBar.visible = false
-                omniBar.clearTextAndCancel()
+                if (typeof omniBar !== "undefined" && omniBar) {
+                    omniBar.dismiss()
+                }
                 if (searchActive && canvasBridge) {
                     canvasBridge.clear_search()
                 }

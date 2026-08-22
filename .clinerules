@@ -32,3 +32,21 @@
 - **No Hallucinated Functions:** Verify dictionary access syntax (`dict.get(k)` or `dict[k]`, never call dicts like functions `dict(k)`).
 - **Coordinate Integrity:** Avoid mutating global physics coordinates with local QML transient UI transforms (like hover bloom or temporary scales).
 - **Direct Output:** Keep implementation explanations concise, itemizing exact files and mathematical modifications made.
+
+## 6. Modular QML Frontend Contract
+- **QML Component Hierarchy:**
+  - `Node.qml` acts strictly as an interactive coordinator / state-machine container. No visual rendering code or leaf delegate paths should be defined directly within `Node.qml` other than state transitions and structural layout coordination.
+  - Leaf delegates reside strictly in `aia_canvas/src/qml/node/`:
+    - `NodePill.qml`: Renders Tier 3/4 compact capsules and extension badges.
+    - `NodePreview.qml`: Renders Tier 1.5 hover-dwell and search preview cards (320x220).
+    - `NodeAura.qml`: Renders semantic glow, selection halo, and search highlight shaders.
+    - `tokenView` (inline in `Node.qml`): Renders Tier 2 ambient inspection slates (220x64).
+- **UI State Machine Invariants:**
+  - **Mutually Exclusive State Flags:** Must maintain strict mutual exclusivity between `isPreviewMode`, `isSlateMode`, `isCapsuleMode`, and `isBeadMode`.
+  - **Single Delegate Visibility Invariant:** Exactly ONE visual delegate must be active and visible (`opacity: 1.0`) at any given time to eliminate state overlaps.
+  - **Aperture & Dimensions Thresholds:**
+    - **Tier 4 (<40%):** 14x14 bead (`isBeadMode`).
+    - **Tier 3 (40%-100%):** Compact capsule with height 32 and natural width (`isCapsuleMode`).
+    - **Tier 2 (>100%):** 220x64 inspection slate (`isSlateMode`).
+    - **Tier 1.5 (Dwell/Search):** 320x220 preview card (`isPreviewMode`).
+  - **Unified Animations:** All dimensional transitions (width, height, radius) must use unified 220ms `Easing.OutQuint` curves to guarantee visual consistency.

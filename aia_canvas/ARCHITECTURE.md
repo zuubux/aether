@@ -92,11 +92,19 @@
 * Filters centroid coordinates and radii through an exponential low-pass filter ($\alpha = 0.14$) to ensure jitter-free spatial transitions[cite: 5].
 * Renders lightweight, multi-layer GPU vector rings with uniform interior glass washes[cite: 7].
 
-### 3.5 4-Tier Semantic Zoom Matrix (`qml/Node.qml`)
-* **Tier 1 (Focal Workbench, $W=1400\text{px}, H=900\text{px}$):** Expanded active surface with interactive file actions and live viewport integration[cite: 2, 8].
-* **Tier 2 (Orbital Horizon Token, $W=280\text{px}, H=115\text{px}$):** High-salience cards displaying extension badges, titles, file paths, and downstream connection counters[cite: 8].
-* **Tier 3 (Compact Capsule, $W=180\text{px}, H=48\text{px}$):** Streamlined pills showing type badge and title, active at mid-range apertures or for secondary/unrelated nodes[cite: 8].
-* **Tier 4 (Macro Star Bead, $W=16\text{px}, H=16\text{px}$):** Luminous chromatic pips with centered light cores, blooming into preview capsules on hover[cite: 8].
+### 3.5 Modular QML Component Hierarchy & 4-Tier Semantic Zoom Matrix (`qml/Node.qml`)
+
+`Node.qml` acts strictly as an interactive coordinator / state-machine container, delegating all actual visual rendering of leaf delegates to dedicated components:
+* **Leaf Delegate Subdirectory (`aia_canvas/src/qml/node/`):**
+  * **`NodePill.qml`:** Renders Tier 3 (compact capsules) and Tier 4 (badges/bead-bloom capsules).
+  * **`NodePreview.qml`:** Renders Tier 1.5 hover-dwell and search preview cards ($320 \times 220\text{px}$).
+  * **`NodeAura.qml`:** Renders the GPU-native semantic glow, selection halo, and active search highlight shaders.
+  * **`tokenView` (Inline in `Node.qml`):** Renders Tier 2 ambient inspection slates ($220 \times 64\text{px}$).
+* **Zoom Matrix Tiers:**
+  * **Tier 1 (Focal Workbench, $W=1400\text{px}, H=900\text{px}$):** Expanded active surface with interactive file actions and live viewport integration[cite: 2, 8].
+  * **Tier 2 (Orbital Horizon Token, $W=220\text{px}, H=64\text{px}$):** High-salience inspection slates display file properties, badges, and downstream counters[cite: 8].
+  * **Tier 3 (Compact Capsule, $H=32\text{px}$, natural width):** Streamlined symmetrical pills showing type badge and title, active at mid-range apertures or for secondary/unrelated nodes[cite: 8].
+  * **Tier 4 (Macro Star Bead, $14 \times 14\text{px}$):** Luminous chromatic pips with centered light cores, blooming into preview capsules on hover[cite: 8].
 
 ### 3.6 Security & Subprocess Sandbox (`utils/security.py`)
 * `canonicalize_safe_path`: Enforces strict path canonicalization to verify all target paths reside within `$HOME` or `$XDG_RUNTIME_DIR`.
@@ -159,13 +167,20 @@ $$\mathbf{P}_1 = \mathbf{P}_0 + (\Delta x_{\text{clamped}}, S_{\text{sag}}), \qu
 
 ## 5. Semantic Aperture & Visual LOD Hierarchy
 
-| Aperture ($\alpha$) | Mode / Tier | Visual Representation | Dimensions | Typography / Badges |
+### 5.1 UI State Machine Invariants
+* **Mutually Exclusive State Flags:** Strict mutual exclusivity must be maintained at all times between the state flags: `isPreviewMode`, `isSlateMode`, `isCapsuleMode`, and `isBeadMode`.
+* **Single Delegate Visibility Invariant:** Exactly ONE visual leaf delegate must be active and visible (`opacity: 1.0`) at any given time to guarantee that multiple delegates do not render simultaneously.
+* **Unified Animations:** To ensure absolute visual consistency across the canvas, all dimensional transitions (width, height, radius) must employ a unified **220ms `Easing.OutQuint`** easing curve.
+
+### 5.2 Aperture & Dimensions Matrix
+
+| Aperture ($\alpha$) / Trigger | Mode / Tier | Active Delegate | Dimensions | Typography / Visual Representation |
 | :--- | :--- | :--- | :--- | :--- |
-| **$0.78 \le \alpha \le 2.20$** | **Tier 2: Horizon Token** | Full Rounded Card[cite: 8] | $280 \times 115\text{px}$[cite: 8] | Ext Badge, Full Title, Path, Sub-links[cite: 8] |
-| **$0.35 \le \alpha < 0.78$** | **Tier 3: Compact Capsule** | Symmetrical Pill[cite: 8] | $180 \times 48\text{px}$[cite: 8] | Ext Badge, Truncated Title[cite: 8] |
-| **$0.20 \le \alpha < 0.35$** | **Tier 4: Star Bead** | Chromatic Pip + Light Core[cite: 8] | $16 \times 16\text{px}$[cite: 8] | Pure Color Identity (Zero Text)[cite: 8] |
-| **Hover on Bead** | **Hover Bloom** | Expanded Capsule[cite: 8] | $160 \times 32\text{px}$[cite: 8] | Color Dot + Bold Monospace Title[cite: 8] |
-| **Selected Node** | **Tier 1: Workbench** | Interactive Surface[cite: 8] | $1400 \times 900\text{px}$ (Resizable)[cite: 2, 8] | Path Header, Action Buttons, Live Buffer[cite: 8] |
+| **$\alpha \ge 1.00$** | **Tier 2: Horizon Token** | `tokenView` (inline in `Node.qml`) | $220 \times 64\text{px}$ | Amber-bordered ambient inspection slate, full file details |
+| **$0.40 \le \alpha < 1.00$** | **Tier 3: Compact Capsule** | `NodePill.qml` | Height: $32\text{px}$, natural width | Symmetrical Pill, Ext Badge, truncated Monospace Title |
+| **$\alpha < 0.40$** | **Tier 4: Star Bead** | `NodePill.qml` (bead sub-mode) | $14 \times 14\text{px}$ | Luminous Chromatic Pip + Light Core, pure color (Zero Text) |
+| **Hover / Search Dwell** | **Tier 1.5: Dwell/Search** | `NodePreview.qml` (`isPreviewMode`) | $320 \times 220\text{px}$ | Hover-dwell & search preview card, rich file snippet content |
+| **Selected / Focused** | **Tier 1: Focal Workbench** | Direct Workbench Overlay / Slates | $1400 \times 900\text{px}$ | Active interactive surface, Live Buffer, fully resizable |
 
 ---
 

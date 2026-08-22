@@ -19,6 +19,21 @@ Item {
         cancelQuery()
     }
     
+    function open() {
+        active = true
+        inputField.forceActiveFocus()
+    }
+    
+    function dismiss() {
+        active = false
+        inputField.text = ""
+        inputField.focus = false
+        if (root.parent) {
+            root.parent.forceActiveFocus()
+        }
+        dismissed()
+    }
+    
     Timer {
         id: debounceTimer
         interval: 250
@@ -36,6 +51,7 @@ Item {
             inputField.forceActiveFocus()
         } else {
             inputField.text = ""
+            inputField.focus = false
         }
     }
     
@@ -90,7 +106,7 @@ Item {
                     if (inputField.text.length > 0) {
                         root.clearTextAndCancel()
                     } else {
-                        root.dismissed()
+                        root.dismiss()
                     }
                     event.accepted = true
                 } else if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return) {
