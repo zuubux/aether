@@ -19,6 +19,62 @@ Item {
     // Decoupled properties to resolve context cleanly without direct outer/global references
     readonly property string filePath: parent && parent.parent && parent.parent.filePath !== undefined ? parent.parent.filePath : ""
     readonly property var activeBridge: parent && parent.parent && parent.parent.activeBridge !== undefined ? parent.parent.activeBridge : null
+    
+    property string previewSourceUrl: ""
+    property bool isLoading: false
+
+    Connections {
+        target: previewRoot.activeBridge
+        function onImageReady(fPath, url) {
+            if (fPath === previewRoot.filePath) {
+                previewRoot.previewSourceUrl = url
+                previewRoot.isLoading = false
+            }
+        }
+        function onPdfPageReady(fPath, pageIdx, imgPath) {
+            if (fPath === previewRoot.filePath && pageIdx === 0) {
+                previewRoot.previewSourceUrl = imgPath
+                previewRoot.isLoading = false
+            }
+        }
+        function onMediaError(fPath, errorMsg) {
+            if (fPath === previewRoot.filePath) {
+                previewRoot.isLoading = false
+                console.error("Preview media error:", errorMsg)
+            }
+        }
+    }
+
+    function requestPreview() {
+        if (!previewRoot.activeBridge || !previewRoot.filePath) return;
+        if (previewRoot.isImageFile) {
+            previewRoot.isLoading = true
+            previewRoot.activeBridge.request_image_source(previewRoot.filePath)
+        } else if (previewRoot.isPdfFile) {
+            previewRoot.isLoading = true
+            previewRoot.activeBridge.request_pdf_page(previewRoot.filePath, 0, 400)
+        }
+    }
+
+    onShowPreviewSlateChanged: {
+        if (previewRoot.showPreviewSlate) {
+            requestPreview()
+        }
+    }
+
+    onFilePathChanged: {
+        if (previewRoot.showPreviewSlate) {
+            previewRoot.previewSourceUrl = ""
+            requestPreview()
+        }
+    }
+
+    Component.onCompleted: {
+        if (previewRoot.showPreviewSlate) {
+            requestPreview()
+        }
+    }
+
     readonly property string ext: {
         var dotIdx = fileName.lastIndexOf(".");
         return dotIdx !== -1 ? fileName.substring(dotIdx).toLowerCase() : ".txt";
@@ -188,20 +244,7 @@ Item {
                         anchors.fill: parent
                         playing: previewRoot.isHovered && parent.isAnimatedFormat
                         paused: !previewRoot.isHovered || !parent.isAnimatedFormat
-                        source: {
-                            if (!parent.isAnimatedFormat) return "";
-                            if (previewRoot.isPdfFile) {
-                                if (!previewRoot.filePath) return "";
-                                return previewRoot.activeBridge ? previewRoot.activeBridge.get_pdf_page_image(previewRoot.filePath, 0, 400) : "";
-                            }
-                            if (!previewRoot.isImageFile || !previewRoot.filePath) return "";
-                            if (previewRoot.activeBridge) {
-                                return previewRoot.activeBridge.get_image_source(previewRoot.filePath);
-                            }
-                            let path = previewRoot.filePath;
-                            if (path.startsWith("file://")) return path;
-                            return "file://" + path;
-                        }
+                        source: previewRoot.previewSourceUrl
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         visible: parent.isAnimatedFormat && status !== Image.Error && source !== ""
@@ -210,20 +253,7 @@ Item {
                     Image {
                         id: staticImg
                         anchors.fill: parent
-                        source: {
-                            if (parent.isAnimatedFormat) return "";
-                            if (previewRoot.isPdfFile) {
-                                if (!previewRoot.filePath) return "";
-                                return previewRoot.activeBridge ? previewRoot.activeBridge.get_pdf_page_image(previewRoot.filePath, 0, 400) : "";
-                            }
-                            if (!previewRoot.isImageFile || !previewRoot.filePath) return "";
-                            if (previewRoot.activeBridge) {
-                                return previewRoot.activeBridge.get_image_source(previewRoot.filePath);
-                            }
-                            let path = previewRoot.filePath;
-                            if (path.startsWith("file://")) return path;
-                            return "file://" + path;
-                        }
+                        source: previewRoot.previewSourceUrl
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         visible: !parent.isAnimatedFormat && status !== Image.Error && source !== ""

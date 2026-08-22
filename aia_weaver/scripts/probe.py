@@ -6,9 +6,9 @@ Standalone CLI diagnostic tool to query and inspect a running aia_weaver daemon.
 
 import json
 import os
-from pathlib import Path
 import socket
 import sys
+from pathlib import Path
 
 
 def get_socket_path() -> Path:

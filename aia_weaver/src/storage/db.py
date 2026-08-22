@@ -1,6 +1,6 @@
-import asyncio
 import logging
 from pathlib import Path
+
 import aiosqlite
 import sqlite_vec
 
@@ -96,11 +96,11 @@ class DatabaseManager:
                 INSERT INTO nodes (file_path, file_hash, extension, size_bytes, archetype, snippet, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(file_path) DO UPDATE SET
-                    file_hash=excluded.file_hash,
-                    size_bytes=excluded.size_bytes,
-                    archetype=excluded.archetype,
-                    snippet=excluded.snippet,
-                    updated_at=CURRENT_TIMESTAMP
+                    file_hash=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.file_hash ELSE excluded.file_hash END,
+                    size_bytes=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.size_bytes ELSE excluded.size_bytes END,
+                    archetype=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.archetype ELSE excluded.archetype END,
+                    snippet=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.snippet ELSE excluded.snippet END,
+                    updated_at=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.updated_at ELSE CURRENT_TIMESTAMP END
                 RETURNING id;
                 """,
                 (file_path, file_hash, extension, size_bytes, archetype, snippet),
@@ -272,7 +272,7 @@ class DatabaseManager:
 
             try:
                 await cursor.execute("DELETE FROM node_embeddings WHERE node_id = ?", (node_id,))
-            except Exception as e:
+            except sqlite3.DatabaseError as e:
                 logger.warning(f"Could not purge vector for Node #{node_id}: {e}")
 
             await cursor.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
@@ -454,7 +454,7 @@ class DatabaseManager:
 
         try:
             await self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
-        except Exception as e:
+        except sqlite3.DatabaseError as e:
             logger.debug(f"WAL checkpoint skipped: {e}")
 
         logger.info("Database maintenance complete.")

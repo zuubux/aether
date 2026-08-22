@@ -3,15 +3,16 @@ import asyncio
 import hashlib
 import logging
 import os
-from pathlib import Path
 import signal
 import sys
+from pathlib import Path
 
 from indexer.embedder import LocalEmbedder
-from indexer.parser import extract_explicit_links, extract_archetype_and_snippet
+from indexer.parser import extract_archetype_and_snippet, extract_explicit_links
 from ipc.server import IPCServer
 from storage.db import DatabaseManager
 from watcher.fs_events import FileWatcher
+
 
 def setup_logging(debug=False):
     logging.basicConfig(
@@ -164,6 +165,23 @@ class WeaverDaemon:
         logger.info("Initializing aia_weaver engine...")
 
         await self.db.initialize()
+
+        # Cold Start Ghost Node Reconciliation
+        logger.info("Performing cold start ghost node reconciliation...")
+        try:
+            all_nodes = await self.db.get_all_nodes()
+            pruned_count = 0
+            for node in all_nodes:
+                file_path = node["file_path"]
+                if not os.path.exists(file_path):
+                    await self.db.delete_node_by_path(file_path)
+                    logger.info(f"Cold start pruned ghost node: {file_path}")
+                    pruned_count += 1
+            if pruned_count > 0:
+                logger.info(f"Cold start reconciliation complete. Pruned {pruned_count} ghost node(s).")
+        except Exception as e:
+            logger.error(f"Error during cold start ghost node reconciliation: {e}")
+
         await self.ipc.start()
 
         loop = asyncio.get_running_loop()

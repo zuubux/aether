@@ -3,21 +3,16 @@ Aether Canvas - Python to QML Bridge
 Live temporal co-attention ingestion, priority edge sorting, and telemetry.
 """
 
-import os
+import logging
 import math
 import time
-import logging
-import subprocess
-import urllib.parse
-from typing import List, Optional, Set, Dict, Any
-from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot, QTimer
-from PyQt6.QtGui import QGuiApplication
+from typing import Any
 
-from models import Node, Edge
-from store import GraphStore
 from ipc.client import WeaverIPCClient
+from models import Edge, Node
 from physics.engine import PhysicsEngine
-from utils.security import canonicalize_safe_path
+from PyQt6.QtCore import QObject, QTimer, pyqtProperty, pyqtSignal, pyqtSlot
+from store import GraphStore
 
 logger = logging.getLogger("aia_canvas.bridge")
 
@@ -34,27 +29,69 @@ class CanvasBridge(QObject):
     telemetryChanged = pyqtSignal()
     searchResultsReceived = pyqtSignal(list)
     searchCleared = pyqtSignal()
+    nodeRemoved = pyqtSignal(int)
+
+    # Async Media Signals
+    pdfPageReady = pyqtSignal(str, int, str, arguments=['filePath', 'pageIndex', 'imagePath'])
+    pdfCountReady = pyqtSignal(str, int, arguments=['filePath', 'pageCount'])
+    csvDataReady = pyqtSignal(str, 'QVariantMap', arguments=['filePath', 'tableData'])
+    imageReady = pyqtSignal(str, str, arguments=['filePath', 'sourceUrl'])
+    mediaError = pyqtSignal(str, str, arguments=['filePath', 'errorMessage'])
 
     def __init__(self):
         super().__init__()
         self.store = GraphStore()
         self.physics = PhysicsEngine()
 
+        from controllers.canvas_controller import CanvasController
+        from controllers.node_controller import NodeController
+        from controllers.physics_controller import PhysicsController
+        from controllers.search_controller import SearchController
+
+        self.canvas_ctrl = CanvasController(self)
+        self.search_ctrl = SearchController(self)
+        self.node_ctrl = NodeController(self)
+        self.physics_ctrl = PhysicsController(self)
+
+        # Connect controller child signals to the corresponding bridge signals
+        self.canvas_ctrl.workbenchDimensionsChanged.connect(self.workbenchDimensionsChanged)
+        self.canvas_ctrl.apertureChanged.connect(self.apertureChanged)
+        
+        self.search_ctrl.searchResultsReceived.connect(self.searchResultsReceived)
+        self.search_ctrl.searchCleared.connect(self.searchCleared)
+        
+        self.node_ctrl.selectedNodeChanged.connect(self.selectedNodeChanged)
+        self.node_ctrl.hoveredNodeChanged.connect(self.hoveredNodeChanged)
+        self.node_ctrl.nodeRemoved.connect(self.nodeRemoved)
+        
+        # Connect Async Media Signals
+        self.node_ctrl.pdfPageReady.connect(self.pdfPageReady)
+        self.node_ctrl.pdfCountReady.connect(self.pdfCountReady)
+        self.node_ctrl.csvDataReady.connect(self.csvDataReady)
+        self.node_ctrl.imageReady.connect(self.imageReady)
+        self.node_ctrl.mediaError.connect(self.mediaError)
+        
+        self.physics_ctrl.nodesChanged.connect(self.nodesChanged)
+        self.physics_ctrl.edgesChanged.connect(self.edgesChanged)
+        self.physics_ctrl.clusterHalosChanged.connect(self.clusterHalosChanged)
+        self.physics_ctrl.telemetryChanged.connect(self.telemetryChanged)
+        self.physics_ctrl.connectionStatusChanged.connect(self.connectionStatusChanged)
+
         self._SUPPORTED_IMAGE_EXTS = {
             "bmp", "gif", "ico", "jpeg", "jpg", "png", "pbm", "pgm", "ppm", "xbm", "xpm",
             "svg", "svgz", "webp", "tif", "tiff", "heic", "heif"
         }
 
-        self._failed_image_conversions: Set[str] = set()
+        self._failed_image_conversions: set[str] = set()
 
         self._selected_node_id: int = 0
         self._hovered_node_id: int = 0
         self._is_connected = False
         
-        self._cached_first_degree: Set[int] = set()
-        self._cached_second_degree: Set[int] = set()
-        self._cached_second_degree_parent: Dict[int, int] = {}
-        self._cached_focal_weights: Dict[int, float] = {}
+        self._cached_first_degree: set[int] = set()
+        self._cached_second_degree: set[int] = set()
+        self._cached_second_degree_parent: dict[int, int] = {}
+        self._cached_focal_weights: dict[int, float] = {}
 
         self._aperture: float = 1.0
         self._workbench_width: float = 1600.0
@@ -67,9 +104,9 @@ class CanvasBridge(QObject):
         self._last_frametime_ms: float = 0.0
 
         # Graph Separation: Structural vs Render Subset
-        self._structural_edges: List[Edge] = []
-        self._ambient_edges: List[Edge] = []
-        self._focal_edges: List[Edge] = []
+        self._structural_edges: list[Edge] = []
+        self._ambient_edges: list[Edge] = []
+        self._focal_edges: list[Edge] = []
 
         # Background IPC
         self.ipc = WeaverIPCClient()
@@ -96,9 +133,9 @@ class CanvasBridge(QObject):
             return
 
         edges = self._focal_edges
-        first_degree: Set[int] = set()
-        temporal_first_degree: Set[int] = set()
-        focal_weights: Dict[int, float] = {}
+        first_degree: set[int] = set()
+        temporal_first_degree: set[int] = set()
+        focal_weights: dict[int, float] = {}
         
         for e in edges:
             if primary_id in (e.sourceId, e.targetId):
@@ -110,7 +147,7 @@ class CanvasBridge(QObject):
                     first_degree.add(target)
                     focal_weights[target] = max(focal_weights.get(target, 0.0), e.weight)
 
-        second_degree: Set[int] = set()
+        second_degree: set[int] = set()
         for e in edges:
             if e.sourceId in first_degree and e.targetId != primary_id and e.targetId not in first_degree:
                 second_degree.add(e.targetId)
@@ -215,372 +252,179 @@ class CanvasBridge(QObject):
     # --- Properties Exposed to QML ---
 
     @pyqtProperty(list, notify=nodesChanged)
-    def nodes(self) -> List[Node]:
-        return self.store.get_all_nodes()
+    def nodes(self) -> list[Node]:
+        return self.physics_ctrl.nodes
 
     @pyqtProperty(list, notify=edgesChanged)
-    def edges(self) -> List[Edge]:
-        base_edges = []
-        if self._selected_node_id > 0:
-            # 1. Start with curated, deduplicated focal edges
-            base_edges = list(self._focal_edges)
-            
-            # 2. Exclude any ambient edges touching the focused node to prevent duplicate filaments
-            for e in self._ambient_edges:
-                if e.sourceId == self._selected_node_id or e.targetId == self._selected_node_id:
-                    continue
-                base_edges.append(e)                
-        else:
-            base_edges = self._ambient_edges
-            
-        # 3. Global deduplication by priority to ensure no visual overlap
-        unique_edges = {}
-        priority = {"explicit": 3, "semantic": 2, "temporal": 1}
-        for e in base_edges:
-            pair_key = (min(e.sourceId, e.targetId), max(e.sourceId, e.targetId))
-            current = unique_edges.get(pair_key)
-            if not current:
-                unique_edges[pair_key] = e
-            else:
-                if priority.get(e.edgeType, 0) > priority.get(current.edgeType, 0):
-                    unique_edges[pair_key] = e
-                elif priority.get(e.edgeType, 0) == priority.get(current.edgeType, 0) and e.weight > current.weight:
-                    unique_edges[pair_key] = e
-                    
-        return list(unique_edges.values())
+    def edges(self) -> list[Edge]:
+        return self.physics_ctrl.edges
 
     @pyqtProperty(int, notify=selectedNodeChanged)
     def selectedNodeId(self) -> int:
-        return self._selected_node_id
+        return self.node_ctrl.selectedNodeId
 
     @pyqtProperty(int, notify=hoveredNodeChanged)
     def hoveredNodeId(self) -> int:
-        return self._hovered_node_id
+        return self.node_ctrl.hoveredNodeId
 
     @pyqtProperty(bool, notify=connectionStatusChanged)
     def isConnected(self) -> bool:
-        return self._is_connected
+        return self.physics_ctrl.isConnected
 
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def workbenchWidth(self) -> float:
-        return self._workbench_width
+        return self.canvas_ctrl.workbenchWidth
 
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def workbenchHeight(self) -> float:
-        return self._workbench_height
+        return self.canvas_ctrl.workbenchHeight
 
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def wingWidth(self) -> float:
-        return (self.physics.viewport_w - self._workbench_width) / 2.0
+        return self.canvas_ctrl.wingWidth
 
     @pyqtProperty(float, notify=apertureChanged)
     def aperture(self) -> float:
-        return self._aperture
+        return self.canvas_ctrl.aperture
 
     @pyqtProperty(list, notify=clusterHalosChanged)
     def clusterHalos(self) -> list:
-        return self._cluster_halos
+        return self.physics_ctrl.clusterHalos
 
     @pyqtProperty(float, notify=telemetryChanged)
     def physicsFrametime(self) -> float:
-        return self._last_frametime_ms
+        return self.physics_ctrl.physicsFrametime
 
     @pyqtProperty(int, notify=telemetryChanged)
     def activeNodeCount(self) -> int:
-        return len(self.store.get_all_nodes())
+        return self.physics_ctrl.activeNodeCount
 
     @pyqtProperty(int, notify=telemetryChanged)
     def activeEdgeCount(self) -> int:
-        return len(self.edges)
+        return self.physics_ctrl.activeEdgeCount
 
     # --- Slots Invoked from QML ---
 
+    @pyqtSlot(str, int, result='QVariantMap')
+    @pyqtSlot(str, result='QVariantMap')
+    def get_csv_preview(self, file_path: str, max_rows: int = 5) -> dict:
+        return self.node_ctrl.get_csv_preview(file_path, max_rows)
+
+    @pyqtSlot(str, int)
+    @pyqtSlot(str)
+    def request_csv_data(self, file_path: str, max_rows: int = 1000):
+        self.node_ctrl.request_csv_data(file_path, max_rows)
+
+    @pyqtSlot(str, int, int, str, result=bool)
+    def update_csv_cell(self, file_path: str, row_idx: int, col_idx: int, new_value: str) -> bool:
+        return self.node_ctrl.update_csv_cell(file_path, row_idx, col_idx, new_value)
+
+    @pyqtSlot(str, result=bool)
+    def copy_csv_data(self, file_path: str) -> bool:
+        return self.node_ctrl.copy_csv_data(file_path)
+
     @pyqtSlot(str, result=bool)
     def copy_image_to_clipboard(self, file_path: str) -> bool:
-        if not file_path:
-            return False
-        from PyQt6.QtGui import QImage
-        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
-        image = QImage(clean_path)
-        if image.isNull():
-            return False
-        clipboard = QGuiApplication.clipboard()
-        clipboard.setImage(image)
-        return True
+        return self.node_ctrl.copy_image_to_clipboard(file_path)
+
+    @pyqtSlot(str, result=int)
+    def get_pdf_page_count(self, file_path: str) -> int:
+        return self.node_ctrl.get_pdf_page_count(file_path)
+
+    @pyqtSlot(str)
+    def request_pdf_page_count(self, file_path: str):
+        self.node_ctrl.request_pdf_page_count(file_path)
+
+    @pyqtSlot(str, int, int)
+    @pyqtSlot(str, int)
+    @pyqtSlot(str)
+    def request_pdf_page(self, file_path: str, page_index: int = 0, target_width: int = 1800):
+        self.node_ctrl.request_pdf_page(file_path, page_index, target_width)
+
+    @pyqtSlot(str, int, result=bool)
+    @pyqtSlot(str, result=bool)
+    def copy_pdf_page_to_clipboard(self, file_path: str, page_index: int = 0) -> bool:
+        return self.node_ctrl.copy_pdf_page_to_clipboard(file_path, page_index)
 
     @pyqtSlot(str, result=bool)
     def is_image_file(self, file_path: str) -> bool:
-        if not file_path:
-            return False
-        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
-        ext = os.path.splitext(clean_path)[1].lstrip(".").lower()
-        return ext in self._SUPPORTED_IMAGE_EXTS
+        return self.node_ctrl.is_image_file(file_path)
 
-    @pyqtSlot(str, result=str)
-    def get_image_source(self, file_path: str) -> str:
-        if not file_path:
-            return ""
-        
-        if file_path in self._failed_image_conversions:
-            return ""
-        
-        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
-        if not os.path.exists(clean_path):
-            return file_path
-            
-        ext = os.path.splitext(clean_path)[1].lstrip(".").lower()
-        if ext in ["ico", "icon"]:
-            try:
-                from PIL import Image as PILImage
-                cache_dir = os.path.expanduser("~/.cache/aether")
-                os.makedirs(cache_dir, exist_ok=True)
-                
-                mtime = os.path.getmtime(clean_path)
-                cache_key = f"{clean_path}_{mtime}"
-                import hashlib
-                h = hashlib.md5(cache_key.encode('utf-8')).hexdigest()
-                cached_png = os.path.join(cache_dir, f"{h}.png")
-                
-                if not os.path.exists(cached_png):
-                    with PILImage.open(clean_path) as img:
-                        img.save(cached_png, "PNG")
-                
-                return "file://" + cached_png
-            except Exception as e:
-                self._failed_image_conversions.add(file_path)
-                logger.debug(f"Failed to convert image via Pillow ({file_path}): {e}")
-                return ""
-                
-        if not file_path.startswith("file://"):
-            return "file://" + file_path
-        return file_path
+    @pyqtSlot(str)
+    def request_image_source(self, file_path: str):
+        self.node_ctrl.request_image_source(file_path)
 
     @pyqtSlot(str)
     def submit_query(self, query: str):
-        logger.debug(f"OmniBar query submitted: {query}")
-        if not self._is_connected:
-            return
-
-        def _handle_search(result: Any, error: Optional[str]):
-            if error or not isinstance(result, list):
-                logger.error(f"OmniBar search failed: {error}")
-                return
-
-            logger.debug(f"OmniBar search response: {result}")
-            node_ids = []
-            for n in result:
-                n_id = n.get('id') if 'id' in n else n.get('node_id')
-                if n_id is not None:
-                    node_ids.append(str(n_id))
-
-            if node_ids:
-                self.searchResultsReceived.emit(node_ids)
-            else:
-                self.searchCleared.emit()
-
-        if not query.strip():
-            self.searchCleared.emit()
-            return
-
-        self.ipc.call_rpc_sync(
-            "search_graph",
-            {"query": query, "limit": 5},
-            callback=_handle_search
-        )
+        self.search_ctrl.submit_query(query)
 
     @pyqtSlot()
     def clear_search(self):
-        self.physics.set_staged_nodes([], self.physics.viewport_w, 0.0, self.store.get_all_nodes())
-        self._wake_physics()
-        self.searchCleared.emit()
+        self.search_ctrl.clear_search()
 
     @pyqtSlot(list, float, float)
     def set_staged_nodes(self, node_id_strs: list, viewport_w: float, shelf_y: float):
-        node_ids = []
-        for nid in node_id_strs:
-            try:
-                node_ids.append(int(nid))
-            except ValueError:
-                pass
-        self.physics.set_staged_nodes(node_ids, viewport_w, shelf_y, self.store.get_all_nodes())
-        self._wake_physics()
+        self.search_ctrl.set_staged_nodes(node_id_strs, viewport_w, shelf_y)
 
     @pyqtSlot(int)
     def set_hovered_node(self, node_id: int):
-        if self._hovered_node_id != node_id:
-            self._hovered_node_id = node_id
-            self.hoveredNodeChanged.emit(node_id)
-            self._wake_physics()
+        self.node_ctrl.set_hovered_node(node_id)
 
     @pyqtSlot(int, result=int)
     def get_downstream_count(self, node_id: int) -> int:
-        edges = self._focal_edges if self._selected_node_id > 0 else self._ambient_edges
-        count = 0
-        for e in edges:
-            if e.sourceId == node_id and e.targetId != self._selected_node_id:
-                count += 1
-            elif e.targetId == node_id and e.sourceId != self._selected_node_id:
-                count += 1
-        return count
+        return self.physics_ctrl.get_downstream_count(node_id)
 
     @pyqtSlot(float)
     def adjust_aperture(self, delta: float):
-        new_val = max(0.20, min(2.20, self._aperture + delta))
-        if abs(new_val - self._aperture) > 0.005:
-            self._aperture = new_val
-            self.physics.set_aperture(new_val)
-            self.apertureChanged.emit(new_val)
-            self._wake_physics()
+        self.canvas_ctrl.adjust_aperture(delta)
 
     @pyqtSlot(float, float)
     def set_workbench_dimensions(self, width: float, height: float):
-        self._wake_physics()
-        clamped_w = max(480.0, min(2600.0, width))
-        clamped_h = max(320.0, min(1600.0, height))
-
-        if abs(self._workbench_width - clamped_w) > 1.0 or abs(self._workbench_height - clamped_h) > 1.0:
-            self._workbench_width = clamped_w
-            self._workbench_height = clamped_h
-            self.physics.set_focal_card_dimensions(clamped_w, clamped_h)
-            self.workbenchDimensionsChanged.emit()
+        self.canvas_ctrl.set_workbench_dimensions(width, height)
 
     @pyqtSlot(float, float)
     def update_viewport_dimensions(self, width: float, height: float):
-        self._wake_physics()
-        self.physics.set_viewport_dimensions(width, height)
-        self.workbenchDimensionsChanged.emit()
+        self.canvas_ctrl.update_viewport_dimensions(width, height)
 
     @pyqtSlot(str)
     def navigate_to_link(self, target_name: str):
-        self._wake_physics()
-        target_clean = target_name.lower().strip()
-        if target_clean.endswith(".md") or target_clean.endswith(".txt"):
-            target_clean = target_clean.rsplit(".", 1)[0]
-            
-        nodes = self.store.get_all_nodes()
-        for node in nodes:
-            node_file = node.fileName.lower()
-            if node_file.endswith(".md") or node_file.endswith(".txt"):
-                node_file = node_file.rsplit(".", 1)[0]
-                
-            if node_file == target_clean or node.fileName.lower() == target_clean:
-                self.select_node(node.id)
-                break
+        self.node_ctrl.navigate_to_link(target_name)
 
     @pyqtSlot(int)
     def select_node(self, node_id: int):
-        self._wake_physics()
-        if self._selected_node_id != node_id:
-            self._selected_node_id = node_id
-            
-            if node_id > 0:
-                if node_id in self.physics.recent_node_ids:
-                    self.physics.recent_node_ids.remove(node_id)
-                self.physics.recent_node_ids.insert(0, node_id)
-                self.physics.recent_node_ids = self.physics.recent_node_ids[:8]
-
-            self._recalculate_focal_weights(node_id)
-            self.selectedNodeChanged.emit(node_id)
-
-        if node_id == 0:
-            self._focal_edges = []
-            self.edgesChanged.emit()
-            return
-
-        if self._is_connected and node_id > 0:
-            self.ipc.call_rpc_sync(
-                "touch_node",
-                {"node_id": node_id, "event_type": "focus"},
-                callback=self._handle_touch_node_response,
-            )
-
-            self.ipc.call_rpc_sync(
-                "get_neighbors",
-                {"node_id": node_id},
-                callback=self._handle_neighbors_response,
-            )
+        self.node_ctrl.select_node(node_id)
 
     @pyqtSlot(int, float, float)
     def pin_node(self, node_id: int, x: float, y: float):
-        self._wake_physics()
-        self.physics.pin_node(node_id)
-        node = self.store.get_node(node_id)
-        if node:
-            node.x = x
-            node.y = y
+        self.node_ctrl.pin_node(node_id, x, y)
 
     @pyqtSlot(int, float, float)
     def update_drag_pos(self, node_id: int, x: float, y: float):
-        self._wake_physics()
-        node = self.store.get_node(node_id)
-        if node:
-            node.x = x
-            node.y = y
+        self.node_ctrl.update_drag_pos(node_id, x, y)
 
     @pyqtSlot(int, result=str)
     def get_relation_type(self, node_id: int) -> str:
-        if self._selected_node_id <= 0 or node_id == self._selected_node_id:
-            return ""
-        for e in self._focal_edges:
-            if (e.sourceId == self._selected_node_id and e.targetId == node_id) or \
-               (e.targetId == self._selected_node_id and e.sourceId == node_id):
-                return e.edgeType
-        return ""
+        return self.physics_ctrl.get_relation_type(node_id)
 
     @pyqtSlot(int)
     def release_node(self, node_id: int):
-        self._wake_physics()
-        self.physics.unpin_node()
+        self.node_ctrl.release_node(node_id)
 
     @pyqtSlot(int, float, float)
     def set_custom_anchor(self, node_id: int, x: float, y: float):
-        self.physics.set_custom_anchor(node_id, x, y)
+        self.node_ctrl.set_custom_anchor(node_id, x, y)
 
     @pyqtSlot(int, str)
     def save_node_content(self, node_id: int, new_content: str):
-        if not self._is_connected or node_id <= 0:
-            return
-            
-        def _handle_save(result: Any, error: Optional[str]):
-            if error:
-                logger.error(f"Failed to save node {node_id}: {error}")
-            else:
-                logger.info(f"Node {node_id} successfully saved to disk and DB.")
-
-        self.ipc.call_rpc_sync(
-            "save_node_content",
-            {"node_id": node_id, "content": new_content},
-            callback=_handle_save
-        )
+        self.node_ctrl.save_node_content(node_id, new_content)
 
     @pyqtSlot(str)
     def open_in_file_manager(self, file_path: str):
-        safe_path = canonicalize_safe_path(file_path)
-        if not safe_path:
-            return
-
-        target_dir = safe_path if safe_path.is_dir() else safe_path.parent
-        if target_dir.exists():
-            subprocess.Popen(
-                ["xdg-open", str(target_dir)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+        self.node_ctrl.open_in_file_manager(file_path)
 
     @pyqtSlot(str)
     def open_in_external_editor(self, file_path: str):
-        safe_path = canonicalize_safe_path(file_path)
-        if not safe_path:
-            return
-
-        if safe_path.exists():
-            subprocess.Popen(
-                ["xdg-open", str(safe_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+        self.node_ctrl.open_in_external_editor(file_path)
 
     # --- IPC Callbacks ---
 
@@ -593,7 +437,7 @@ class CanvasBridge(QObject):
         self._is_connected = False
         self.connectionStatusChanged.emit(False)
 
-    def _handle_initial_sync(self, result: list, error: Optional[str]):
+    def _handle_initial_sync(self, result: list, error: str | None):
         if error or not isinstance(result, list):
             return
 
@@ -610,7 +454,7 @@ class CanvasBridge(QObject):
         for n in self.store.get_all_nodes():
             self.ipc.call_rpc_sync("get_neighbors", {"node_id": n.id}, callback=self._handle_ambient_edges_response)
 
-    def _handle_touch_node_response(self, result: Any, error: Optional[str]):
+    def _handle_touch_node_response(self, result: Any, error: str | None):
         if error or not isinstance(result, dict):
             return
 
@@ -634,7 +478,7 @@ class CanvasBridge(QObject):
         self._recalculate_focal_weights(self._selected_node_id)
         self.edgesChanged.emit()
 
-    def _handle_ambient_edges_response(self, result: dict, error: Optional[str]):
+    def _handle_ambient_edges_response(self, result: dict, error: str | None):
         if error or not result:
             return
 
@@ -708,20 +552,37 @@ class CanvasBridge(QObject):
         raw_id = data.get("node_id") if data.get("node_id") is not None else data.get("id")
         if raw_id is not None:
             node_id = int(raw_id)
-            self.store.remove_node(node_id)
-            self._structural_edges = [e for e in self._structural_edges if e.sourceId != node_id and e.targetId != node_id]
-            self._ambient_edges = [e for e in self._ambient_edges if e.sourceId != node_id and e.targetId != node_id]
-            self._focal_edges = [e for e in self._focal_edges if e.sourceId != node_id and e.targetId != node_id]
-            self._recalculate_focal_weights(self._selected_node_id)
-            self.nodesChanged.emit()
-            self.edgesChanged.emit()
+            node = self.store.get_node(node_id)
+            if node:
+                node.isDeleted = True
+                
+                def deferred_remove():
+                    self.store.remove_node(node_id)
+                    self._structural_edges = [e for e in self._structural_edges if e.sourceId != node_id and e.targetId != node_id]
+                    self._ambient_edges = [e for e in self._ambient_edges if e.sourceId != node_id and e.targetId != node_id]
+                    self._focal_edges = [e for e in self._focal_edges if e.sourceId != node_id and e.targetId != node_id]
+                    self._recalculate_focal_weights(self._selected_node_id)
+                    self.nodesChanged.emit()
+                    self.edgesChanged.emit()
+                    self.nodeRemoved.emit(node_id)
+                
+                QTimer.singleShot(250, deferred_remove)
+            else:
+                self.store.remove_node(node_id)
+                self._structural_edges = [e for e in self._structural_edges if e.sourceId != node_id and e.targetId != node_id]
+                self._ambient_edges = [e for e in self._ambient_edges if e.sourceId != node_id and e.targetId != node_id]
+                self._focal_edges = [e for e in self._focal_edges if e.sourceId != node_id and e.targetId != node_id]
+                self._recalculate_focal_weights(self._selected_node_id)
+                self.nodesChanged.emit()
+                self.edgesChanged.emit()
+                self.nodeRemoved.emit(node_id)
 
-    def _handle_neighbors_response(self, result: dict, error: Optional[str]):
+    def _handle_neighbors_response(self, result: dict, error: str | None):
         if error or not result:
             return
 
         raw_edges = result.get("edges", [])
-        parsed_edges: List[Edge] = [
+        parsed_edges: list[Edge] = [
             Edge(
                 source_id=int(e["source_id"]),
                 target_id=int(e["target_id"]),
@@ -759,9 +620,7 @@ class CanvasBridge(QObject):
             else:
                 # Priority mapping ensures Explicit and Semantic links aren't overwritten by Temporal history
                 priority = {"explicit": 3, "semantic": 2, "temporal": 1}
-                if priority[e.edgeType] > priority[current.edgeType]:
-                    unique_edges[pair_key] = e
-                elif priority[e.edgeType] == priority[current.edgeType] and e.weight > current.weight:
+                if priority[e.edgeType] > priority[current.edgeType] or priority[e.edgeType] == priority[current.edgeType] and e.weight > current.weight:
                     unique_edges[pair_key] = e
                 
         deduped_edges = list(unique_edges.values())

@@ -50,3 +50,10 @@
     - **Tier 2 (>100%):** 220x64 inspection slate (`isSlateMode`).
     - **Tier 1.5 (Dwell/Search):** 320x220 preview card (`isPreviewMode`).
   - **Unified Animations:** All dimensional transitions (width, height, radius) must use unified 220ms `Easing.OutQuint` curves to guarantee visual consistency.
+
+## 7. Backend Concurrency & Security Invariants
+- **Rule 7.1:** Zero blocking I/O on the Qt main thread; all disk reads, PDFs, CSVs, and vector queries must run on `QThreadPool` via `QRunnable`.
+- **Rule 7.2:** Subprocess calls must use `shell=False` and canonicalized safe paths via `utils.security.canonicalize_safe_path`.
+- **Rule 7.3:** Exception handling must be explicit and typed; no bare `except Exception:`.
+- **Rule 7.4:** JSON-RPC IPC payloads must be validated for schema keys prior to dispatch.
+- **Rule 7.5:** Signal signatures across workers, controllers, and bridge must use matching Qt Meta-Object types (e.g., `'QVariantMap'` for dictionaries) to avoid PyQt connection failures.

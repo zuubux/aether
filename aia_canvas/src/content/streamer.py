@@ -1,8 +1,8 @@
+import logging
 import mmap
 import os
-import logging
-from typing import Optional
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, pyqtProperty, QThread
+
+from PyQt6.QtCore import QObject, QThread, pyqtProperty, pyqtSignal, pyqtSlot
 
 logger = logging.getLogger("aia_canvas.content_streamer")
 
@@ -45,7 +45,7 @@ class BufferReadWorker(QThread):
                         
         except Exception as e:
             if not self._is_cancelled:
-                self.error_occurred.emit(f"Error reading file: {str(e)}")
+                self.error_occurred.emit(f"Error reading file: {e!s}")
 
 
 class ContentStreamer(QObject):
@@ -74,7 +74,7 @@ class ContentStreamer(QObject):
 class MmapTextStreamer(ContentStreamer):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._worker: Optional[BufferReadWorker] = None
+        self._worker: BufferReadWorker | None = None
         
     @pyqtSlot(str, int)
     def load_file(self, path: str, max_bytes: int = -1):

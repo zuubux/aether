@@ -3,11 +3,10 @@ Aether Physics Engine - 2.5D Organic Force-Directed & Conformal Horizon Integrat
 Handles multi-cluster galaxy dispersion, fluid splines, and wing companion slotting.
 """
 
-import math
 import logging
-from typing import List, Dict, Tuple, Set, Optional
+import math
 
-from models import Node, Edge
+from models import Edge, Node
 
 logger = logging.getLogger("aia_canvas.physics")
 
@@ -27,12 +26,12 @@ class PhysicsEngine:
 
         # Interaction State
         self.pinned_node_id: int = 0
-        self.custom_anchors: Dict[int, Tuple[float, float]] = {}
-        self.recent_node_ids: List[int] = []
+        self.custom_anchors: dict[int, tuple[float, float]] = {}
+        self.recent_node_ids: list[int] = []
 
         # Smoothing & Geometry Cache
-        self._smoothed_halos: Dict[str, dict] = {}
-        self._horizon_bearings: Dict[int, float] = {}
+        self._smoothed_halos: dict[str, dict] = {}
+        self._horizon_bearings: dict[int, float] = {}
 
         # Spring & Field Constants
         self.k_horizon_anchor: float = 9.5
@@ -45,11 +44,11 @@ class PhysicsEngine:
         self.ideal_horizon_radius: float = 1200.0
         
         # Summoning state
-        self.summoning_targets: Dict[int, Tuple[Tuple[float, float], float]] = {}
+        self.summoning_targets: dict[int, tuple[tuple[float, float], float]] = {}
         
         # Staging state
-        self.staged_origins: Dict[int, Tuple[float, float]] = {}
-        self.staged_targets: Dict[int, Tuple[float, float]] = {}
+        self.staged_origins: dict[int, tuple[float, float]] = {}
+        self.staged_targets: dict[int, tuple[float, float]] = {}
 
         self._recalculate_horizons()
 
@@ -87,7 +86,7 @@ class PhysicsEngine:
             except ValueError:
                 pass
 
-    def set_staged_nodes(self, node_ids: List[int], viewport_w: float, shelf_y: float, nodes: List[Node]):
+    def set_staged_nodes(self, node_ids: list[int], viewport_w: float, shelf_y: float, nodes: list[Node]):
         node_map = {n.id: n for n in nodes}
         
         for nid in list(self.staged_targets.keys()):
@@ -129,20 +128,20 @@ class PhysicsEngine:
             return self.ideal_horizon_radius
         return (1.0 / denom) ** (1.0 / n)
 
-    def _find_connected_components(self, nodes: List[Node], edges: List[Edge]) -> List[Set[int]]:
-        adj: Dict[int, Set[int]] = {n.id: set() for n in nodes}
+    def _find_connected_components(self, nodes: list[Node], edges: list[Edge]) -> list[set[int]]:
+        adj: dict[int, set[int]] = {n.id: set() for n in nodes}
         for e in edges:
             if e.edgeType.lower() != "temporal" and e.weight > 0.45:
                 if e.sourceId in adj and e.targetId in adj:
                     adj[e.sourceId].add(e.targetId)
                     adj[e.targetId].add(e.sourceId)
 
-        visited: Set[int] = set()
-        components: List[Set[int]] = []
+        visited: set[int] = set()
+        components: list[set[int]] = []
 
         for n in nodes:
             if n.id not in visited:
-                comp: Set[int] = set()
+                comp: set[int] = set()
                 queue = [n.id]
                 visited.add(n.id)
 
@@ -158,11 +157,11 @@ class PhysicsEngine:
 
         return components
 
-    def step(self, nodes: List[Node], edges: List[Edge], focused_node_id: int, hovered_node_id: int = 0, dt: float = 0.008,
-             first_degree_set: Optional[Set[int]] = None,
-             second_degree_set: Optional[Set[int]] = None,
-             second_degree_parent: Optional[Dict[int, int]] = None,
-             focal_weights: Optional[Dict[int, float]] = None) -> bool:
+    def step(self, nodes: list[Node], edges: list[Edge], focused_node_id: int, hovered_node_id: int = 0, dt: float = 0.008,
+             first_degree_set: set[int] | None = None,
+             second_degree_set: set[int] | None = None,
+             second_degree_parent: dict[int, int] | None = None,
+             focal_weights: dict[int, float] | None = None) -> bool:
         """
         Advances the physics simulation by one tick.
         Returns True if the system is still active, False if it has settled and can sleep.
@@ -191,8 +190,8 @@ class PhysicsEngine:
 
         # 1. Structural Component & Centroid Resolution
         components = self._find_connected_components(nodes, edges)
-        node_comp_map: Dict[int, int] = {}
-        comp_centroids: Dict[int, Tuple[float, float, int]] = {}
+        node_comp_map: dict[int, int] = {}
+        comp_centroids: dict[int, tuple[float, float, int]] = {}
 
         for c_idx, comp in enumerate(components):
             # Exclude focused and docked wing nodes from the centroid calculation of background clusters
@@ -213,7 +212,7 @@ class PhysicsEngine:
                         node_map[nid].clusterId = c_idx
 
         # 3. Wing Target Allocation (Top 8 Companions Flanked Left / Right)
-        wing_targets: Dict[int, Tuple[float, float]] = {}
+        wing_targets: dict[int, tuple[float, float]] = {}
         if has_active_focus:
             sorted_companions = sorted(list(first_degree_set), key=lambda nid: focal_weights.get(nid, 0.0), reverse=True)
             top_companions = sorted_companions[:8]
@@ -221,7 +220,7 @@ class PhysicsEngine:
             left_wing = [nid for idx, nid in enumerate(top_companions) if idx % 2 == 0]
             right_wing = [nid for idx, nid in enumerate(top_companions) if idx % 2 != 0]
 
-            def compute_wing_slots(c_ids: List[int], is_left: bool):
+            def compute_wing_slots(c_ids: list[int], is_left: bool):
                 total = len(c_ids)
                 sign = -1.0 if is_left else 1.0
                 # Bring wings closer to the card (was 480.0, putting them off-screen)
@@ -234,8 +233,8 @@ class PhysicsEngine:
             compute_wing_slots(right_wing, is_left=False)
 
         # 4. Initialize Forces
-        forces: Dict[int, List[float]] = {n.id: [0.0, 0.0] for n in nodes}
-        node_mass: Dict[int, float] = {n.id: 1.0 for n in nodes}
+        forces: dict[int, list[float]] = {n.id: [0.0, 0.0] for n in nodes}
+        node_mass: dict[int, float] = {n.id: 1.0 for n in nodes}
 
         # 5. Inter-Cluster Centroid Separation (Gentle Galaxy Drift)
         if not has_active_focus:
@@ -352,9 +351,7 @@ class PhysicsEngine:
                 n1_peripheral = (n1.id != focused_node_id and not n1_docked)
                 n2_peripheral = (n2.id != focused_node_id and not n2_docked)
                 
-                if (n1_docked and n2_peripheral) or (n2_docked and n1_peripheral):
-                    k_spring = 0.0
-                elif (n1.id == focused_node_id and n2_peripheral) or (n2.id == focused_node_id and n1_peripheral):
+                if (n1_docked and n2_peripheral) or (n2_docked and n1_peripheral) or (n1.id == focused_node_id and n2_peripheral) or (n2.id == focused_node_id and n1_peripheral):
                     k_spring = 0.0
 
             spring_force = displacement * k_spring
@@ -639,9 +636,9 @@ class PhysicsEngine:
 
         return True
 
-    def get_cluster_halos(self, nodes: List[Node], edges: List[Edge], focused_id: int,
-                          first_degree_set: Optional[Set[int]] = None,
-                          second_degree_set: Optional[Set[int]] = None) -> List[dict]:
+    def get_cluster_halos(self, nodes: list[Node], edges: list[Edge], focused_id: int,
+                          first_degree_set: set[int] | None = None,
+                          second_degree_set: set[int] | None = None) -> list[dict]:
         if not nodes:
             return []
 
@@ -652,9 +649,9 @@ class PhysicsEngine:
         components = self._find_connected_components(nodes, edges)
         halos = []
         eff_ap = max(0.35, min(1.0, math.pow(self.aperture, 0.7)))
-        active_halo_ids: Set[str] = set()
+        active_halo_ids: set[str] = set()
 
-        deg_map: Dict[int, int] = {n.id: 0 for n in nodes}
+        deg_map: dict[int, int] = {n.id: 0 for n in nodes}
         for e in edges:
             if e.edgeType.lower() != "temporal":
                 deg_map[e.sourceId] = deg_map.get(e.sourceId, 0) + 1

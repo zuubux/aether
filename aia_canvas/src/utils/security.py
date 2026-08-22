@@ -5,12 +5,11 @@ Enforces POSIX boundaries, path canonicalization, and safe subprocess execution.
 
 import os
 from pathlib import Path
-from typing import Optional
 
 # Only allow paths inside the user's home directory or their temporary runtime dir
 ALLOWED_PREFIXES = (str(Path.home()), f"/run/user/{os.getuid()}")
 
-def canonicalize_safe_path(raw_path: str) -> Optional[Path]:
+def canonicalize_safe_path(raw_path: str) -> Path | None:
     """
     Resolves a path to its absolute physical location and verifies it falls
     within allowed secure boundaries. Prevents directory traversal.

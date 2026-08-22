@@ -3,13 +3,13 @@ import logging
 import signal
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Optional
+
 from fastembed import TextEmbedding
 
 logger = logging.getLogger("aia_weaver.embedder")
 
 # Global worker instance for ProcessPoolExecutor
-_embedding_model: Optional[TextEmbedding] = None
+_embedding_model: TextEmbedding | None = None
 
 
 def _init_worker():
@@ -45,7 +45,7 @@ class LocalEmbedder:
             self.executor, _generate_embedding_sync, text
         )
 
-    async def embed_file(self, file_path: str) -> Optional[list[float]]:
+    async def embed_file(self, file_path: str) -> list[float] | None:
         """Reads local text file contents and calculates its vector embedding."""
         path = Path(file_path)
         if not path.exists() or not path.is_file():

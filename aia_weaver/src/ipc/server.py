@@ -2,8 +2,10 @@ import asyncio
 import json
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Callable, Awaitable, Dict, Any
+from typing import Any
+
 from utils.security import is_safe_path
 
 logger = logging.getLogger("aia_weaver.ipc")
@@ -88,12 +90,10 @@ class IPCServer:
                     await writer.drain()
                     break
 
-        except (ConnectionError, BrokenPipeError, ConnectionResetError):
-            pass
+        except (ConnectionError, BrokenPipeError, ConnectionResetError, OSError, KeyError) as e:
+            logger.error(f"IPC client handler error: {e}")
         except asyncio.CancelledError:
             pass
-        except Exception as e:
-            logger.error(f"IPC client handler error: {e}")
         finally:
             if writer in self._clients:
                 self._clients.remove(writer)
@@ -106,9 +106,21 @@ class IPCServer:
                 logger.debug(f"Suppressed socket teardown warning: {close_err}")
             logger.info("IPC client disconnected.")
 
-    async def _dispatch_rpc(self, raw_message: str) -> Dict[str, Any]:
+    async def _dispatch_rpc(self, raw_message: str) -> dict[str, Any]:
         try:
             req = json.loads(raw_message)
+            if not isinstance(req, dict) or "jsonrpc" not in req:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32600, "message": "Invalid Request: missing jsonrpc key"},
+                    "id": None,
+                }
+            if "method" not in req and "id" not in req:
+                return {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32600, "message": "Invalid Request: missing method or id"},
+                    "id": None,
+                }
             method = req.get("method")
             params = req.get("params", {})
             req_id = req.get("id")

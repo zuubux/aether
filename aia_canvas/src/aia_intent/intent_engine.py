@@ -3,10 +3,11 @@ Aether Intent Engine
 Multi-modal intent ingestion and graph querying.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Any
 import logging
-from PyQt6.QtCore import QObject, pyqtSlot, pyqtSignal
+from dataclasses import dataclass, field
+from typing import Any
+
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 logger = logging.getLogger("aia_canvas.intent")
 
@@ -14,7 +15,7 @@ logger = logging.getLogger("aia_canvas.intent")
 class IntentSignal:
     source: str
     query: str
-    context_tags: List[str] = field(default_factory=list)
+    context_tags: list[str] = field(default_factory=list)
     confidence: float = 1.0
 
 

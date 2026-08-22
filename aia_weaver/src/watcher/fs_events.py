@@ -1,7 +1,8 @@
 import asyncio
 import logging
 from pathlib import Path
-from watchfiles import awatch, Change
+
+from watchfiles import Change, awatch
 
 logger = logging.getLogger("aia_weaver.watcher")
 

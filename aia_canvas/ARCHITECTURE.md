@@ -70,7 +70,14 @@
 
 ## 3. Subsystem Breakdown
 
-### 3.1 Asynchronous IPC Client (`ipc/client.py`)
+### 3.1 Domain Controller Hierarchy (`bridge.py` & `controllers/`)
+The frontend logic is managed via a Composite Root pattern originating in `bridge.py`, which instantiates a set of highly focused Domain Controllers inheriting from `BaseController`. This strict separation of concerns prevents god-object antipatterns and ensures distinct execution lifecycles:
+* **CanvasController**: Orchestrates macro UI states, zoom apeture (`cognitive_aperture`), theme toggles, and omnibar focus bindings.
+* **NodeController**: Manages node/edge reactive lifecycle (CRUD), selection states, drag-and-drop spatial relocation, and system file operations.
+* **PhysicsController**: Wraps the Stokes fluid dynamics engine (`engine.py`) and drives the 120Hz high-precision QTimer, handling metric exposition for SRE HUDs.
+* **SearchController**: Interfaces with `aia_weaver` IPC for semantic vector queries and exact-match title filters, maintaining the ephemeral search result buffer.
+
+### 3.2 Asynchronous IPC Client (`ipc/client.py`)
 * Executes inside a dedicated background worker thread hosting an independent `asyncio` event loop[cite: 10].
 * Connects to `$XDG_RUNTIME_DIR/aia_weaver/aia_weaver.sock` via a non-blocking UNIX domain socket[cite: 1, 10].
 * Enforces a strict 64 KB per-frame buffer cap (`MAX_PAYLOAD_BYTES`) matching daemon specifications to prevent memory exhaustion[cite: 1, 10].
@@ -117,7 +124,16 @@
 
 ---
 
-## 4. Mathematical Models & Spatial Mechanics
+## 4. Performance & Concurrency
+
+### 4.1 Asynchronous Media Worker Pipeline (`workers/media_worker.py`)
+To ensure the Qt Main Thread (`GUI`) never blocks and achieves a consistent 120 FPS frame timing:
+* All heavy I/O and media extraction operations (PDF rendering, CSV parsing, image loading) are offloaded to an asynchronous `QThreadPool` worker pipeline.
+* Operations are wrapped in lightweight `QRunnable` instances (`MediaExtractionTask`).
+* Results are safely marshalled back across thread boundaries via Qt Signals (`mediaReady`, `mediaError`) emitting complex `QVariantMap` payloads to non-blocking QML bindings.
+* Prevents rendering jank when scanning multi-page high-resolution PDFs or parsing large dataset tokens.
+
+## 5. Mathematical Models & Spatial Mechanics
 
 ### 4.1 Inertial Mass Scaling
 Node inertial mass $M_i$ scales linearly with degree centrality $D_i$ to ensure hub nodes anchor the physical space while leaf nodes move flexibly[cite: 5]:
@@ -165,9 +181,9 @@ $$\mathbf{P}_1 = \mathbf{P}_0 + (\Delta x_{\text{clamped}}, S_{\text{sag}}), \qu
 
 ---
 
-## 5. Semantic Aperture & Visual LOD Hierarchy
+## 6. Semantic Aperture & Visual LOD Hierarchy
 
-### 5.1 UI State Machine Invariants
+### 6.1 UI State Machine Invariants
 * **Mutually Exclusive State Flags:** Strict mutual exclusivity must be maintained at all times between the state flags: `isPreviewMode`, `isSlateMode`, `isCapsuleMode`, and `isBeadMode`.
 * **Single Delegate Visibility Invariant:** Exactly ONE visual leaf delegate must be active and visible (`opacity: 1.0`) at any given time to guarantee that multiple delegates do not render simultaneously.
 * **Unified Animations:** To ensure absolute visual consistency across the canvas, all dimensional transitions (width, height, radius) must employ a unified **220ms `Easing.OutQuint`** easing curve.
@@ -184,23 +200,23 @@ $$\mathbf{P}_1 = \mathbf{P}_0 + (\Delta x_{\text{clamped}}, S_{\text{sag}}), \qu
 
 ---
 
-## 6. IPC Protocol & Event Consumption
+## 7. IPC Protocol & Event Consumption
 
 `aia_canvas` consumes the JSON-RPC 2.0 interface served by `aia_weaver` over `$XDG_RUNTIME_DIR/aia_weaver/aia_weaver.sock`[cite: 1, 10]:
 
-### 6.1 RPC Methods Invoked
+### 7.1 RPC Methods Invoked
 * **`get_neighbors`**: Dispatched when a node is selected to populate 1st-degree relational context[cite: 2].
   ```json
   {"jsonrpc": "2.0", "method": "get_neighbors", "params": {"node_id": 1}, "id": 1}
   ```
 
-### 6.2 Broadcast Notifications Handled
+### 7.2 Broadcast Notifications Handled
 * **`node_updated`**: Dynamically creates or updates spatial positions and metadata when files are touched[cite: 2, 10, 11].
 * **`node_deleted`**: Prunes dead nodes and cascades edge removals immediately from the layout graph[cite: 2, 10, 11].
 
 ---
 
-## 7. Teardown Lifecycle & POSIX Hygiene
+## 8. Teardown Lifecycle & POSIX Hygiene
 
 1. **Signal Traps:** Intercepts `SIGINT` via a native terminal heartbeat timer, ensuring prompt termination under POSIX process managers[cite: 1].
 2. **IPC Thread Termination:** Cancels pending futures, closes Unix streams, and terminates the background `asyncio` event loop cleanly[cite: 10].

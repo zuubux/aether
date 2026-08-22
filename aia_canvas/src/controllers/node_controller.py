@@ -1,0 +1,482 @@
+import os
+import subprocess
+import urllib.parse
+from typing import Any
+
+from PyQt6.QtCore import QThreadPool, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtGui import QGuiApplication
+from workers.media_worker import CsvWorker, ImageWorker, PdfWorker
+
+from .base_controller import BaseController
+
+
+class NodeController(BaseController):
+    """
+    Controller managing node selection, hover state dispatch, hover dwell notifications,
+    file actions, external editor launches, media & file adapters, and pinning/drag operations.
+    """
+
+    selectedNodeChanged = pyqtSignal(int)
+    hoveredNodeChanged = pyqtSignal(int)
+    nodeRemoved = pyqtSignal(int)
+
+    # Async Media Signals
+    pdfPageReady = pyqtSignal(str, int, str, arguments=['filePath', 'pageIndex', 'imagePath'])
+    pdfCountReady = pyqtSignal(str, int, arguments=['filePath', 'pageCount'])
+    csvDataReady = pyqtSignal(str, 'QVariantMap', arguments=['filePath', 'tableData'])
+    imageReady = pyqtSignal(str, str, arguments=['filePath', 'sourceUrl'])
+    mediaError = pyqtSignal(str, str, arguments=['filePath', 'errorMessage'])
+
+    @pyqtProperty(int, notify=selectedNodeChanged)
+    def selectedNodeId(self) -> int:
+        return getattr(self.bridge, "_selected_node_id", 0)
+
+    @pyqtProperty(int, notify=hoveredNodeChanged)
+    def hoveredNodeId(self) -> int:
+        return getattr(self.bridge, "_hovered_node_id", 0)
+
+    @pyqtSlot(int)
+    def select_node(self, node_id: int):
+        if hasattr(self.bridge, "_wake_physics"):
+            self.bridge._wake_physics()
+            
+        selected_id = getattr(self.bridge, "_selected_node_id", 0)
+        if selected_id != node_id:
+            self.bridge._selected_node_id = node_id
+            
+            if node_id > 0:
+                if hasattr(self.bridge, "physics") and self.bridge.physics:
+                    if node_id in self.bridge.physics.recent_node_ids:
+                        self.bridge.physics.recent_node_ids.remove(node_id)
+                    self.bridge.physics.recent_node_ids.insert(0, node_id)
+                    self.bridge.physics.recent_node_ids = self.bridge.physics.recent_node_ids[:8]
+
+            if hasattr(self.bridge, "_recalculate_focal_weights"):
+                self.bridge._recalculate_focal_weights(node_id)
+            self.selectedNodeChanged.emit(node_id)
+
+        if node_id == 0:
+            if hasattr(self.bridge, "_focal_edges"):
+                self.bridge._focal_edges = []
+            if hasattr(self.bridge, "edgesChanged"):
+                self.bridge.edgesChanged.emit()
+            return
+
+        is_connected = getattr(self.bridge, "_is_connected", False)
+        if is_connected and node_id > 0:
+            if hasattr(self.bridge, "ipc") and self.bridge.ipc:
+                self.bridge.ipc.call_rpc_sync(
+                    "touch_node",
+                    {"node_id": node_id, "event_type": "focus"},
+                    callback=getattr(self.bridge, "_handle_touch_node_response", None),
+                )
+
+                self.bridge.ipc.call_rpc_sync(
+                    "get_neighbors",
+                    {"node_id": node_id},
+                    callback=getattr(self.bridge, "_handle_neighbors_response", None),
+                )
+
+    @pyqtSlot(int)
+    def set_hovered_node(self, node_id: int):
+        hovered_id = getattr(self.bridge, "_hovered_node_id", 0)
+        if hovered_id != node_id:
+            self.bridge._hovered_node_id = node_id
+            self.hoveredNodeChanged.emit(node_id)
+            if hasattr(self.bridge, "_wake_physics"):
+                self.bridge._wake_physics()
+
+    @pyqtSlot(str)
+    def navigate_to_link(self, target_name: str):
+        if hasattr(self.bridge, "_wake_physics"):
+            self.bridge._wake_physics()
+        target_clean = target_name.lower().strip()
+        if target_clean.endswith(".md") or target_clean.endswith(".txt"):
+            target_clean = target_clean.rsplit(".", 1)[0]
+            
+        if hasattr(self.bridge, "store") and self.bridge.store:
+            nodes = self.bridge.store.get_all_nodes()
+            for node in nodes:
+                node_file = node.fileName.lower()
+                if node_file.endswith(".md") or node_file.endswith(".txt"):
+                    node_file = node_file.rsplit(".", 1)[0]
+                    
+                if node_file == target_clean or node.fileName.lower() == target_clean:
+                    self.select_node(node.id)
+                    break
+
+    @pyqtSlot(str)
+    def open_in_file_manager(self, file_path: str):
+        from utils.security import canonicalize_safe_path
+        safe_path = canonicalize_safe_path(file_path)
+        if not safe_path:
+            self.log_error(f"Invalid path provided: {file_path}")
+            return
+
+        target_dir = safe_path if safe_path.is_dir() else safe_path.parent
+        if target_dir.exists():
+            target_path_str = os.path.realpath(str(target_dir))
+            subprocess.Popen(
+                ["xdg-open", target_path_str],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                shell=False,
+            )
+        else:
+            self.log_error(f"Target directory does not exist: {target_dir}")
+
+    @pyqtSlot(str)
+    def open_in_external_editor(self, file_path: str):
+        from utils.security import canonicalize_safe_path
+        safe_path = canonicalize_safe_path(file_path)
+        if not safe_path:
+            self.log_error(f"Invalid path provided: {file_path}")
+            return
+
+        if safe_path.exists():
+            target_path_str = os.path.realpath(str(safe_path))
+            subprocess.Popen(
+                ["xdg-open", target_path_str],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                shell=False,
+            )
+        else:
+            self.log_error(f"Target file does not exist: {safe_path}")
+
+    @pyqtSlot(int, str)
+    def save_node_content(self, node_id: int, new_content: str):
+        is_connected = getattr(self.bridge, "_is_connected", False)
+        if not is_connected or node_id <= 0:
+            return
+            
+        def _handle_save(result: Any, error: str | None):
+            if error:
+                self.log_error(f"Failed to save node {node_id}: {error}")
+            else:
+                self.log_info(f"Node {node_id} successfully saved to disk and DB.")
+
+        if hasattr(self.bridge, "ipc") and self.bridge.ipc:
+            self.bridge.ipc.call_rpc_sync(
+                "save_node_content",
+                {"node_id": node_id, "content": new_content},
+                callback=_handle_save
+            )
+
+    @pyqtSlot(str, result=bool)
+    def is_image_file(self, file_path: str) -> bool:
+        if not file_path:
+            return False
+        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+        ext = os.path.splitext(clean_path)[1].lstrip(".").lower()
+        supported = getattr(self.bridge, "_SUPPORTED_IMAGE_EXTS", set())
+        return ext in supported
+
+    @pyqtSlot(str)
+    def request_image_source(self, file_path: str):
+        if not file_path:
+            return
+        failed_set = getattr(self.bridge, "_failed_image_conversions", set())
+        worker = ImageWorker(file_path, failed_set)
+        worker.signals.imageReady.connect(self.imageReady)
+        worker.signals.mediaError.connect(self.mediaError)
+        QThreadPool.globalInstance().start(worker)
+
+    @pyqtSlot(str, result=bool)
+    def copy_image_to_clipboard(self, file_path: str) -> bool:
+        if not file_path:
+            return False
+        from PyQt6.QtGui import QImage
+        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+        image = QImage(clean_path)
+        if image.isNull():
+            return False
+        clipboard = QGuiApplication.clipboard()
+        clipboard.setImage(image)
+        return True
+
+    @pyqtSlot(str)
+    def request_pdf_page_count(self, file_path: str):
+        if not file_path:
+            return
+        worker = PdfWorker(file_path, "count")
+        worker.signals.pdfCountReady.connect(self.pdfCountReady)
+        worker.signals.mediaError.connect(self.mediaError)
+        QThreadPool.globalInstance().start(worker)
+
+    @pyqtSlot(str, result=int)
+    def get_pdf_page_count(self, file_path: str) -> int:
+        if not file_path:
+            return 0
+        try:
+            clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+            if not os.path.exists(clean_path):
+                return 0
+            try:
+                import pypdfium2 as pdfium
+                doc = pdfium.PdfDocument(clean_path)
+                return len(doc)
+            except ImportError:
+                try:
+                    import fitz
+                    doc = fitz.open(clean_path)
+                    return len(doc)
+                except ImportError:
+                    self.log_error("Neither pypdfium2 nor pymupdf (fitz) is available for PDF rendering.")
+                    return 0
+        except (OSError, ImportError, FileNotFoundError) as e:
+            self.log_error(f"Error getting PDF page count for {file_path}: {e}")
+            return 0
+
+    @pyqtSlot(str, int, int)
+    @pyqtSlot(str, int)
+    @pyqtSlot(str)
+    def request_pdf_page(self, file_path: str, page_index: int = 0, target_width: int = 1800):
+        if not file_path:
+            return
+        worker = PdfWorker(file_path, "page", page_index, target_width)
+        worker.signals.pdfPageReady.connect(self.pdfPageReady)
+        worker.signals.mediaError.connect(self.mediaError)
+        QThreadPool.globalInstance().start(worker)
+
+    def get_pdf_page_image(self, file_path: str, page_index: int = 0, target_width: int = 1800) -> str:
+        if not file_path:
+            return ""
+        try:
+            import hashlib
+            clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+            if not os.path.exists(clean_path):
+                return ""
+            mtime = os.path.getmtime(clean_path)
+            cache_key = f"{clean_path}_{page_index}_{target_width}_{mtime}"
+            h = hashlib.md5(cache_key.encode('utf-8')).hexdigest()
+            
+            cache_dir = os.path.expanduser("~/.cache/aether/pdf_cache")
+            os.makedirs(cache_dir, exist_ok=True)
+            cached_path = os.path.join(cache_dir, f"{h}.png")
+            
+            if os.path.exists(cached_path):
+                return "file://" + cached_path
+                
+            try:
+                import pypdfium2 as pdfium
+                doc = pdfium.PdfDocument(clean_path)
+                if page_index < 0 or page_index >= len(doc):
+                    return ""
+                page = doc[page_index]
+                width, height = page.get_size()
+                scale = target_width / width if width > 0 else 1.5
+                bitmap = page.render(scale=scale)
+                pil_img = bitmap.to_pil()
+                pil_img.save(cached_path, "PNG")
+                return "file://" + cached_path
+            except ImportError:
+                try:
+                    import fitz
+                    doc = fitz.open(clean_path)
+                    if page_index < 0 or page_index >= len(doc):
+                        return ""
+                    page = doc[page_index]
+                    w = page.rect.width
+                    scale = target_width / w if w > 0 else 1.5
+                    mat = fitz.Matrix(scale, scale)
+                    pix = page.get_pixmap(matrix=mat)
+                    pix.save(cached_path)
+                    return "file://" + cached_path
+                except Exception as e:
+                    self.log_error(f"Failed rendering PDF sync: {e}")
+                    return ""
+        except Exception as e:
+            self.log_error(f"Error in get_pdf_page_image: {e}")
+            return ""
+
+    @pyqtSlot(str, int, result=bool)
+    @pyqtSlot(str, result=bool)
+    def copy_pdf_page_to_clipboard(self, file_path: str, page_index: int = 0) -> bool:
+        if not file_path:
+            return False
+        try:
+            cached_img_url = self.get_pdf_page_image(file_path, page_index, target_width=2000)
+            if not cached_img_url:
+                return False
+            clean_img_path = urllib.parse.unquote(cached_img_url.replace("file://", ""))
+            if not os.path.exists(clean_img_path):
+                return False
+            
+            from PyQt6.QtGui import QImage
+            image = QImage(clean_img_path)
+            if image.isNull():
+                return False
+            
+            clipboard = QGuiApplication.clipboard()
+            clipboard.setImage(image)
+            return True
+        except (OSError, FileNotFoundError) as e:
+            self.log_error(f"Error copying PDF page to clipboard for {file_path}: {e}")
+            return False
+
+    @pyqtSlot(str, int)
+    @pyqtSlot(str)
+    def request_csv_data(self, file_path: str, max_rows: int = 1000):
+        if not file_path:
+            return
+        worker = CsvWorker(file_path, max_rows)
+        worker.signals.csvDataReady.connect(self.csvDataReady)
+        worker.signals.mediaError.connect(self.mediaError)
+        QThreadPool.globalInstance().start(worker)
+
+    @pyqtSlot(str, int, int, str, result=bool)
+    def update_csv_cell(self, file_path: str, row_idx: int, col_idx: int, new_value: str) -> bool:
+        if not file_path:
+            return False
+        try:
+            clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+            if not os.path.exists(clean_path):
+                return False
+
+            import csv
+            delimiter = ","
+            quoting = csv.QUOTE_MINIMAL
+            try:
+                with open(clean_path, "r", encoding="utf-8", errors="ignore") as f:
+                    sample = f.read(4096)
+                    if sample:
+                        sniffer = csv.Sniffer()
+                        dialect = sniffer.sniff(sample, delimiters=[',', '\t', ';'])
+                        delimiter = dialect.delimiter
+                        quoting = dialect.quoting
+            except csv.Error:
+                if clean_path.endswith(".tsv"):
+                    delimiter = "\t"
+
+            rows = []
+            with open(clean_path, "r", encoding="utf-8", errors="ignore") as f:
+                reader = csv.reader(f, delimiter=delimiter)
+                for r in reader:
+                    rows.append(r)
+
+            target_csv_row_idx = row_idx + 1
+
+            if target_csv_row_idx < len(rows):
+                if col_idx < len(rows[target_csv_row_idx]):
+                    rows[target_csv_row_idx][col_idx] = new_value
+                else:
+                    while len(rows[target_csv_row_idx]) <= col_idx:
+                        rows[target_csv_row_idx].append("")
+                    rows[target_csv_row_idx][col_idx] = new_value
+            else:
+                return False
+
+            with open(clean_path, "w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f, delimiter=delimiter, quoting=quoting)
+                writer.writerows(rows)
+
+            self.log_info(f"Successfully updated CSV cell at row {row_idx}, col {col_idx} in {clean_path}")
+            return True
+        except (OSError, FileNotFoundError) as e:
+            self.log_error(f"Error updating CSV cell: {e}")
+            return False
+
+    @pyqtSlot(int, float, float)
+    def pin_node(self, node_id: int, x: float, y: float):
+        if hasattr(self.bridge, "_wake_physics"):
+            self.bridge._wake_physics()
+        if hasattr(self.bridge, "physics") and self.bridge.physics:
+            self.bridge.physics.pin_node(node_id)
+        if hasattr(self.bridge, "store") and self.bridge.store:
+            node = self.bridge.store.get_node(node_id)
+            if node:
+                node.x = x
+                node.y = y
+
+    @pyqtSlot(int, float, float)
+    def update_drag_pos(self, node_id: int, x: float, y: float):
+        if hasattr(self.bridge, "_wake_physics"):
+            self.bridge._wake_physics()
+        if hasattr(self.bridge, "store") and self.bridge.store:
+            node = self.bridge.store.get_node(node_id)
+            if node:
+                node.x = x
+                node.y = y
+
+    @pyqtSlot(int)
+    def release_node(self, node_id: int):
+        if hasattr(self.bridge, "_wake_physics"):
+            self.bridge._wake_physics()
+        if hasattr(self.bridge, "physics") and self.bridge.physics:
+            self.bridge.physics.unpin_node()
+
+    @pyqtSlot(int, float, float)
+    def set_custom_anchor(self, node_id: int, x: float, y: float):
+        if hasattr(self.bridge, "physics") and self.bridge.physics:
+            self.bridge.physics.set_custom_anchor(node_id, x, y)
+
+    @pyqtSlot(str, int, result='QVariantMap')
+    @pyqtSlot(str, result='QVariantMap')
+    def get_csv_preview(self, file_path: str, max_rows: int = 5) -> dict:
+        if not file_path:
+            return {"headers": [], "rows": [], "total_rows": 0, "total_cols": 0}
+        try:
+            clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+            if not os.path.exists(clean_path):
+                return {"headers": [], "rows": [], "total_rows": 0, "total_cols": 0}
+
+            import csv
+            delimiter = ","
+            try:
+                with open(clean_path, "r", encoding="utf-8", errors="ignore") as f:
+                    sample = f.read(4096)
+                    if sample:
+                        sniffer = csv.Sniffer()
+                        dialect = sniffer.sniff(sample, delimiters=[',', '\t', ';'])
+                        delimiter = dialect.delimiter
+            except csv.Error:
+                if clean_path.endswith(".tsv"):
+                    delimiter = "\t"
+
+            headers = []
+            rows = []
+            total_rows = 0
+            
+            with open(clean_path, "r", encoding="utf-8", errors="ignore") as f:
+                reader = csv.reader(f, delimiter=delimiter)
+                try:
+                    first_row = next(reader)
+                    if first_row is not None:
+                        headers = [str(cell).strip() for cell in first_row]
+                except StopIteration:
+                    return {"headers": [], "rows": [], "total_rows": 0, "total_cols": 0}
+                
+                for row_data in reader:
+                    total_rows += 1
+                    if len(rows) < max_rows:
+                        rows.append([str(cell).strip() for cell in row_data])
+                        
+            return {
+                "headers": headers,
+                "rows": rows,
+                "total_rows": total_rows,
+                "total_cols": len(headers)
+            }
+        except Exception as e:
+            self.log_error(f"Error in get_csv_preview: {e}")
+            return {"headers": [], "rows": [], "total_rows": 0, "total_cols": 0}
+
+    @pyqtSlot(str, result=bool)
+    def copy_csv_data(self, file_path: str) -> bool:
+        if not file_path:
+            return False
+        try:
+            clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+            if not os.path.exists(clean_path):
+                return False
+            with open(clean_path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            clipboard = QGuiApplication.clipboard()
+            clipboard.setText(content)
+            return True
+        except Exception as e:
+            self.log_error(f"Error in copy_csv_data: {e}")
+            return False

@@ -3,13 +3,15 @@ Aether Canvas - IPC Client
 Asynchronous UNIX domain socket client for JSON-RPC 2.0 communication with aia_weaver.
 """
 
-import os
-import json
 import asyncio
+import json
 import logging
+import os
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Dict, Any, Callable, Optional
+from typing import Any
+
 from PyQt6.QtCore import QObject, pyqtSignal
 
 logger = logging.getLogger("aia_canvas.ipc")
@@ -24,7 +26,7 @@ class WeaverIPCClient(QObject):
     nodeDeleted = pyqtSignal(dict)
     rpcResponseReceived = pyqtSignal(int, object, str)  # req_id, result, error
 
-    def __init__(self, socket_path: Optional[str] = None):
+    def __init__(self, socket_path: str | None = None):
         super().__init__()
         if socket_path is None:
             runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
@@ -33,13 +35,13 @@ class WeaverIPCClient(QObject):
             self.socket_path = socket_path
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
+        self._thread: threading.Thread | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
 
         self._req_id = 0
-        self._pending_callbacks: Dict[int, Callable[[Any, Optional[str]], None]] = {}
+        self._pending_callbacks: dict[int, Callable[[Any, str | None], None]] = {}
         self.rpcResponseReceived.connect(self._dispatch_rpc_callback)
 
     def start(self):
@@ -75,11 +77,7 @@ class WeaverIPCClient(QObject):
                 self.connected.emit()
                 await self._listen_stream()
 
-            except (ConnectionRefusedError, FileNotFoundError, asyncio.IncompleteReadError):
-                self.disconnected.emit()
-                self._flush_pending_callbacks("IPC disconnected")
-                await asyncio.sleep(2.0)
-            except Exception as e:
+            except (ConnectionRefusedError, FileNotFoundError, asyncio.IncompleteReadError, ConnectionResetError, BrokenPipeError, OSError, KeyError) as e:
                 logger.error(f"IPC socket fault: {e}")
                 self.disconnected.emit()
                 self._flush_pending_callbacks(f"IPC socket fault: {e}")
@@ -98,6 +96,10 @@ class WeaverIPCClient(QObject):
             try:
                 message = json.loads(line.decode("utf-8").strip())
                 if not isinstance(message, dict) or "jsonrpc" not in message:
+                    logger.error("Malformed IPC payload: missing jsonrpc key")
+                    continue
+                if "method" not in message and "id" not in message:
+                    logger.error("Malformed IPC payload: missing method or id")
                     continue
                 self._handle_incoming_message(message)
             except (json.JSONDecodeError, UnicodeDecodeError) as e:
@@ -127,7 +129,7 @@ class WeaverIPCClient(QObject):
         if callback:
             callback(result, error if error else None)
 
-    def call_rpc_sync(self, method: str, params: dict, callback: Optional[Callable] = None, timeout: float = 5.0):
+    def call_rpc_sync(self, method: str, params: dict, callback: Callable | None = None, timeout: float = 5.0):
         """Dispatches an asynchronous RPC request from Qt without blocking the UI thread."""
         if not self._running or not self._loop or not self._writer:
             if callback:

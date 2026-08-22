@@ -37,16 +37,33 @@ FocusScope {
 
     // Table Data State
     property var tableData: ({ "headers": [], "rows": [], "total_rows": 0, "total_cols": 0 })
+    property bool isLoading: false
+
+    Connections {
+        target: getBridge()
+        function onCsvDataReady(fPath, data) {
+            if (fPath === root.filePath) {
+                if (data && data.headers && data.rows) {
+                    root.tableData = data
+                } else {
+                    root.tableData = ({ "headers": [], "rows": [], "total_rows": 0, "total_cols": 0 })
+                }
+                root.isLoading = false
+            }
+        }
+        function onMediaError(fPath, errorMsg) {
+            if (fPath === root.filePath) {
+                root.isLoading = false
+                console.error("Media error:", errorMsg)
+            }
+        }
+    }
 
     function loadData() {
         var b = getBridge()
         if (b && filePath) {
-            var data = b.get_csv_data(filePath, 1000)
-            if (data && data.headers && data.rows) {
-                tableData = data
-            } else {
-                tableData = ({ "headers": [], "rows": [], "total_rows": 0, "total_cols": 0 })
-            }
+            isLoading = true
+            b.request_csv_data(filePath, 1000)
         }
     }
 

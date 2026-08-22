@@ -1,9 +1,7 @@
-import os
 import json
-import sqlite3
 import re
+import sqlite3
 from pathlib import Path
-import datetime
 
 # Basic regex to reject common API key / token patterns in payloads
 # e.g., sk-..., xoxb-..., Bearer ...
@@ -184,48 +182,3 @@ class ContextLedger:
         
     def close(self):
         self.conn.close()
-
-if __name__ == "__main__":
-    import tempfile
-    
-    print("Initializing ContextLedger in temp directory...")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test_ledger.db"
-        ledger = ContextLedger(str(db_path))
-        
-        # Record a dummy event
-        print("Recording dummy event (with API key sanitization test)...")
-        ledger.record_event(
-            source_type="sys", 
-            entity_id="node_001", 
-            event_action="spawn",
-            payload={"test": "data", "secret": "sk-1234567890abcdefghij1234567890"}
-        )
-        
-        # Update entity
-        print("Upserting entity 'node_001'...")
-        ledger.upsert_entity(
-            entity_id="node_001",
-            entity_type="component",
-            label="Root Node",
-            metadata={"status": "active"}
-        )
-        
-        # Touch affinity
-        print("Touching affinity between 'node_001' and 'node_002'...")
-        ledger.touch_affinity("node_001", "node_002")
-        
-        # Get recent entities
-        print("\nRecent Entities:")
-        recent = ledger.get_recent_entities()
-        for ent in recent:
-            print(f" - {ent['entity_id']} ({ent['entity_type']}): {ent['label']} | Metadata: {ent['metadata']}")
-            
-        # Verify event redaction
-        cursor = ledger.conn.cursor()
-        cursor.execute("SELECT payload FROM ledger_events WHERE entity_id = 'node_001'")
-        event_payload = cursor.fetchone()['payload']
-        print(f"\nRecorded Event Payload: {event_payload}")
-        
-        ledger.close()
-        print("\nContextLedger verification complete.")

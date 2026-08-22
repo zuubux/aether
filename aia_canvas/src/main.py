@@ -4,19 +4,20 @@ Aether Interface Architecture - Presentation Layer (aia_canvas)
 Entry point, Qt Scene Graph bootstrap, and observability initialization.
 """
 
-import sys
+import argparse
+import logging
 import os
 import signal
-import logging
-import argparse
+import sys
 from pathlib import Path
-from PyQt6.QtGui import QGuiApplication, QSurfaceFormat
-from PyQt6.QtQml import QQmlApplicationEngine, qmlRegisterType
-from PyQt6.QtCore import QTimer, QCoreApplication, QLibraryInfo
 
+from aia_intent import IntentEngine
 from bridge import CanvasBridge
 from content.streamer import MmapTextStreamer
-from aia_intent import IntentEngine
+from PyQt6.QtCore import QCoreApplication, QLibraryInfo, QTimer
+from PyQt6.QtGui import QGuiApplication, QSurfaceFormat
+from PyQt6.QtQml import QQmlApplicationEngine, qmlRegisterType
+
 
 def setup_observability(debug=False):
     """Configure structured stdout logging for systemd-journald."""
@@ -82,6 +83,10 @@ def main():
     app._bridge = bridge
 
     engine.rootContext().setContextProperty("canvasBridge", bridge)
+    engine.rootContext().setContextProperty("canvasController", bridge.canvas_ctrl)
+    engine.rootContext().setContextProperty("nodeController", bridge.node_ctrl)
+    engine.rootContext().setContextProperty("physicsController", bridge.physics_ctrl)
+    engine.rootContext().setContextProperty("searchController", bridge.search_ctrl)
 
     intent_engine = IntentEngine(bridge)
     # Forward the nodesSummoned signal from intent_engine to the physics engine

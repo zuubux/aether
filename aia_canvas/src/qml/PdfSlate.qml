@@ -43,15 +43,10 @@ FocusScope {
     property string initialText: ""
     property int referenceCount: 0
 
-    readonly property string renderedPageSource: {
-        var b = getBridge()
-        if (b && filePath && pageCount > 0) {
-            return b.get_pdf_page_image(filePath, currentPageIndex, 1200)
-        }
-        return ""
-    }
+    property string renderedPageSource: ""
+    property bool isLoading: false
 
-    readonly property bool hasError: pageCount <= 0 || imgElement.status === Image.Error || (root.filePath !== "" && getBridge() !== null && renderedPageSource === "")
+    readonly property bool hasError: pageCount <= 0 || imgElement.status === Image.Error || (root.filePath !== "" && getBridge() !== null && renderedPageSource === "" && !isLoading)
 
     Keys.onPressed: (event) => {
         if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_C) {
@@ -106,15 +101,50 @@ FocusScope {
         }
     }
 
+    Connections {
+        target: getBridge()
+        function onPdfPageReady(fPath, pIndex, imagePath) {
+            if (fPath === root.filePath && pIndex === root.currentPageIndex) {
+                root.renderedPageSource = imagePath
+                root.isLoading = false
+            }
+        }
+        function onPdfCountReady(fPath, count) {
+            if (fPath === root.filePath) {
+                root.pageCount = count
+                requestCurrentPage()
+            }
+        }
+        function onMediaError(fPath, errorMsg) {
+            if (fPath === root.filePath) {
+                root.isLoading = false
+                console.error("Media error:", errorMsg)
+            }
+        }
+    }
+
+    function requestCurrentPage() {
+        var b = getBridge()
+        if (b && filePath && pageCount > 0) {
+            isLoading = true
+            b.request_pdf_page(filePath, currentPageIndex, 1200)
+        }
+    }
+
     onFilePathChanged: {
         currentPageIndex = 0
         pageCount = 0
         aspectSized = false
         var b = getBridge()
         if (b && filePath) {
-            pageCount = b.get_pdf_page_count(filePath)
+            isLoading = true
+            b.request_pdf_page_count(filePath)
         }
         applyAspectSizing()
+    }
+
+    onCurrentPageIndexChanged: {
+        requestCurrentPage()
     }
 
     onPageCountChanged: {
@@ -126,7 +156,8 @@ FocusScope {
         root.forceActiveFocus()
         var b = getBridge()
         if (b && filePath) {
-            pageCount = b.get_pdf_page_count(filePath)
+            isLoading = true
+            b.request_pdf_page_count(filePath)
         }
         applyAspectSizing()
     }

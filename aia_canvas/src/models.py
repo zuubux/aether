@@ -4,6 +4,7 @@ Reactive QObject wrapper classes for nodes and relational edges.
 """
 
 from pathlib import Path
+
 from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal
 
 
@@ -13,6 +14,7 @@ class Node(QObject):
     filePathChanged = pyqtSignal()
     clusterIdChanged = pyqtSignal(int)
     depthZChanged = pyqtSignal()
+    isDeletedChanged = pyqtSignal()
 
     def __init__(
         self,
@@ -40,6 +42,7 @@ class Node(QObject):
         self._archetype = archetype
         self._snippet = snippet
         self._size_bytes = size_bytes
+        self._is_deleted = False
 
     # --- ID ---
     @pyqtProperty(int, constant=True)
@@ -147,6 +150,16 @@ class Node(QObject):
         if abs(self._depth_z - val) > 0.001:
             self._depth_z = val
             self.depthZChanged.emit()
+
+    @pyqtProperty(bool, notify=isDeletedChanged)
+    def isDeleted(self) -> bool:
+        return self._is_deleted
+
+    @isDeleted.setter
+    def isDeleted(self, val: bool):
+        if self._is_deleted != val:
+            self._is_deleted = val
+            self.isDeletedChanged.emit()
 
 
 class Edge(QObject):

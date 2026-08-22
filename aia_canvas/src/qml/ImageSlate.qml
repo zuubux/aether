@@ -56,7 +56,26 @@ FocusScope {
     property string initialText: ""
     property int referenceCount: 0
 
-    readonly property bool hasError: imgElement.status === Image.Error || (root.filePath !== "" && getBridge() !== null && getBridge().get_image_source(root.filePath) === "")
+    property string imageSourceUrl: ""
+    property bool isLoading: false
+
+    readonly property bool hasError: imgElement.status === Image.Error || (root.filePath !== "" && getBridge() !== null && imageSourceUrl === "" && !isLoading)
+
+    Connections {
+        target: getBridge()
+        function onImageReady(fPath, url) {
+            if (fPath === root.filePath) {
+                root.imageSourceUrl = url
+                root.isLoading = false
+            }
+        }
+        function onMediaError(fPath, errorMsg) {
+            if (fPath === root.filePath) {
+                root.isLoading = false
+                console.error("Media error:", errorMsg)
+            }
+        }
+    }
 
     function applyAspectSizing() {
         if (aspectSized) return
@@ -102,13 +121,23 @@ FocusScope {
         }
     }
 
+    function requestImage() {
+        var b = getBridge()
+        if (b && filePath) {
+            isLoading = true
+            b.request_image_source(filePath)
+        }
+    }
+
     onFilePathChanged: {
         aspectSized = false
+        requestImage()
         applyAspectSizing()
     }
 
     Component.onCompleted: {
         root.forceActiveFocus()
+        requestImage()
         applyAspectSizing()
     }
 
@@ -348,11 +377,10 @@ FocusScope {
                     playing: true
                     paused: false
                     cache: true
-                    asynchronous: false
+                    asynchronous: true
                     source: {
                         if (!root.filePath) return "";
-                        var src = getBridge() ? getBridge().get_image_source(root.filePath) : (root.filePath.startsWith("file://") ? root.filePath : "file://" + root.filePath);
-                        return src;
+                        return root.imageSourceUrl !== "" ? root.imageSourceUrl : (root.filePath.startsWith("file://") ? root.filePath : "file://" + root.filePath);
                     }
                     fillMode: Image.PreserveAspectFit
 
