@@ -28,6 +28,7 @@ class WeaverIPCClient(QObject):
 
     def __init__(self, socket_path: str | None = None):
         super().__init__()
+        self._pending_req_times: dict[int, float] = {}
         if socket_path is None:
             runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp")
             self.socket_path = str(Path(runtime_dir) / "aia_weaver" / "aia_weaver.sock")
@@ -126,6 +127,13 @@ class WeaverIPCClient(QObject):
 
     def _dispatch_rpc_callback(self, req_id: int, result: Any, error: str):
         callback = self._pending_callbacks.pop(req_id, None)
+        sent_time = self._pending_req_times.pop(req_id, None)
+        if sent_time is not None:
+            import time
+            from telemetry.metrics import TelemetryCollector
+            latency = (time.perf_counter() - sent_time) * 1000.0
+            TelemetryCollector().record_ipc(latency)
+            
         if callback:
             callback(result, error if error else None)
 
@@ -136,8 +144,10 @@ class WeaverIPCClient(QObject):
                 callback(None, "IPC socket not connected")
             return
 
+        import time
         self._req_id += 1
         req_id = self._req_id
+        self._pending_req_times[req_id] = time.perf_counter()
         if callback:
             self._pending_callbacks[req_id] = callback
             # Schedule a timeout to flush this specific callback
@@ -153,6 +163,7 @@ class WeaverIPCClient(QObject):
         asyncio.run_coroutine_threadsafe(self._send_payload(payload), self._loop)
 
     def _handle_rpc_timeout(self, req_id: int):
+        self._pending_req_times.pop(req_id, None)
         callback = self._pending_callbacks.pop(req_id, None)
         if callback:
             try:

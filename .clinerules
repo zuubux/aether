@@ -57,3 +57,8 @@
 - **Rule 7.3:** Exception handling must be explicit and typed; no bare `except Exception:`.
 - **Rule 7.4:** JSON-RPC IPC payloads must be validated for schema keys prior to dispatch.
 - **Rule 7.5:** Signal signatures across workers, controllers, and bridge must use matching Qt Meta-Object types (e.g., `'QVariantMap'` for dictionaries) to avoid PyQt connection failures.
+
+## 8. Telemetry & Observability Invariants
+- **Rule 8.1:** Strict In-Memory Bounds: Telemetry collectors must use fixed-size ring buffers (`collections.deque(maxlen=120)`) with zero disk I/O churn or unbounded allocations.
+- **Rule 8.2:** Numeric Scalars Only: Telemetry samples must strictly record numerical values (latencies, counts, frametimes, byte lengths). File paths, queries, and payload content are forbidden in telemetry buffers.
+- **Rule 8.3:** Air-Gapped Local Boundaries: Telemetry endpoints must never initiate external network connections or web sockets; all telemetry exposure occurs via in-process `bridge.py` slots or standard POSIX standard streams (`journald`).

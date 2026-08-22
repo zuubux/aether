@@ -3,7 +3,8 @@ import os
 import urllib.parse
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal
+from PyQt6.QtCore import QObject, QRunnable, QUrl, pyqtSignal, QThreadPool
+from telemetry.metrics import TelemetryCollector
 
 
 class WorkerSignals(QObject):
@@ -24,6 +25,7 @@ class PdfWorker(QRunnable):
         self.signals = WorkerSignals()
 
     def run(self):
+        TelemetryCollector().record_threadpool(QThreadPool.globalInstance().activeThreadCount())
         try:
             clean_path = urllib.parse.unquote(self.file_path.replace("file://", ""))
             if not os.path.exists(clean_path):
@@ -102,6 +104,7 @@ class CsvWorker(QRunnable):
         self.signals = WorkerSignals()
 
     def run(self):
+        TelemetryCollector().record_threadpool(QThreadPool.globalInstance().activeThreadCount())
         try:
             clean_path = urllib.parse.unquote(self.file_path.replace("file://", ""))
             if not os.path.exists(clean_path):
@@ -164,6 +167,7 @@ class ImageWorker(QRunnable):
         self.signals = WorkerSignals()
 
     def run(self):
+        TelemetryCollector().record_threadpool(QThreadPool.globalInstance().activeThreadCount())
         try:
             if self.file_path in self.failed_set:
                 self.signals.mediaError.emit(self.file_path, "Previous conversion failed")

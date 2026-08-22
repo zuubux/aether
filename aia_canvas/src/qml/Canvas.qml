@@ -141,8 +141,13 @@ Window {
 
             property real canvasGlobalTime: 0.0
             FrameAnimation {
-                running: canvasViewport.searchActive
-                onTriggered: canvasViewport.canvasGlobalTime += frameTime * 1000.0
+                running: true
+                onTriggered: {
+                    canvasViewport.canvasGlobalTime += frameTime * 1000.0
+                    if (canvasBridge) {
+                        canvasBridge.record_frame(frameTime * 1000.0)
+                    }
+                }
             }
 
             property var nodeRegistry: ({})

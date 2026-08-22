@@ -108,13 +108,35 @@ Item {
             Row {
                 width: parent.width
                 spacing: 8
+                anchors.left: parent.left
+                
+                Rectangle {
+                    width: 20
+                    height: 20
+                    radius: 4
+                    color: "transparent"
+                    border.color: previewRoot.accentColor
+                    border.width: 1
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: previewRoot.ext.replace(".", "").toUpperCase().slice(0, 3) || "TXT"
+                        color: previewRoot.accentColor
+                        font.family: "Monospace"
+                        font.pixelSize: 8
+                        font.bold: true
+                    }
+                }
+
                 Text {
                     text: previewRoot.fileName
                     font.bold: true
                     font.pixelSize: 13
                     color: "#FFFFFF"
                     elide: Text.ElideRight
-                    width: parent.width
+                    width: parent.width - 28
+                    anchors.verticalCenter: parent.verticalCenter
                 }
             }
 

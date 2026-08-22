@@ -13,6 +13,7 @@ from models import Edge, Node
 from physics.engine import PhysicsEngine
 from PyQt6.QtCore import QObject, QTimer, pyqtProperty, pyqtSignal, pyqtSlot
 from store import GraphStore
+from telemetry import TelemetryCollector
 
 logger = logging.getLogger("aia_canvas.bridge")
 
@@ -102,6 +103,8 @@ class CanvasBridge(QObject):
 
         self._cluster_halos: list = []
         self._last_frametime_ms: float = 0.0
+        
+        self.telemetry = TelemetryCollector()
 
         # Graph Separation: Structural vs Render Subset
         self._structural_edges: list[Edge] = []
@@ -304,6 +307,14 @@ class CanvasBridge(QObject):
         return self.physics_ctrl.activeEdgeCount
 
     # --- Slots Invoked from QML ---
+    
+    @pyqtSlot(result='QVariantMap')
+    def get_telemetry_snapshot(self) -> dict:
+        return self.telemetry.get_snapshot()
+        
+    @pyqtSlot(float)
+    def record_frame(self, delta_ms: float):
+        self.telemetry.record_frame(delta_ms)
 
     @pyqtSlot(str, int, result='QVariantMap')
     @pyqtSlot(str, result='QVariantMap')

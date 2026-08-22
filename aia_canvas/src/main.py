@@ -37,6 +37,7 @@ def main():
     parser.add_argument("--height", type=int, default=1080, help="Window height")
     parser.add_argument("-v", "--debug", action="store_true", help="Enable verbose debug logging")
     parser.add_argument("--watch-dir", type=str, help="Directory to index/watch")
+    parser.add_argument("--diagnostics", nargs="?", const=3, type=int, help="Run a timed telemetry capture for N seconds, print to stdout and exit.")
     
     # Parse known args so Qt can still parse its own if needed
     args, unparsed_args = parser.parse_known_args()
@@ -129,6 +130,16 @@ def main():
         window.show()
 
     logger.info("Aether Canvas UI loaded successfully. Awaiting IPC backend...")
+
+    if args.diagnostics is not None:
+        def print_and_exit():
+            import json
+            snap = bridge.get_telemetry_snapshot()
+            print("\n=== SRE TELEMETRY DIAGNOSTICS ===")
+            print(json.dumps(snap, indent=2))
+            print("=================================\n")
+            QCoreApplication.quit()
+        QTimer.singleShot(args.diagnostics * 1000, print_and_exit)
 
     timer = QTimer()
     timer.timeout.connect(lambda: None)

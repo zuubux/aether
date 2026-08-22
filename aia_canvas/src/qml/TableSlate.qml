@@ -146,20 +146,20 @@ FocusScope {
 
                 // Icon indicator
                 Rectangle {
-                    width: 24
-                    height: 24
+                    width: 20
+                    height: 20
                     radius: 4
-                    color: Qt.alpha(root.accentColor, 0.1)
+                    color: "transparent"
                     border.color: root.accentColor
                     border.width: 1
                     anchors.verticalCenter: parent.verticalCenter
 
                     Text {
                         anchors.centerIn: parent
-                        text: "CSV"
+                        text: "T"
                         color: root.accentColor
-                        font.family: "JetBrains Mono, monospace"
-                        font.pixelSize: 9
+                        font.family: "Monospace"
+                        font.pixelSize: 10
                         font.bold: true
                     }
                 }
