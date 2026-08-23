@@ -71,7 +71,12 @@ Window {
     }
 
     // Viewport Dimension Sync
-    Component.onCompleted: syncViewportDimensions()
+    Component.onCompleted: {
+        syncViewportDimensions()
+        if (canvasBridge && typeof canvasBridge.notify_ui_ready === "function") {
+            canvasBridge.notify_ui_ready()
+        }
+    }
     onWidthChanged: syncViewportDimensions()
     onHeightChanged: syncViewportDimensions()
 
@@ -97,7 +102,9 @@ Window {
             anchors.fill: parent
 
             onClicked: function(mouse) {
-                if (canvasBridge) {
+                if (canvasViewport.searchActive && canvasBridge) {
+                    canvasBridge.clear_search()
+                } else if (canvasBridge) {
                     canvasBridge.select_node(0)
                 }
             }
@@ -153,12 +160,95 @@ Window {
             property var nodeRegistry: ({})
             property var searchResultIds: []
             property bool searchActive: false
+            property real searchVisualScrollY: 0
+            property real targetSearchScrollY: 0
+            readonly property real maxScrollLimit: Math.max(0, (canvasViewport.searchTotalRows - 3) * 210)
+
+            // Fluid critically damped spring motion (Apple-like easing)
+            Behavior on searchVisualScrollY {
+                SpringAnimation {
+                    spring: 4.5
+                    damping: 0.35
+                    epsilon: 0.25
+                    mass: 1.0
+                }
+            }
+
+            // Timer / boundary pull-back: softly snaps overscroll back to [0, maxScrollLimit]
+            Timer {
+                id: boundarySnapTimer
+                interval: 16
+                running: (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.searchActive) && (canvasViewport.targetSearchScrollY < 0 || canvasViewport.targetSearchScrollY > canvasViewport.maxScrollLimit)
+                repeat: true
+                onTriggered: {
+                    if (canvasViewport.targetSearchScrollY < 0) {
+                        canvasViewport.targetSearchScrollY = canvasViewport.targetSearchScrollY * 0.75;
+                        if (Math.abs(canvasViewport.targetSearchScrollY) < 0.5) canvasViewport.targetSearchScrollY = 0;
+                    } else if (canvasViewport.targetSearchScrollY > canvasViewport.maxScrollLimit) {
+                        canvasViewport.targetSearchScrollY = canvasViewport.maxScrollLimit + (canvasViewport.targetSearchScrollY - canvasViewport.maxScrollLimit) * 0.75;
+                        if (Math.abs(canvasViewport.targetSearchScrollY - canvasViewport.maxScrollLimit) < 0.5) canvasViewport.targetSearchScrollY = canvasViewport.maxScrollLimit;
+                    }
+                    canvasViewport.searchVisualScrollY = canvasViewport.targetSearchScrollY;
+                }
+            }
+
+            readonly property int searchColumns: {
+                var total = searchResultIds.length;
+                if (total <= 4) return Math.max(1, total);
+                if (total === 5 || total === 6) return 3;
+                if (total === 7 || total === 8) return 4;
+                return (width >= 2560) ? 5 : 4;
+            }
+            readonly property int searchTotalRows: Math.ceil(searchResultIds.length / Math.max(1, searchColumns))
+
+            readonly property real searchGridWidth: searchColumns * 266 + 40
+            readonly property real searchGridHeight: searchTotalRows * 210 + 40
+            readonly property real searchGridY: (root.height - 60 - 28 - 18 - 85) - (searchTotalRows - 1) * 210 - 85 - 20
+
+            MouseArea {
+                id: searchScrollWheelCapture
+                anchors.fill: parent
+                z: 9000
+                visible: canvasViewport.searchActive
+                hoverEnabled: false
+                acceptedButtons: Qt.NoButton // Allows clicks to pass through to cards
+                propagateComposedEvents: true
+                
+                onWheel: (wheel) => {
+                    var delta = wheel.angleDelta.y * 0.85;
+                    var maxLimit = canvasViewport.maxScrollLimit;
+
+                    var minOverscroll = -50;
+                    var maxOverscroll = maxLimit + 50;
+
+                    if ((canvasViewport.targetSearchScrollY <= 0 && delta > 0) || (canvasViewport.targetSearchScrollY >= maxLimit && delta < 0)) {
+                        delta *= 0.25;
+                    }
+
+                    canvasViewport.targetSearchScrollY = Math.max(minOverscroll, Math.min(canvasViewport.targetSearchScrollY - delta, maxOverscroll));
+                    canvasViewport.searchVisualScrollY = canvasViewport.targetSearchScrollY;
+                    console.log("[WHEEL CAPTURED] delta:", delta, "searchVisualScrollY:", canvasViewport.searchVisualScrollY, "maxLimit:", maxLimit);
+                    wheel.accepted = true;
+                }
+            }
 
             Connections {
                 target: canvasBridge
+                
+                function onSelectedNodeChanged(nodeId) {
+                    if (nodeId > 0) {
+                        // Trigger focal camera zoom/pan to center the selected node in the viewport
+                        canvasViewport.targetX = 0;
+                        canvasViewport.targetY = 0;
+                        canvasViewport.targetScale = 1.0;
+                    }
+                }
+
                 function onSearchResultsReceived(results) {
                     canvasViewport.searchResultIds = results
                     canvasViewport.searchActive = true
+                    canvasViewport.targetSearchScrollY = 0.0;
+                    canvasViewport.searchVisualScrollY = 0.0;
 
                     var sumX = 0
                     var sumY = 0
@@ -174,7 +264,8 @@ Window {
                     }
 
                     if (count > 0 && canvasBridge) {
-                        var shelfY = root.height * 0.35;
+                        // Position bottom row above OmniBar
+                        var shelfY = root.height - 60 - 28 - 18 - 85; // 85 is half of card height
                         canvasBridge.set_staged_nodes(results, root.width, shelfY);
                     }
                 }
@@ -182,6 +273,8 @@ Window {
                 function onSearchCleared() {
                     canvasViewport.searchActive = false
                     canvasViewport.searchResultIds = []
+                    canvasViewport.targetSearchScrollY = 0.0;
+                    canvasViewport.searchVisualScrollY = 0.0;
                     // Retain target defaults explicitly
                     canvasViewport.targetX = 0
                     canvasViewport.targetY = 0
@@ -223,12 +316,51 @@ Window {
 
             function closeSearchAndOmniBar() {
                 if (typeof omniBar !== "undefined" && omniBar) {
+                    if (typeof omniBar.clearTextAndCancel === "function") {
+                        omniBar.clearTextAndCancel()
+                    }
                     omniBar.dismiss()
                 }
                 if (searchActive && canvasBridge) {
-                    canvasBridge.clear_search()
+                    if (typeof canvasBridge.set_search_active === "function") {
+                        canvasBridge.set_search_active(false)
+                    }
+                    searchActive = false
                 }
                 canvasSpace.forceActiveFocus()
+            }
+
+            // Ethereal Focus Shield & Pointer Occlusion
+            Rectangle {
+                id: searchScrim
+                visible: (typeof omniBar !== "undefined" && omniBar.active && omniBar.opacity > 0) || canvasViewport.searchActive
+                opacity: visible ? 1.0 : 0.0
+                color: "transparent"
+                z: 7500 // Above background (1000-7000), below search results (8000+)
+                
+                width: canvasViewport.searchActive ? canvasViewport.searchGridWidth : parent.width
+                height: canvasViewport.searchActive ? canvasViewport.searchGridHeight : parent.height
+                x: canvasViewport.searchActive ? (parent.width - width) / 2 : 0
+                y: canvasViewport.searchActive ? canvasViewport.searchGridY : 0
+                radius: canvasViewport.searchActive ? 16 : 0
+
+                Behavior on opacity {
+                    NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    // Consume pointer events inside the bounds
+                    preventStealing: true
+                    onClicked: {
+                        if (omniBar) {
+                            omniBar.dismiss()
+                        }
+                        if (canvasBridge) {
+                            canvasBridge.clear_search()
+                        }
+                    }
+                }
             }
             
             // 1. Atmospheric Cluster Halos (Background Layer)

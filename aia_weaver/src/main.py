@@ -56,10 +56,31 @@ class WeaverDaemon:
             target_dirs=self.target_directories,
             event_queue=self.event_queue,
         )
+        
+        self.db_load_ms = 0.0
+        self.embed_cache_ms = 0.0
+        
+        async def wrapped_get_all_nodes():
+            import time
+            t0 = time.perf_counter()
+            nodes = await self.db.get_all_nodes()
+            edges = await self.db.get_all_edges()
+            t1 = time.perf_counter()
+            if hasattr(self, "t_start"):
+                logger.info(f"[T+{(t1 - self.t_start)*1000:.1f}ms] Weaver completed `initial_sync` DB query")
+            return {
+                "nodes": nodes,
+                "edges": edges,
+                "timing": {
+                    "db_load": (t1 - t0) * 1000.0,
+                    "embed_cache": 0.0
+                }
+            }
+
         self.ipc = IPCServer(
             search_handler=self.handle_semantic_search,
             neighbors_handler=self.handle_get_neighbors,
-            all_nodes_handler=self.db.get_all_nodes,
+            all_nodes_handler=wrapped_get_all_nodes,
             touch_handler=self.handle_touch_node,
             save_node_handler=self.handle_save_node,
             allowed_directories=[Path(d) for d in self.target_directories],
@@ -162,27 +183,19 @@ class WeaverDaemon:
         logger.info(f"Initial workspace scan enqueued {scanned_count} file(s) for indexing.")
 
     async def start(self) -> None:
-        logger.info("Initializing aia_weaver engine...")
+        import time
+        self.t_start = time.perf_counter()
+        
+        def log_milestone(msg: str):
+            logger.info(f"[T+{(time.perf_counter() - self.t_start)*1000:.1f}ms] {msg}")
+
+        log_milestone("Weaver daemon started")
 
         await self.db.initialize()
 
-        # Cold Start Ghost Node Reconciliation
-        logger.info("Performing cold start ghost node reconciliation...")
-        try:
-            all_nodes = await self.db.get_all_nodes()
-            pruned_count = 0
-            for node in all_nodes:
-                file_path = node["file_path"]
-                if not os.path.exists(file_path):
-                    await self.db.delete_node_by_path(file_path)
-                    logger.info(f"Cold start pruned ghost node: {file_path}")
-                    pruned_count += 1
-            if pruned_count > 0:
-                logger.info(f"Cold start reconciliation complete. Pruned {pruned_count} ghost node(s).")
-        except Exception as e:
-            logger.error(f"Error during cold start ghost node reconciliation: {e}")
-
+        # START IPC IMMEDIATELY
         await self.ipc.start()
+        log_milestone("Weaver IPC socket listening")
 
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
@@ -196,7 +209,23 @@ class WeaverDaemon:
         watcher_task = asyncio.create_task(self.watcher.watch_loop())
         processor_task = asyncio.create_task(self._process_event_queue())
 
-        await self._initial_workspace_scan()
+        # Perform background tasks async
+        async def background_init():
+            # Cold Start Ghost Node Reconciliation
+            try:
+                all_nodes = await self.db.get_all_nodes()
+                pruned_count = 0
+                for node in all_nodes:
+                    file_path = node["file_path"]
+                    if not os.path.exists(file_path):
+                        await self.db.delete_node_by_path(file_path)
+                        pruned_count += 1
+            except Exception as e:
+                logger.error(f"Error during cold start ghost node reconciliation: {e}")
+
+            await self._initial_workspace_scan()
+
+        asyncio.create_task(background_init())
 
         logger.info("aia_weaver fully ACTIVE with hardened IPC socket enabled.")
 
@@ -225,21 +254,37 @@ class WeaverDaemon:
                 if action in ("initial_scan", "created", "modified") and path.exists() and path.is_file():
                     file_bytes = await asyncio.to_thread(path.read_bytes)
                     file_hash = hashlib.sha256(file_bytes).hexdigest()
-                    embedding = await self.embedder.embed_file(file_path_str)
                     
-                    archetype, snippet = extract_archetype_and_snippet(path, file_bytes)
+                    # Performance fix: Skip expensive operations on startup if hash matches
+                    existing_node = None
+                    if action == "initial_scan":
+                        existing_node = await self.db.get_node_by_path(file_path_str)
+                    
+                    if existing_node and existing_node["file_hash"] == file_hash:
+                        # Fast path: Node exists and is unchanged
+                        source_id = existing_node["id"]
+                        logger.debug(f"Skipped embedding for unchanged node #{source_id} -> {path.name}")
+                        embedding = None
+                    else:
+                        import time
+                        t0 = time.perf_counter()
+                        embedding = await self.embedder.embed_file(file_path_str)
+                        t1 = time.perf_counter()
+                        
+                        archetype, snippet = extract_archetype_and_snippet(path, file_bytes)
 
-                    # Upsert Node
-                    source_id = await self.db.upsert_node(
-                        file_path=file_path_str,
-                        file_hash=file_hash,
-                        extension=path.suffix,
-                        size_bytes=path.stat().st_size,
-                        archetype=archetype,
-                        snippet=snippet,
-                        embedding=embedding,
-                    )
-                    logger.info(f"Indexed Node #{source_id} [{action.upper()}] -> {path.name}")
+                        # Upsert Node
+                        source_id = await self.db.upsert_node(
+                            file_path=file_path_str,
+                            file_hash=file_hash,
+                            extension=path.suffix,
+                            size_bytes=path.stat().st_size,
+                            archetype=archetype,
+                            snippet=snippet,
+                            embedding=embedding,
+                        )
+                        t2 = time.perf_counter()
+                        logger.info(f"Indexed Node #{source_id} [{action.upper()}] -> {path.name} (Embed: {(t1-t0)*1000:.1f}ms, DB: {(t2-t1)*1000:.1f}ms)")
 
                     # --- SEMANTIC ENGINE ---
                     if self.enable_semantic_edges and embedding is not None:

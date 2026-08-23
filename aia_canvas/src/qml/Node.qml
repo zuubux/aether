@@ -52,7 +52,10 @@ Item {
     // Semantic Zoom Classification
     readonly property int baseTier: currentAperture < 0.40 ? 4 : (currentAperture > 1.00 ? 2 : 3)
 
-    readonly property bool isPreviewMode: !isSelected && (isSearchResult || (isHovered && isDwellTriggered))
+    readonly property bool isSearchModeActive: (typeof canvasBridge !== "undefined" && canvasBridge !== null && canvasBridge.searchActive) || (viewportContainer && viewportContainer.searchActive)
+    readonly property bool showPreviewCard: !isSelected && isHovered && nodeMouseArea.containsMouse && !isSearchModeActive
+    readonly property bool showSearchPreview: isSearchResult && !isSelected
+    readonly property bool isPreviewMode: !isSelected && (showSearchPreview || (isHovered && isDwellTriggered && nodeMouseArea.containsMouse))
     readonly property bool isSlateMode: !isSelected && !isPreviewMode && (baseTier === 2)
     readonly property bool isCapsuleMode: !isSelected && !isPreviewMode && !isSlateMode && (baseTier === 3 || (baseTier === 4 && isHovered))
     readonly property bool isBeadMode: !isSelected && !isPreviewMode && (baseTier === 4 && !isHovered)
@@ -103,16 +106,68 @@ Item {
 
     // Search / Spotlight State
     readonly property bool isSearchResult: viewportContainer && viewportContainer.searchActive ? (viewportContainer.searchResultIds.indexOf(nodeId.toString()) !== -1) : false
+    readonly property real searchCardWidth: 280
+    readonly property real searchCardHeight: 180
     readonly property bool isSearchDimmed: viewportContainer && viewportContainer.searchActive && !isSearchResult
     readonly property int searchResultIndex: isSearchResult && viewportContainer ? viewportContainer.searchResultIds.indexOf(nodeId.toString()) : -1
     readonly property int totalSlots: viewportContainer && viewportContainer.searchActive ? viewportContainer.searchResultIds.length : 0
-    readonly property int columns: viewportContainer ? Math.max(1, Math.floor((viewportContainer.width * 0.85) / 340)) : 1
+    readonly property int maxCols: viewportContainer ? (viewportContainer.width >= 2560 ? 5 : 4) : 4
+    readonly property int columns: {
+        var total = totalSlots;
+        if (total <= 4) return Math.max(1, total);
+        if (total === 5 || total === 6) return 3;
+        if (total === 7 || total === 8) return 4;
+        return maxCols;
+    }
     readonly property int gridRow: searchResultIndex >= 0 ? Math.floor(searchResultIndex / columns) : 0
     readonly property int gridCol: searchResultIndex >= 0 ? (searchResultIndex % columns) : 0
-    readonly property int itemsInCurrentRow: (searchResultIndex >= 0 && totalSlots > 0) ? Math.min(columns, totalSlots - gridRow * columns) : 1
-    readonly property real slotWidth: 340
-    readonly property real stagedX: viewportContainer ? (viewportContainer.width / 2) + (gridCol - (itemsInCurrentRow - 1) / 2.0) * slotWidth : 0
-    readonly property real stagedY: viewportContainer ? viewportContainer.height * 0.28 + gridRow * 240 : 0
+    readonly property real slotWidth: 320 // 280 width + 40 colGap
+    
+    // Fixed vertical dimensions
+    readonly property real fixedCardHeight: 180
+    readonly property real fixedRowGap: 40
+    readonly property real fixedSlotHeight: fixedCardHeight + fixedRowGap
+
+    readonly property int rowItems: searchResultIndex >= 0 ? Math.min(totalSlots - gridRow * columns, columns) : 0
+    readonly property real stagedX: viewportContainer ? (viewportContainer.width / 2) + (gridCol - (rowItems - 1) / 2.0) * slotWidth : 0
+    
+    readonly property real omniBarHeight: 60
+    readonly property real bottomMargin: 28 + 18 // 28 (omnibar margin) + 18 (gap)
+    readonly property real baselineY: viewportContainer ? (viewportContainer.height - omniBarHeight - bottomMargin - (fixedCardHeight / 2)) : 1000
+
+    // GPU-accelerated Visual Translate for smooth Apple-like scroll
+    transform: Translate {
+        id: visualTranslate
+        y: rootItem.isSearchResult && viewportContainer && !rootItem.isSelected ? viewportContainer.searchVisualScrollY : 0
+        Behavior on y {
+            enabled: !rootItem.isSelected && (!rootItem.isSearchResult && visualTranslate.y !== 0)
+            NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+        }
+    }
+
+    property real screenVisualY: y + visualTranslate.y
+    
+    // Y-coordinate targets static slot; scrolling is handled by visual transform
+    readonly property real stagedY: baselineY - (gridRow * fixedSlotHeight)
+
+    // Opacity based on continuous screen Y relative to baseline
+    readonly property real continuousRowOffset: (baselineY - screenVisualY) / fixedSlotHeight
+
+    readonly property real searchRowOpacity: {
+        if (!isSearchResult) return 1.0;
+        var cRow = continuousRowOffset;
+        // Bottom emergence fade
+        if (cRow < 0.0) {
+            var bottomFade = 1.0 + (cRow * fixedSlotHeight / 40.0);
+            return Math.max(0.0, Math.min(1.0, bottomFade));
+        }
+        // Top atmospheric fade
+        if (cRow < 3.0) return 1.0;
+        if (cRow < 4.0) return 1.0 - (cRow - 3.0) * (1.0 - 0.65);
+        if (cRow < 5.0) return 0.65 - (cRow - 4.0) * (0.65 - 0.25);
+        if (cRow < 6.0) return 0.25 - (cRow - 5.0) * 0.25;
+        return 0.0;
+    }
 
     property bool isStaged: isSearchResult
 
@@ -178,12 +233,20 @@ Item {
     }
 
     // Target Dimensions
+    readonly property real minHoverWidth: 300
+    readonly property real maxHoverWidth: 420
+    readonly property real minHoverHeight: 200
+    readonly property real maxHoverHeight: 300
+
+    readonly property real targetHoverWidth: minHoverWidth + (maxHoverWidth - minHoverWidth) * currentAperture
+    readonly property real targetHoverHeight: minHoverHeight + (maxHoverHeight - minHoverHeight) * currentAperture
+
     readonly property real targetWidth: {
         if (isSelected) {
             if ((isImageFile || isPdfFile || isTableFile) && focalSlateLoader.item && focalSlateLoader.item.hasError) return 520 + 24
             return bridge ? bridge.workbenchWidth : 1400
         }
-        if (showPreviewSlate) return 320
+        if (showPreviewSlate) return targetHoverWidth
         if (isMacroBead) return 16
         if (isCompactCapsule) return (nodePill.implicitWidth > 0 ? nodePill.implicitWidth + 24 : 140)
         return 280
@@ -194,7 +257,7 @@ Item {
             if ((isImageFile || isPdfFile || isTableFile) && focalSlateLoader.item && focalSlateLoader.item.hasError) return 340 + 24
             return bridge ? bridge.workbenchHeight : 900
         }
-        if (showPreviewSlate) return 220
+        if (showPreviewSlate) return targetHoverHeight
         if (isMacroBead) return 16
         if (isCompactCapsule) return 32
         return 115
@@ -218,45 +281,54 @@ Item {
 
     // Projected Coordinate Anchors
     transformOrigin: Item.Center
-    x: Math.round(isSelected ? (viewportContainer ? (viewportContainer.width - width) / 2 : 0) : (isSearchResult ? (stagedX - width / 2) : (projectedX - width / 2)))
-    y: Math.round(isSelected ? (viewportContainer ? (viewportContainer.height - height) / 2 : 0) : (isSearchResult ? (stagedY - height / 2) + verticalOffset : (projectedY - height / 2)))
+    visible: !isSearchResult || (searchRowOpacity > 0.0)
+    x: Math.round(isSelected ? (viewportContainer ? (viewportContainer.width - focalWidth) / 2 : 0) : (isSearchResult ? (stagedX - width / 2) : (projectedX - width / 2)))
+    y: Math.round(isSelected ? (viewportContainer ? (viewportContainer.height - focalHeight) / 2 : 0) : (isSearchResult ? (stagedY - height / 2) + verticalOffset : (projectedY - height / 2)))
     width: isSelected ? focalWidth :
-           isPreviewMode ? 320 :
+           isSearchResult ? searchCardWidth :
+           showPreviewCard ? targetHoverWidth :
            isSlateMode ? 220 :
            isBeadMode ? 14 :
            (nodePill.implicitWidth > 0 ? nodePill.implicitWidth + 24 : 140)
 
     height: isSelected ? focalHeight :
-            isPreviewMode ? 220 :
+            isSearchResult ? searchCardHeight :
+            showPreviewCard ? targetHoverHeight :
             isSlateMode ? 64 :
             isBeadMode ? 14 : 32
 
     Behavior on x {
-        enabled: rootItem.isSelected && !nodeMouseArea.isDragging && !resizeMouseArea.isResizing
-        NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+        enabled: (rootItem.isSelected || rootItem.isSearchResult) && !nodeMouseArea.isDragging && !resizeMouseArea.isResizing
+        NumberAnimation { 
+            duration: rootItem.isSearchResult ? 150 : 600
+            easing.type: rootItem.isSearchResult ? Easing.OutQuad : Easing.OutCubic 
+        }
     }
     Behavior on y {
-        enabled: rootItem.isSelected && !nodeMouseArea.isDragging && !resizeMouseArea.isResizing
-        NumberAnimation { duration: 600; easing.type: Easing.OutCubic }
+        enabled: (rootItem.isSelected || rootItem.isSearchResult) && !nodeMouseArea.isDragging && !resizeMouseArea.isResizing
+        NumberAnimation { 
+            duration: rootItem.isSearchResult ? 150 : 600
+            easing.type: rootItem.isSearchResult ? Easing.OutQuad : Easing.OutCubic 
+        }
     }
     Behavior on width {
         enabled: !resizeMouseArea.isResizing
-        NumberAnimation { duration: 220; easing.type: Easing.OutQuint }
+        NumberAnimation { duration: 180; easing.type: Easing.OutQuad }
     }
     Behavior on height {
         enabled: !resizeMouseArea.isResizing
-        NumberAnimation { duration: 220; easing.type: Easing.OutQuint }
+        NumberAnimation { duration: 180; easing.type: Easing.OutQuad }
     }
 
     // Strict Scale Lock: Keep selected workbench card at exactly 1.0 to ensure 1:1 resize fidelity
-    scale: (isSelected ? 1.0 : ((isHovered ? 1.05 : 1.0) * perspectiveScale)) * nodeAura.spawnScaleMultiplier * nodeAura.deleteScaleMultiplier
+    scale: (isSelected || isSearchResult ? 1.0 : ((isHovered ? 1.05 : 1.0) * perspectiveScale)) * nodeAura.spawnScaleMultiplier * nodeAura.deleteScaleMultiplier
     Behavior on scale {
         enabled: !nodeAura.isSpawnActive && !nodeAura.isDeleteActive && !rootItem.isSelected && !nodeMouseArea.isDragging && !resizeMouseArea.isResizing
-        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: 180; easing.type: Easing.OutQuad }
     }
 
     // Depth Stacking
-    z: isSelected ? 99999 : (isHovered ? 7000 : Math.round((1.0 - depthZ) * 1000 + focusWeight * 100))
+    z: isSelected ? 99999 : (isSearchResult ? (isHovered ? 9600 : 9500) : (isHovered ? 7000 : Math.round((1.0 - depthZ) * 1000 + focusWeight * 100)))
 
     readonly property real insideClusterFactor: {
         if (!nodeModel || nodeModel.clusterId === undefined || nodeModel.clusterId < 0) return 0.0;
@@ -314,7 +386,11 @@ Item {
     opacity: {
         var baseOpacity = 1.0;
         if (viewportContainer && viewportContainer.searchActive) {
-            baseOpacity = isSearchResult ? 1.0 : 0.15;
+            if (isSearchResult) {
+                baseOpacity = 1.0;
+            } else {
+                baseOpacity = isHovered ? 1.0 : 0.35;
+            }
         } else {
             baseOpacity = (isSelected ? 1.0 : (isHovered ? 1.0 : Math.max(0.0, focusWeight * (1.0 - depthZ * 0.35)))) * wingSqueezeOpacity * macroOpacityFade;
         }
@@ -328,6 +404,7 @@ Item {
     Rectangle {
         id: cardBody
         anchors.fill: parent
+        transformOrigin: Item.Center
         radius: rootItem.radius
         clip: true
 
@@ -336,7 +413,7 @@ Item {
         }
 
         color: rootItem.isSelected ? "#0c0e12" : (rootItem.isMacroBead ? rootItem.nodeAccentColor : (rootItem.isHovered ? "#161c28" : "#0a0c10"))
-        border.color: rootItem.isSearchResult ? "#64d2ff" : (rootItem.isSelected ? "#38bdf8" : (rootItem.isMacroBead ? Qt.lighter(rootItem.nodeAccentColor, 1.3) : (rootItem.isHovered ? rootItem.nodeAccentColor : (rootItem.isDirectNeighbor ? rootItem.relationAccentColor : "#1e2430"))))
+        border.color: rootItem.isSearchResult ? Qt.rgba(0.392, 0.824, 1.0, rootItem.searchRowOpacity) : (rootItem.isSelected ? "#38bdf8" : (rootItem.isMacroBead ? Qt.lighter(rootItem.nodeAccentColor, 1.3) : (rootItem.isHovered ? rootItem.nodeAccentColor : (rootItem.isDirectNeighbor ? rootItem.relationAccentColor : "#1e2430"))))
         border.width: rootItem.isSearchResult ? 2.5 : (rootItem.isMacroBead ? 1.5 : (rootItem.isSelected || rootItem.isHovered ? 1.5 : 1.0))
         antialiasing: true
         smooth: true
@@ -351,6 +428,7 @@ Item {
             isDeleted: (typeof model !== "undefined" && model) ? (model.isDeleted || false) : (nodeModel ? nodeModel.isDeleted || false : false)
             accentColor: rootItem.accentColor
             radius: rootItem.radius
+            opacity: rootItem.isSearchResult ? rootItem.searchRowOpacity : 1.0
         }
 
         // Star Bead Core Dot
@@ -379,7 +457,7 @@ Item {
             isHovered: rootItem.isHovered
             isSearchResult: rootItem.isSearchResult
             visible: rootItem.isCapsuleMode
-            opacity: rootItem.isCapsuleMode ? 1.0 : 0.0
+            opacity: (rootItem.isCapsuleMode ? 1.0 : 0.0) * rootItem.searchRowOpacity
         }
 
         // =====================================================================
@@ -389,48 +467,37 @@ Item {
             id: tokenView
             anchors.fill: parent
             visible: rootItem.isSlateMode
-            opacity: rootItem.isSlateMode ? 1.0 : 0.0
+            opacity: (rootItem.isSlateMode ? 1.0 : 0.0) * rootItem.searchRowOpacity
 
-            Column {
-                anchors.fill: parent
+            Rectangle {
+                id: iconBadge
+                width: 18
+                height: 16
+                radius: 3
+                color: rootItem.accentColor || "#00E5FF"
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
                 anchors.margins: 10
-                spacing: 6
-
-                Row {
-                    spacing: 8
-                    width: parent.width
-
-                    Rectangle {
-                        width: 18
-                        height: 16
-                        radius: 3
-                        color: rootItem.accentColor || "#00E5FF"
-                        Text {
-                            anchors.centerIn: parent
-                            text: (rootItem.nodeModel && rootItem.nodeModel.extension ? rootItem.nodeModel.extension : "md").replace(".", "").toUpperCase()
-                            font.pixelSize: 8
-                            font.bold: true
-                            color: "#0D1117"
-                        }
-                    }
-
-                    Text {
-                        text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
-                        font.pixelSize: 12
-                        font.weight: Font.DemiBold
-                        color: "#E6EDF3"
-                        elide: Text.ElideRight
-                        width: parent.width - 26
-                    }
-                }
-
                 Text {
-                    text: rootItem.nodeModel && rootItem.nodeModel.filePath ? rootItem.nodeModel.filePath : ""
-                    font.pixelSize: 10
-                    color: "#8B949E"
-                    elide: Text.ElideMiddle
-                    width: parent.width
+                    anchors.centerIn: parent
+                    text: (rootItem.nodeModel && rootItem.nodeModel.extension ? rootItem.nodeModel.extension : "md").replace(".", "").toUpperCase()
+                    font.pixelSize: 8
+                    font.bold: true
+                    color: "#0D1117"
                 }
+            }
+
+            Text {
+                id: titleLabel
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: iconBadge.right
+                anchors.right: parent.right
+                anchors.margins: 10
+                text: rootItem.nodeModel ? rootItem.nodeModel.fileName : ""
+                font.pixelSize: 12
+                font.weight: Font.Medium
+                color: "#F8FAFC"
+                elide: Text.ElideMiddle
             }
         }
 
@@ -441,6 +508,17 @@ Item {
         Connections {
             target: rootItem
             function onIsSelectedChanged() {
+                if (!rootItem.isSelected) {
+                    if (!nodeMouseArea.containsMouse) {
+                        rootItem.isHovered = false;
+                        if (typeof canvasBridge !== "undefined" && canvasBridge) {
+                            canvasBridge.set_hovered_node(0);
+                        } else if (rootItem.bridge) {
+                            rootItem.bridge.set_hovered_node(0);
+                        }
+                    }
+                }
+
                 if (rootItem.isSelected && rootItem.nodeModel && rootItem.nodeModel.filePath) {
                     if (rootItem.nodeModel.filePath !== textStreamer.filePath) {
                         textStreamer.load_file(rootItem.nodeModel.filePath, -1);
@@ -449,19 +527,28 @@ Item {
             }
         }
 
-        NodePreview {
-            id: nodePreview
+        Loader {
+            id: nodePreviewLoader
             anchors.fill: parent
-            fileName: (typeof model !== "undefined" && model && model.fileName) ? model.fileName : (rootItem.nodeModel ? rootItem.nodeModel.fileName : "")
-            snippetText: (typeof model !== "undefined" && model && (model.snippet || model.summary)) ? (model.snippet || model.summary) : (rootItem.nodeModel ? rootItem.nodeModel.snippet : "")
-            archetype: (typeof model !== "undefined" && model && model.archetype) ? model.archetype : (rootItem.nodeModel ? rootItem.nodeModel.archetype : "")
-            accentColor: rootItem.accentColor
-            cardRadius: rootItem.radius
-            isSearchResult: rootItem.isSearchResult
-            isHovered: rootItem.isHovered
-            showPreviewSlate: rootItem.showPreviewSlate
+            active: rootItem.isPreviewMode
+            asynchronous: true
             visible: rootItem.isPreviewMode
             opacity: rootItem.isPreviewMode ? 1.0 : 0.0
+            source: "node/NodePreview.qml"
+            
+            Binding { target: nodePreviewLoader.item; property: "fileName"; value: (typeof model !== "undefined" && model && model.fileName) ? model.fileName : (rootItem.nodeModel ? rootItem.nodeModel.fileName : ""); restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "snippetText"; value: (typeof model !== "undefined" && model && (model.snippet || model.summary)) ? (model.snippet || model.summary) : (rootItem.nodeModel ? rootItem.nodeModel.snippet : ""); restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "archetype"; value: (typeof model !== "undefined" && model && model.archetype) ? model.archetype : (rootItem.nodeModel ? rootItem.nodeModel.archetype : ""); restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "accentColor"; value: rootItem.accentColor; restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "cardRadius"; value: rootItem.radius; restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "isSearchResult"; value: rootItem.isSearchResult; restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "isHovered"; value: rootItem.isHovered; restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "showPreviewSlate"; value: rootItem.showPreviewSlate; restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "contentOpacity"; value: rootItem.searchRowOpacity; restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "filePath"; value: rootItem.filePath; restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "activeBridge"; value: rootItem.activeBridge; restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "thumbnailUrl"; value: rootItem.nodeModel ? rootItem.nodeModel.thumbnailUrl : ""; restoreMode: Binding.RestoreBinding }
+            Binding { target: nodePreviewLoader.item; property: "mimeType"; value: rootItem.nodeModel ? rootItem.nodeModel.mimeType : ""; restoreMode: Binding.RestoreBinding }
         }
 
         // =====================================================================
@@ -471,9 +558,10 @@ Item {
             id: focalSlateLoader
             focus: rootItem.isSelected
             anchors.centerIn: parent
-            width: rootItem.isSelected ? (parent.width - 24) : 320
-            height: rootItem.isSelected ? (parent.height - 24) : 220
+            width: rootItem.isSelected ? (parent.width - 24) : 230
+            height: rootItem.isSelected ? (parent.height - 24) : 170
             active: rootItem.isSelected
+            asynchronous: true
             visible: opacity > 0.01
             opacity: rootItem.isSelected ? 1.0 : 0.0
             source: rootItem.isImageFile ? "ImageSlate.qml" : (rootItem.isPdfFile ? "PdfSlate.qml" : (rootItem.isTableFile ? "TableSlate.qml" : "PreviewSlate.qml"))
@@ -541,6 +629,7 @@ Item {
             anchors.fill: parent
             anchors.margins: -16 // Hit-box stabilization padding
             hoverEnabled: true
+            preventStealing: true
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             cursorShape: Qt.PointingHandCursor
             // Disable drag handling when clicking near the bottom-right resize corner on selected cards
@@ -554,23 +643,38 @@ Item {
             property bool isDragging: false
             property bool isDragMoved: false
 
-            onEntered: {
-                rootItem.isHovered = true
-                rootItem.isDwellTriggered = false
-                if (!rootItem.isSearchResult && !rootItem.isSelected) {
-                    hoverDwellTimer.restart()
+            Timer {
+                id: hoverExitDebounce
+                interval: 40
+                onTriggered: {
+                    if (!nodeMouseArea.containsMouse && !nodeMouseArea.isDragging && !rootItem.isSelected) {
+                        rootItem.isHovered = false
+                        rootItem.isDwellTriggered = false
+                        hoverDwellTimer.stop()
+                        if (rootItem.bridge) {
+                            rootItem.bridge.set_hovered_node(0)
+                        }
+                    }
                 }
-                if (rootItem.bridge && !rootItem.isSelected) {
-                    rootItem.bridge.set_hovered_node(rootItem.nodeId)
+            }
+
+            onEntered: {
+                if (!rootItem.isSelected) {
+                    rootItem.isHovered = true
+                    rootItem.isDwellTriggered = false
+                    hoverExitDebounce.stop()
+                    if (!rootItem.isSearchResult) {
+                        hoverDwellTimer.restart()
+                    }
+                    if (rootItem.bridge) {
+                        rootItem.bridge.set_hovered_node(rootItem.nodeId)
+                    }
                 }
             }
 
             onExited: {
-                rootItem.isHovered = false
-                rootItem.isDwellTriggered = false
-                hoverDwellTimer.stop()
-                if (rootItem.bridge && !isDragging) {
-                    rootItem.bridge.set_hovered_node(0)
+                if (!rootItem.isSelected) {
+                    hoverExitDebounce.restart()
                 }
             }
 
@@ -632,11 +736,24 @@ Item {
             onClicked: function(mouse) {
                 if (mouse.button === Qt.LeftButton && !rootItem.isSelected) {
                     if (rootItem.bridge) {
-                        rootItem.bridge.select_node(rootItem.nodeId)
-                        rootItem.bridge.set_hovered_node(0)
-                        
-                        if (rootItem.viewportContainer && typeof rootItem.viewportContainer.closeSearchAndOmniBar === "function") {
-                            rootItem.viewportContainer.closeSearchAndOmniBar()
+                        if (rootItem.isSearchResult) {
+                            var targetId = rootItem.nodeId;
+                            rootItem.bridge.select_node(targetId);
+                            rootItem.bridge.set_search_active(false);
+                            Qt.callLater(function() {
+                                if (rootItem.viewportContainer && typeof rootItem.viewportContainer.closeSearchAndOmniBar === "function") {
+                                    rootItem.viewportContainer.closeSearchAndOmniBar()
+                                }
+                            })
+                        } else {
+                            rootItem.bridge.select_node(rootItem.nodeId)
+                            rootItem.bridge.set_hovered_node(0)
+                            
+                            Qt.callLater(function() {
+                                if (rootItem.viewportContainer && typeof rootItem.viewportContainer.closeSearchAndOmniBar === "function") {
+                                    rootItem.viewportContainer.closeSearchAndOmniBar()
+                                }
+                            })
                         }
                     }
                 }

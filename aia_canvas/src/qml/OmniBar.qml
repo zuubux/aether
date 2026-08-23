@@ -57,14 +57,12 @@ Item {
     
     opacity: active ? 1.0 : 0.0
     visible: active || opacity > 0.0
-    y: active ? parent.height * 0.15 : parent.height * 0.10
+    anchors.bottom: parent.bottom
+    anchors.bottomMargin: 28
+    anchors.horizontalCenter: parent.horizontalCenter
     
     Behavior on opacity {
         NumberAnimation { duration: 250; easing.type: Easing.OutCubic }
-    }
-    
-    Behavior on y {
-        SpringAnimation { spring: 2.5; damping: 0.7 }
     }
     
     Rectangle {

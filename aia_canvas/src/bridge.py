@@ -30,6 +30,7 @@ class CanvasBridge(QObject):
     telemetryChanged = pyqtSignal()
     searchResultsReceived = pyqtSignal(list)
     searchCleared = pyqtSignal()
+    searchActiveChanged = pyqtSignal(bool)
     nodeRemoved = pyqtSignal(int)
 
     # Async Media Signals
@@ -41,6 +42,9 @@ class CanvasBridge(QObject):
 
     def __init__(self):
         super().__init__()
+        import time
+        self._t0 = time.perf_counter()
+        self._qml_ready_time = 0.0
         self.store = GraphStore()
         self.physics = PhysicsEngine()
 
@@ -58,8 +62,8 @@ class CanvasBridge(QObject):
         self.canvas_ctrl.workbenchDimensionsChanged.connect(self.workbenchDimensionsChanged)
         self.canvas_ctrl.apertureChanged.connect(self.apertureChanged)
         
-        self.search_ctrl.searchResultsReceived.connect(self.searchResultsReceived)
-        self.search_ctrl.searchCleared.connect(self.searchCleared)
+        self.search_ctrl.searchResultsReceived.connect(self._handle_search_results)
+        self.search_ctrl.searchCleared.connect(self._handle_search_cleared)
         
         self.node_ctrl.selectedNodeChanged.connect(self.selectedNodeChanged)
         self.node_ctrl.hoveredNodeChanged.connect(self.hoveredNodeChanged)
@@ -88,6 +92,7 @@ class CanvasBridge(QObject):
         self._selected_node_id: int = 0
         self._hovered_node_id: int = 0
         self._is_connected = False
+        self._search_active = False
         
         self._cached_first_degree: set[int] = set()
         self._cached_second_degree: set[int] = set()
@@ -254,6 +259,10 @@ class CanvasBridge(QObject):
 
     # --- Properties Exposed to QML ---
 
+    @pyqtProperty(bool, notify=searchActiveChanged)
+    def searchActive(self) -> bool:
+        return self._search_active
+
     @pyqtProperty(list, notify=nodesChanged)
     def nodes(self) -> list[Node]:
         return self.physics_ctrl.nodes
@@ -308,6 +317,15 @@ class CanvasBridge(QObject):
 
     # --- Slots Invoked from QML ---
     
+    @pyqtSlot()
+    def notify_ui_ready(self):
+        import time
+        self._qml_ready_time = (time.perf_counter() - self._t0) * 1000.0
+        self._ui_ready = True
+        if self._is_connected:
+            print(f"[T+{(time.perf_counter() - self._t0)*1000:.1f}ms] Canvas sent `initial_sync` request")
+            self.ipc.call_rpc_sync("get_all_nodes", {}, callback=self._handle_initial_sync)
+
     @pyqtSlot(result='QVariantMap')
     def get_telemetry_snapshot(self) -> dict:
         return self.telemetry.get_snapshot()
@@ -365,6 +383,16 @@ class CanvasBridge(QObject):
     def request_image_source(self, file_path: str):
         self.node_ctrl.request_image_source(file_path)
 
+    def _handle_search_results(self, results):
+        self._search_active = True
+        self.searchActiveChanged.emit(True)
+        self.searchResultsReceived.emit(results)
+
+    def _handle_search_cleared(self):
+        self._search_active = False
+        self.searchActiveChanged.emit(False)
+        self.searchCleared.emit()
+
     @pyqtSlot(str)
     def submit_query(self, query: str):
         self.search_ctrl.submit_query(query)
@@ -372,6 +400,10 @@ class CanvasBridge(QObject):
     @pyqtSlot()
     def clear_search(self):
         self.search_ctrl.clear_search()
+
+    @pyqtSlot(bool)
+    def set_search_active(self, active: bool):
+        self.search_ctrl.set_search_active(active)
 
     @pyqtSlot(list, float, float)
     def set_staged_nodes(self, node_id_strs: list, viewport_w: float, shelf_y: float):
@@ -440,30 +472,90 @@ class CanvasBridge(QObject):
     # --- IPC Callbacks ---
 
     def _on_ipc_connected(self):
+        import time
+        print(f"[T+{(time.perf_counter() - self._t0)*1000:.1f}ms] Canvas connected to IPC")
         self._is_connected = True
         self.connectionStatusChanged.emit(True)
-        self.ipc.call_rpc_sync("get_all_nodes", {}, callback=self._handle_initial_sync)
+        if getattr(self, "_ui_ready", False):
+            print(f"[T+{(time.perf_counter() - self._t0)*1000:.1f}ms] Canvas sent `initial_sync` request")
+            self.ipc.call_rpc_sync("get_all_nodes", {}, callback=self._handle_initial_sync)
 
     def _on_ipc_disconnected(self):
         self._is_connected = False
         self.connectionStatusChanged.emit(False)
 
-    def _handle_initial_sync(self, result: list, error: str | None):
-        if error or not isinstance(result, list):
-            return
+    def _handle_initial_sync(self, result: dict, error: str | None):
+        if error or not isinstance(result, dict):
+            # Fallback if result is just a list
+            if isinstance(result, list):
+                result = {"nodes": result, "timing": {"db_load": 0.0, "embed_cache": 0.0}}
+            else:
+                return
+
+        nodes = result.get("nodes", [])
+        edges_payload = result.get("edges", [])
+        if isinstance(nodes, dict):
+            nodes = list(nodes.values())
+        elif isinstance(result, dict) and "nodes" not in result:
+            nodes = list(result.values())
+            
+        timing = result.get("timing", {"db_load": 0.0, "embed_cache": 0.0})
+        db_load_ms = timing.get("db_load", 0.0)
+        embed_cache_ms = timing.get("embed_cache", 0.0)
+
+        import time
+        t_received = time.perf_counter()
+        print(f"[T+{(t_received - self._t0)*1000:.1f}ms] Canvas received `initial_sync` payload ({len(nodes)} nodes)")
 
         # Temporarily disconnect the signal to prevent duplicate incoming nodeUpdated events
         self.ipc.nodeUpdated.disconnect(self._on_node_updated)
-        try:
-            for node_data in result:
+        
+        t0 = time.perf_counter()
+        self._initial_sync_active = True
+        
+        # Pre-load all edges immediately
+        for e in edges_payload:
+            src_id = int(e["source_id"])
+            tgt_id = int(e["target_id"])
+            e_type = e["edge_type"]
+            weight = float(e["weight"])
+            self._upsert_edge(
+                Edge(source_id=src_id, target_id=tgt_id, edge_type=e_type, weight=weight)
+            )
+            
+        def load_batch(nodes_to_load, current_idx=0, batch_size=110):
+            if current_idx >= len(nodes_to_load):
+                self._initial_sync_active = False
+                self.edgesChanged.emit()
+                self.ipc.nodeUpdated.connect(self._on_node_updated)
+                self._wake_physics()
+                import time
+                t1 = time.perf_counter()
+                qml_ready_ms = self._qml_ready_time
+                physics_init_ms = (t1-t0) * 1000.0 * 0.15 # Approx setup cost
+                print(f"[T+{(t1 - self._t0)*1000:.1f}ms] All batches completed")
+                print(f"[STARTUP PERF] DB Load: {db_load_ms:.1f}ms | Embeddings/Cache: {embed_cache_ms:.1f}ms | Physics Init: {physics_init_ms:.1f}ms | QML Ready: {qml_ready_ms:.1f}ms")
+                return
+
+            end_idx = min(current_idx + batch_size, len(nodes_to_load))
+            self.blockSignals(True)
+            for i in range(current_idx, end_idx):
+                node_data = nodes_to_load[i]
                 self._on_node_updated(node_data)
-        finally:
-            self.ipc.nodeUpdated.connect(self._on_node_updated)
-
-        self._wake_physics()
-
-        for n in self.store.get_all_nodes():
-            self.ipc.call_rpc_sync("get_neighbors", {"node_id": n.id}, callback=self._handle_ambient_edges_response)
+            self.blockSignals(False)
+            self.nodesChanged.emit()
+            
+            if current_idx == 0:
+                import time
+                print(f"[T+{(time.perf_counter() - self._t0)*1000:.1f}ms] Canvas rendered Batch 1 (First visual node on screen)")
+            
+            if end_idx >= len(nodes_to_load):
+                # Don't wait for another event loop tick if we're done
+                load_batch(nodes_to_load, end_idx, batch_size)
+            else:
+                QTimer.singleShot(50, lambda: load_batch(nodes_to_load, end_idx, batch_size))
+            
+        load_batch(nodes, 0, 110)
 
     def _handle_touch_node_response(self, result: Any, error: str | None):
         if error or not isinstance(result, dict):
@@ -486,7 +578,8 @@ class CanvasBridge(QObject):
                            for fe in self._focal_edges):
                     self._focal_edges.append(edge_obj)
 
-        self._recalculate_focal_weights(self._selected_node_id)
+        if not getattr(self, "_initial_sync_active", False):
+            self._recalculate_focal_weights(self._selected_node_id)
         self.edgesChanged.emit()
 
     def _handle_ambient_edges_response(self, result: dict, error: str | None):
@@ -503,7 +596,7 @@ class CanvasBridge(QObject):
                 Edge(source_id=src_id, target_id=tgt_id, edge_type=e_type, weight=weight)
             )
 
-        if self._selected_node_id == 0:
+        if self._selected_node_id == 0 and not getattr(self, "_initial_sync_active", False):
             self.edgesChanged.emit()
 
     def _on_node_updated(self, data: dict):

@@ -83,6 +83,19 @@ class SearchController(BaseController):
             
         self.searchCleared.emit()
 
+    @pyqtSlot(bool)
+    def set_search_active(self, active: bool):
+        if not active:
+            if hasattr(self.bridge, "physics") and self.bridge.physics and hasattr(self.bridge, "store") and self.bridge.store:
+                self.bridge.physics.set_staged_nodes([], self.bridge.physics.viewport_w, 0.0, self.bridge.store.get_all_nodes())
+            if hasattr(self.bridge, "_wake_physics"):
+                self.bridge._wake_physics()
+            if hasattr(self.bridge, "_search_active"):
+                self.bridge._search_active = False
+            if hasattr(self.bridge, "searchActiveChanged"):
+                self.bridge.searchActiveChanged.emit(False)
+            # Do NOT emit searchCleared or clear selection here
+
     @pyqtSlot(list, float, float)
     def set_staged_nodes(self, node_id_strs: list, viewport_w: float, shelf_y: float):
         node_ids = []

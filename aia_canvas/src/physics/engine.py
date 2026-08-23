@@ -101,14 +101,40 @@ class PhysicsEngine:
             return
             
         total = len(node_ids)
-        spacing = 300.0
-        total_width = (total - 1) * spacing
-        start_x = (viewport_w / 2.0) - (total_width / 2.0)
+        spacing_x = 266.0
+        # Matching QML properties
+        card_height = 170.0
+        row_gap = 40.0
+        spacing_y = card_height + row_gap
         
+        # Determine dynamic columns based on total search match count
+        if total <= 4:
+            cols = max(1, total)
+        elif total in (5, 6):
+            cols = 3
+        elif total in (7, 8):
+            cols = 4
+        else:  # total >= 9
+            cols = 5 if viewport_w >= 2560 else 4
+            
+        # We calculate rows to bloom UPWARD from shelf_y
         for i, nid in enumerate(node_ids):
             if nid not in self.staged_origins and nid in node_map:
                 self.staged_origins[nid] = (node_map[nid].x, node_map[nid].y)
-            self.staged_targets[nid] = (start_x + (i * spacing), shelf_y)
+                
+            row = i // cols
+            col = i % cols
+            
+            # Determine how many items are in this specific row to center it individually
+            row_items = min(total - row * cols, cols)
+            row_grid_width = (row_items - 1) * spacing_x
+            row_start_x = (viewport_w / 2.0) - (row_grid_width / 2.0)
+            
+            # Bloom UPWARD: subtract from shelf_y
+            tx = row_start_x + (col * spacing_x)
+            ty = shelf_y - (row * spacing_y)
+            
+            self.staged_targets[nid] = (tx, ty)
 
     def _recalculate_horizons(self):
         self.box_bound_x = (self.focal_card_w / 2.0) + 520.0
@@ -354,6 +380,9 @@ class PhysicsEngine:
                 if (n1_docked and n2_peripheral) or (n2_docked and n1_peripheral) or (n1.id == focused_node_id and n2_peripheral) or (n2.id == focused_node_id and n1_peripheral):
                     k_spring = 0.0
 
+            if n1.id in self.staged_targets or n2.id in self.staged_targets:
+                k_spring = 0.0
+
             spring_force = displacement * k_spring
 
             # Anti-Rubberband Clamp: Prevents springs from acting like steel cables across the void
@@ -578,7 +607,7 @@ class PhysicsEngine:
                 continue
 
             # NEW: Freeze hovered node under mouse in ambient mode
-            if not has_active_focus and node.id == hovered_node_id and node.id != self.pinned_node_id:
+            if node.id == hovered_node_id and node.id != self.pinned_node_id:
                 node.vx = 0.0
                 node.vy = 0.0
                 continue

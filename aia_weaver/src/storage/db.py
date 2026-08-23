@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS session_logs (
 
 -- Indexes for lightning-fast graph traversal
 CREATE INDEX IF NOT EXISTS idx_nodes_path ON nodes(file_path);
+CREATE INDEX IF NOT EXISTS idx_nodes_hash ON nodes(file_hash);
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id);
 """
@@ -129,6 +130,17 @@ class DatabaseManager:
         async with self._conn.cursor() as cursor:
             await cursor.execute(
                 "SELECT id, file_path, extension, size_bytes, archetype, snippet, updated_at FROM nodes ORDER BY id ASC;"
+            )
+            rows = await cursor.fetchall()
+            return [dict(r) for r in rows]
+
+    async def get_all_edges(self) -> list[dict]:
+        if not self._conn:
+            raise RuntimeError("Database not initialized.")
+
+        async with self._conn.cursor() as cursor:
+            await cursor.execute(
+                "SELECT source_id, target_id, edge_type, weight FROM edges;"
             )
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
@@ -226,6 +238,14 @@ class DatabaseManager:
                     created_count += 1
 
         return created_count
+
+    async def get_node_by_path(self, file_path: str) -> dict | None:
+        if not self._conn:
+            return None
+        async with self._conn.cursor() as cursor:
+            await cursor.execute("SELECT * FROM nodes WHERE file_path = ?", (file_path,))
+            row = await cursor.fetchone()
+            return dict(row) if row else None
 
     async def get_node_neighbors(self, node_id: int) -> dict:
         if not self._conn:

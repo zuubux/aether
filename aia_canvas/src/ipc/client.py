@@ -16,7 +16,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 
 logger = logging.getLogger("aia_canvas.ipc")
 
-MAX_PAYLOAD_BYTES = 64 * 1024
+MAX_PAYLOAD_BYTES = 10 * 1024 * 1024  # Increased to 10MB to accommodate graph initial sync payload
 
 
 class WeaverIPCClient(QObject):

@@ -60,6 +60,7 @@ class NodeController(BaseController):
                 self.bridge._focal_edges = []
             if hasattr(self.bridge, "edgesChanged"):
                 self.bridge.edgesChanged.emit()
+            self.set_hovered_node(0)
             return
 
         is_connected = getattr(self.bridge, "_is_connected", False)

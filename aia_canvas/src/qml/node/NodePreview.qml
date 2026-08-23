@@ -15,10 +15,13 @@ Item {
     property bool isSearchResult: false
     property bool isHovered: false
     property bool showPreviewSlate: false
+    property real contentOpacity: 1.0
 
     // Decoupled properties to resolve context cleanly without direct outer/global references
-    readonly property string filePath: parent && parent.parent && parent.parent.filePath !== undefined ? parent.parent.filePath : ""
-    readonly property var activeBridge: parent && parent.parent && parent.parent.activeBridge !== undefined ? parent.parent.activeBridge : null
+    property string filePath: ""
+    property var activeBridge: null
+    property string thumbnailUrl: ""
+    property string mimeType: ""
     
     property string previewSourceUrl: ""
     property bool isLoading: false
@@ -86,6 +89,16 @@ Item {
         return e === ".png" || e === ".jpg" || e === ".jpeg" || e === ".gif" || e === ".webp" || e === ".svg" || e === ".ico";
     }
 
+    // Format clean file:// URL for direct media access
+    readonly property string cleanSourceUrl: {
+        var src = previewRoot.previewSourceUrl || previewRoot.filePath;
+        if (!src || src === "") return "";
+        if (src.startsWith("file://") || src.startsWith("http://") || src.startsWith("https://") || src.startsWith("image://")) {
+            return src;
+        }
+        return "file://" + src;
+    }
+
     Item {
         id: hoverSnippetContainer
         anchors.fill: parent
@@ -94,6 +107,7 @@ Item {
 
         Column {
             id: contentCol
+            opacity: previewRoot.contentOpacity !== undefined ? previewRoot.contentOpacity : 1.0
             anchors {
                 top: parent.top
                 left: parent.left
@@ -153,7 +167,7 @@ Item {
                 text: previewRoot.snippetText.length > 0 ? (previewRoot.ext === ".md" || previewRoot.ext === ".markdown" || previewRoot.ext === ".txt" || previewRoot.ext === ".org" ? hoverSnippetContainer.formatMarkdownWithWikilinks(previewRoot.snippetText) : previewRoot.snippetText) : (previewRoot.fileName + " • (" + (previewRoot.archetype ? previewRoot.archetype : "document") + ")")
                 textFormat: previewRoot.snippetText.length > 0 && (previewRoot.ext === ".md" || previewRoot.ext === ".markdown" || previewRoot.ext === ".txt" || previewRoot.ext === ".org") ? Text.MarkdownText : Text.PlainText
                 font.pixelSize: 11
-                color: "#D0D7DE"
+                color: previewRoot.isPdfFile ? "#FFFFFF" : "#D0D7DE"
                 maximumLineCount: 8
                 elide: Text.ElideRight
                 visible: !previewRoot.isImageFile && !previewRoot.isPdfFile && !previewRoot.isTableFile
@@ -261,12 +275,20 @@ Item {
                     
                     readonly property bool isAnimatedFormat: previewRoot.ext === ".gif" || previewRoot.ext === ".webp"
 
+                    Rectangle {
+                        id: docBacking
+                        anchors.fill: parent
+                        visible: previewRoot.isPdfFile || previewRoot.ext === ".docx"
+                        color: "#FFFFFF"
+                        radius: 8
+                    }
+
                     AnimatedImage {
                         id: previewImg
                         anchors.fill: parent
                         playing: previewRoot.isHovered && parent.isAnimatedFormat
                         paused: !previewRoot.isHovered || !parent.isAnimatedFormat
-                        source: previewRoot.previewSourceUrl
+                        source: previewRoot.cleanSourceUrl
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         visible: parent.isAnimatedFormat && status !== Image.Error && source !== ""
@@ -275,10 +297,16 @@ Item {
                     Image {
                         id: staticImg
                         anchors.fill: parent
-                        source: previewRoot.previewSourceUrl
+                        source: previewRoot.cleanSourceUrl
                         fillMode: Image.PreserveAspectCrop
                         asynchronous: true
                         visible: !parent.isAnimatedFormat && status !== Image.Error && source !== ""
+                        
+                        onStatusChanged: {
+                            if (status === Image.Error) {
+                                console.log("[NodePreview] Image load error for:", source);
+                            }
+                        }
                     }
 
                     // Preview Error Fallback
