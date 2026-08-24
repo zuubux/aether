@@ -1,401 +1,176 @@
-import QtQuick
-import QtQuick.Controls
+import QtQuick 2.15
+import ".."
 
 Item {
     id: previewRoot
     anchors.fill: parent
-    z: 5
+    anchors.margins: 16
 
-    // Public Interface Contract
-    property string fileName: ""
-    property string snippetText: ""
-    property string archetype: ""
-    property color accentColor: "#00E5FF"
-    property real cardRadius: 8
-    property bool isSearchResult: false
-    property bool isHovered: false
-    property bool showPreviewSlate: false
-    property real contentOpacity: 1.0
+    property var nodeData: null
+    property string fileName: (nodeData && (nodeData.fileName || nodeData.title)) ? (nodeData.fileName || nodeData.title) : ""
+    property string filePath: (nodeData && (nodeData.filePath || nodeData.path)) ? (nodeData.filePath || nodeData.path) : ""
+    property string snippetText: (nodeData && nodeData.snippet) ? nodeData.snippet : ""
+    property string fileExt: (nodeData && nodeData.extension) ? nodeData.extension.toLowerCase() : ""
+    property string mimeType: (nodeData && nodeData.mimeType) ? nodeData.mimeType : ""
+    property string thumbnailUrl: (nodeData && nodeData.thumbnailUrl) ? nodeData.thumbnailUrl : ""
+    readonly property bool hasThumbnail: nodeData && nodeData.thumbnailUrl && nodeData.thumbnailUrl.length > 0
+    property bool isImage: fileExt === ".png" || fileExt === ".jpg" || fileExt === ".jpeg" || fileExt === ".webp" || fileExt === ".svg" || fileExt === ".ico" || mimeType.startsWith("image/") || mimeType === "image/x-icon" || mimeType === "image/vnd.microsoft.icon"
+    property bool isHeavyImage: fileExt === ".png" || fileExt === ".jpg" || fileExt === ".jpeg" || fileExt === ".webp"
+    property bool isIcon: fileExt === ".ico" || mimeType.includes("icon")
+    property bool isGif: fileExt === ".gif"
+    property bool isSvg: fileExt === ".svg"
+    property bool isTabular: fileExt === ".csv" || fileExt === ".tsv" || fileExt === ".json" || fileExt === ".py" || fileExt === ".sh" || fileExt === ".yml"
+    property bool isDocument: fileExt === ".md" || fileExt === ".txt" || fileExt === ".pdf" || fileExt === ".doc" || fileExt === ".docx"
+    property bool isPdf: fileExt === ".pdf"
+    property bool isCsv: fileExt === ".csv" || fileExt === ".tsv"
 
-    // Decoupled properties to resolve context cleanly without direct outer/global references
-    property string filePath: ""
-    property var activeBridge: null
-    property string thumbnailUrl: ""
-    property string mimeType: ""
-    
-    property string previewSourceUrl: ""
-    property bool isLoading: false
-
-    Connections {
-        target: previewRoot.activeBridge
-        function onImageReady(fPath, url) {
-            if (fPath === previewRoot.filePath) {
-                previewRoot.previewSourceUrl = url
-                previewRoot.isLoading = false
+    function getCsvRows(snippet) {
+        if (!snippet || snippet.indexOf(",") === -1) return [];
+        var lines = snippet.trim().split(/\r?\n/);
+        var table = [];
+        var maxRows = Math.min(lines.length, 9);
+        for (var r = 0; r < maxRows; r++) {
+            var line = lines[r].trim();
+            if (!line) continue;
+            var rawCols = line.split(",");
+            var row = [];
+            var maxCols = Math.min(rawCols.length, 4);
+            for (var c = 0; c < maxCols; c++) {
+                row.push(rawCols[c].trim().replace(/^["']|["']$/g, ''));
             }
+            table.push(row);
         }
-        function onPdfPageReady(fPath, pageIdx, imgPath) {
-            if (fPath === previewRoot.filePath && pageIdx === 0) {
-                previewRoot.previewSourceUrl = imgPath
-                previewRoot.isLoading = false
-            }
-        }
-        function onMediaError(fPath, errorMsg) {
-            if (fPath === previewRoot.filePath) {
-                previewRoot.isLoading = false
-                console.error("Preview media error:", errorMsg)
-            }
-        }
+        return table;
     }
 
-    function requestPreview() {
-        if (!previewRoot.activeBridge || !previewRoot.filePath) return;
-        if (previewRoot.isImageFile) {
-            previewRoot.isLoading = true
-            previewRoot.activeBridge.request_image_source(previewRoot.filePath)
-        } else if (previewRoot.isPdfFile) {
-            previewRoot.isLoading = true
-            previewRoot.activeBridge.request_pdf_page(previewRoot.filePath, 0, 400)
+    property string cleanSnippetText: {
+        var txt = previewRoot.snippetText;
+        if (!txt) return previewRoot.filePath;
+        if (isPdf && (txt.startsWith("%PDF") || txt.indexOf("\\x") !== -1)) {
+            var size = (nodeData && nodeData.size) ? nodeData.size + " bytes" : "Unknown size";
+            return "PDF Document\nSize: " + size;
         }
-    }
-
-    onShowPreviewSlateChanged: {
-        if (previewRoot.showPreviewSlate) {
-            requestPreview()
-        }
-    }
-
-    onFilePathChanged: {
-        if (previewRoot.showPreviewSlate) {
-            previewRoot.previewSourceUrl = ""
-            requestPreview()
-        }
-    }
-
-    Component.onCompleted: {
-        if (previewRoot.showPreviewSlate) {
-            requestPreview()
-        }
-    }
-
-    readonly property string ext: {
-        var dotIdx = fileName.lastIndexOf(".");
-        return dotIdx !== -1 ? fileName.substring(dotIdx).toLowerCase() : ".txt";
-    }
-    readonly property bool isPdfFile: ext === ".pdf"
-    readonly property bool isTableFile: ext === ".csv" || ext === ".tsv"
-    readonly property bool isImageFile: {
-        var e = ext;
-        return e === ".png" || e === ".jpg" || e === ".jpeg" || e === ".gif" || e === ".webp" || e === ".svg" || e === ".ico";
-    }
-
-    // Format clean file:// URL for direct media access
-    readonly property string cleanSourceUrl: {
-        var src = previewRoot.previewSourceUrl || previewRoot.filePath;
-        if (!src || src === "") return "";
-        if (src.startsWith("file://") || src.startsWith("http://") || src.startsWith("https://") || src.startsWith("image://")) {
-            return src;
-        }
-        return "file://" + src;
+        return txt;
     }
 
     Item {
-        id: hoverSnippetContainer
-        anchors.fill: parent
-        visible: previewRoot.showPreviewSlate
-        opacity: previewRoot.showPreviewSlate ? 1.0 : 0.0
-
-        Column {
-            id: contentCol
-            opacity: previewRoot.contentOpacity !== undefined ? previewRoot.contentOpacity : 1.0
-            anchors {
-                top: parent.top
-                left: parent.left
-                right: parent.right
-                bottom: parent.bottom
-                margins: 12
-            }
-            spacing: 6
-            clip: true
-
-            // Header row
-            Row {
-                width: parent.width
-                spacing: 8
-                anchors.left: parent.left
-                
-                Rectangle {
-                    width: 20
-                    height: 20
-                    radius: 4
-                    color: "transparent"
-                    border.color: previewRoot.accentColor
-                    border.width: 1
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: previewRoot.ext.replace(".", "").toUpperCase().slice(0, 3) || "TXT"
-                        color: previewRoot.accentColor
-                        font.family: "Monospace"
-                        font.pixelSize: 8
-                        font.bold: true
-                    }
-                }
-
-                Text {
-                    text: previewRoot.fileName
-                    font.bold: true
-                    font.pixelSize: 13
-                    color: "#FFFFFF"
-                    elide: Text.ElideRight
-                    width: parent.width - 28
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-
+        id: header
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: 20
+        
+        Row {
+            anchors.fill: parent
+            spacing: 8
+            
             Rectangle {
-                width: parent.width
-                height: 1
-                color: "#1f242d"
-            }
-
-            // Body text
-            Text {
-                width: parent.width
-                wrapMode: Text.Wrap
-                text: previewRoot.snippetText.length > 0 ? (previewRoot.ext === ".md" || previewRoot.ext === ".markdown" || previewRoot.ext === ".txt" || previewRoot.ext === ".org" ? hoverSnippetContainer.formatMarkdownWithWikilinks(previewRoot.snippetText) : previewRoot.snippetText) : (previewRoot.fileName + " • (" + (previewRoot.archetype ? previewRoot.archetype : "document") + ")")
-                textFormat: previewRoot.snippetText.length > 0 && (previewRoot.ext === ".md" || previewRoot.ext === ".markdown" || previewRoot.ext === ".txt" || previewRoot.ext === ".org") ? Text.MarkdownText : Text.PlainText
-                font.pixelSize: 11
-                color: previewRoot.isPdfFile ? "#FFFFFF" : "#D0D7DE"
-                maximumLineCount: 8
-                elide: Text.ElideRight
-                visible: !previewRoot.isImageFile && !previewRoot.isPdfFile && !previewRoot.isTableFile
-            }
-
-            // Table Hover Preview (Tier 1.5 hover)
-            Loader {
-                id: tableHoverLoader
-                width: parent.width
-                height: parent.height - 30
-                active: previewRoot.showPreviewSlate && previewRoot.isTableFile
-                visible: active
-                sourceComponent: Rectangle {
-                    anchors.fill: parent
-                    color: "#0a0c10"
-                    radius: 8
-                    clip: true
-                    border.color: "#30363d"
-                    border.width: 1
-
-                    // Cache the table preview object via property
-                    property var previewData: (previewRoot.activeBridge && previewRoot.filePath) ? previewRoot.activeBridge.get_csv_preview(previewRoot.filePath, 5) : {"headers":[], "rows":[], "total_rows":0, "total_cols":0}
-
-                    ScrollView {
-                        anchors.fill: parent
-                        clip: true
-                        ScrollBar.horizontal.policy: ScrollBar.AsNeeded
-                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
-
-                        Column {
-                            spacing: 0
-                            width: Math.max(parent.width, 400)
-
-                            // Headers
-                            Row {
-                                spacing: 0
-                                height: 24
-                                Repeater {
-                                    model: previewData.headers
-                                    delegate: Rectangle {
-                                        width: 80
-                                        height: 24
-                                        color: "#161b22"
-                                        border.color: "#21262d"
-                                        border.width: 1
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: modelData
-                                            color: "#E0E6ED"
-                                            font.family: "JetBrains Mono, monospace"
-                                            font.pixelSize: 9
-                                            font.bold: true
-                                            elide: Text.ElideRight
-                                            width: 70
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Rows
-                            Repeater {
-                                model: previewData.rows
-                                delegate: Row {
-                                    spacing: 0
-                                    height: 20
-                                    Repeater {
-                                        model: modelData
-                                        delegate: Rectangle {
-                                            width: 80
-                                            height: 20
-                                            color: "#0d1117"
-                                            border.color: "#21262d"
-                                            border.width: 1
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: modelData
-                                                color: "#E0E6ED"
-                                                font.family: "JetBrains Mono, monospace"
-                                                font.pixelSize: 8
-                                                elide: Text.ElideRight
-                                                width: 70
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                width: 14
+                height: 14
+                radius: 3
+                color: Theme.surfaceBorder
+                anchors.verticalCenter: parent.verticalCenter
+                Text {
+                    anchors.centerIn: parent
+                    text: previewRoot.fileExt ? previewRoot.fileExt.replace(".", "").substring(0, 3).toUpperCase() : "DOC"
+                    color: "#94A3B8"
+                    font.pixelSize: 7
+                    font.bold: true
                 }
             }
+            
+            Text {
+                text: previewRoot.fileName || "Untitled"
+                color: "#F1F5F9"
+                font.pixelSize: 11
+                font.weight: Font.Medium
+                anchors.verticalCenter: parent.verticalCenter
+                elide: Text.ElideRight
+                width: parent.width - 22
+            }
+        }
+    }
+    
+    Item {
+        id: bodyContent
+        anchors.top: header.bottom
+        anchors.bottom: footer.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.topMargin: 4
+        anchors.bottomMargin: 4
+        clip: true
+        
+        Image {
+            id: previewImg
+            property bool isThumbnailValid: previewRoot.hasThumbnail && status !== Image.Error
+            visible: (previewRoot.isHeavyImage && isThumbnailValid) || (previewRoot.isImage && !previewRoot.isHeavyImage && !previewRoot.isGif) || (previewRoot.isPdf && isThumbnailValid)
+            anchors.centerIn: parent
+            width: previewRoot.isIcon ? Math.min(implicitWidth, 64) : parent.width
+            height: previewRoot.isIcon ? Math.min(implicitHeight, 64) : parent.height
+            source: previewRoot.hasThumbnail ? (previewRoot.thumbnailUrl.startsWith("file://") ? previewRoot.thumbnailUrl : "file://" + previewRoot.thumbnailUrl) : ""
+            fillMode: previewRoot.isPdf ? Image.PreserveAspectCrop : (previewRoot.isIcon ? Image.Pad : Image.PreserveAspectFit)
+            smooth: !previewRoot.isIcon
+            verticalAlignment: previewRoot.isPdf ? Image.AlignTop : Image.AlignVCenter
+            horizontalAlignment: Image.AlignHCenter
+            asynchronous: true
+            sourceSize.width: previewRoot.isSvg ? 300 : 0
+        }
+        
+        AnimatedImage {
+            visible: previewRoot.isGif
+            anchors.centerIn: parent
+            width: parent.width
+            height: parent.height
+            source: previewRoot.isGif ? "file://" + previewRoot.filePath : ""
+            fillMode: Image.PreserveAspectFit
+            verticalAlignment: Image.AlignVCenter
+            horizontalAlignment: Image.AlignHCenter
+            asynchronous: true
+        }
+        
+        Column {
+            id: csvTable
+            anchors.centerIn: parent
+            width: parent.width - 12
+            spacing: 2
+            visible: previewRoot.isCsv && csvRows.length > 1
 
-            Loader {
-                id: imageHoverLoader
-                width: parent.width
-                height: parent.height - 30
-                active: previewRoot.showPreviewSlate && (previewRoot.isImageFile || previewRoot.isPdfFile)
-                visible: active
-                sourceComponent: Rectangle {
-                    anchors.fill: parent
-                    color: "#0a0c10"
-                    radius: 8
-                    clip: true
-                    border.color: "#30363d"
-                    border.width: 1
-                    
-                    readonly property bool isAnimatedFormat: previewRoot.ext === ".gif" || previewRoot.ext === ".webp"
+            readonly property var csvRows: previewRoot.getCsvRows(previewRoot.snippetText)
 
-                    Rectangle {
-                        id: docBacking
+            Repeater {
+                model: csvTable.csvRows
+                delegate: Rectangle {
+                    id: rowRect
+                    readonly property int rowIndex: index
+                    readonly property var cellData: modelData
+                    width: csvTable.width
+                    height: rowIndex === 0 ? 18 : 16
+                    radius: 3
+                    color: rowIndex === 0 ? Theme.surfaceBorder : (rowIndex % 2 === 1 ? Theme.surfaceBackground : "transparent")
+
+                    Row {
                         anchors.fill: parent
-                        visible: previewRoot.isPdfFile || previewRoot.ext === ".docx"
-                        color: "#FFFFFF"
-                        radius: 8
-                    }
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 6
 
-                    AnimatedImage {
-                        id: previewImg
-                        anchors.fill: parent
-                        playing: previewRoot.isHovered && parent.isAnimatedFormat
-                        paused: !previewRoot.isHovered || !parent.isAnimatedFormat
-                        source: previewRoot.cleanSourceUrl
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                        visible: parent.isAnimatedFormat && status !== Image.Error && source !== ""
-                    }
-
-                    Image {
-                        id: staticImg
-                        anchors.fill: parent
-                        source: previewRoot.cleanSourceUrl
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                        visible: !parent.isAnimatedFormat && status !== Image.Error && source !== ""
-                        
-                        onStatusChanged: {
-                            if (status === Image.Error) {
-                                console.log("[NodePreview] Image load error for:", source);
-                            }
-                        }
-                    }
-
-                    // Preview Error Fallback
-                    Rectangle {
-                        visible: parent.isAnimatedFormat ? (previewImg.status === Image.Error) : (staticImg.status === Image.Error)
-                        anchors.fill: parent
-                        color: "#0d1117"
-
-                        Column {
-                            anchors.centerIn: parent
-                            spacing: 8
-                            width: parent.width - 16
-
-                            Row {
-                                spacing: 8
-                                anchors.horizontalCenter: parent.horizontalCenter
-
-                                Rectangle {
-                                    width: 24
-                                    height: 24
-                                    radius: 4
-                                    color: "#161b22"
-                                    border.color: previewRoot.accentColor
-                                    border.width: 1
-                                    anchors.verticalCenter: parent.verticalCenter
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        text: previewRoot.ext.replace(".", "").toUpperCase().slice(0, 3)
-                                        color: previewRoot.accentColor
-                                        font.family: "Monospace"
-                                        font.pixelSize: 8
-                                        font.bold: true
-                                    }
-                                }
-
-                                Column {
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: 1
-
-                                    Text {
-                                        text: previewRoot.fileName
-                                        color: "#E0E6ED"
-                                        font.family: "Monospace"
-                                        font.pixelSize: 10
-                                        font.bold: true
-                                        elide: Text.ElideRight
-                                        width: 120
-                                    }
-
-                                    Text {
-                                        text: "Decoder not available"
-                                        color: "#f87171"
-                                        font.family: "Monospace"
-                                        font.pixelSize: 8
-                                    }
-                                }
-                            }
-
-                            Rectangle {
-                                id: miniOpenBtn
-                                width: 120
-                                height: 20
-                                radius: 4
-                                color: "#161b22"
-                                border.color: "#30363d"
-                                border.width: 1
-                                anchors.horizontalCenter: parent.horizontalCenter
+                        Repeater {
+                            model: rowRect.cellData
+                            delegate: Item {
+                                width: (rowRect.width - 12) / Math.max(1, rowRect.cellData.length)
+                                height: parent.height
+                                clip: true
 
                                 Text {
-                                    anchors.centerIn: parent
-                                    text: "Open in External App"
-                                    color: "#E0E6ED"
-                                    font.family: "Monospace"
-                                    font.pixelSize: 8
-                                    font.bold: true
-                                }
-
-                                MouseArea {
                                     anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    hoverEnabled: true
-                                    onEntered: miniOpenBtn.color = "#21262d"
-                                    onExited: miniOpenBtn.color = "#161b22"
-                                    onClicked: {
-                                        if (previewRoot.activeBridge && previewRoot.filePath) {
-                                            previewRoot.activeBridge.open_in_external_editor(previewRoot.filePath)
-                                        }
-                                    }
+                                    anchors.rightMargin: 8
+                                    verticalAlignment: Text.AlignVCenter
+                                    text: modelData
+                                    font.family: "Monospace"
+                                    font.pixelSize: 9
+                                    font.weight: rowRect.rowIndex === 0 ? Font.Medium : Font.Normal
+                                    color: rowRect.rowIndex === 0 ? "#94A3B8" : "#E2E8F0"
+                                    elide: Text.ElideRight
                                 }
                             }
                         }
@@ -404,15 +179,41 @@ Item {
             }
         }
 
-        function formatMarkdownWithWikilinks(text) {
-            if (!text) return "";
-            var formatted = text.replace(/\[\[(.*?)\]\]/g, function(match, p1) {
-                var parts = p1.split('|');
-                var target = parts[0];
-                var display = parts.length > 1 ? parts[1] : target;
-                return `<a href="obsidian://open?file=${encodeURIComponent(target)}" style="color: #60a5fa; text-decoration: none;">${display}</a>`;
-            });
-            return formatted;
+        Text {
+            visible: previewRoot.isTabular && (!previewRoot.isCsv || !csvTable.visible)
+            anchors.fill: parent
+            text: previewRoot.cleanSnippetText
+            color: "#94A3B8"
+            font.family: "Monospace"
+            font.pixelSize: 10
+            lineHeight: 1.3
+            wrapMode: Text.NoWrap
+            elide: Text.ElideRight
         }
+
+        Text {
+            visible: !previewRoot.isGif && !previewRoot.isTabular && previewImg.status !== Image.Ready
+            anchors.fill: parent
+            text: previewRoot.cleanSnippetText
+            color: "#94A3B8"
+            font.pixelSize: 11
+            lineHeight: 1.3
+            wrapMode: Text.Wrap
+            elide: Text.ElideRight
+            textFormat: previewRoot.fileExt === ".md" ? Text.MarkdownText : Text.AutoText
+        }
+    }
+    
+    Text {
+        id: footer
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: 12
+        text: previewRoot.filePath
+        color: Theme.surfaceBorder
+        font.pixelSize: 8
+        elide: Text.ElideMiddle
+        verticalAlignment: Text.AlignBottom
     }
 }

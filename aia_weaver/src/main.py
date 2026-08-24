@@ -9,9 +9,13 @@ from pathlib import Path
 
 from indexer.embedder import LocalEmbedder
 from indexer.parser import extract_archetype_and_snippet, extract_explicit_links
+from indexer.thumbnail import ThumbnailManager
 from ipc.server import IPCServer
 from storage.db import DatabaseManager
 from watcher.fs_events import FileWatcher
+
+import subprocess
+import shutil
 
 
 def setup_logging(debug=False):
@@ -52,6 +56,7 @@ class WeaverDaemon:
         self.event_queue: asyncio.Queue = asyncio.Queue()
         self.db = DatabaseManager(self.db_path)
         self.embedder = LocalEmbedder()
+        self.thumbnail_manager = ThumbnailManager(Path.home() / ".cache" / "aether" / "thumbnails")
         self.watcher = FileWatcher(
             target_dirs=self.target_directories,
             event_queue=self.event_queue,
@@ -83,6 +88,7 @@ class WeaverDaemon:
             all_nodes_handler=wrapped_get_all_nodes,
             touch_handler=self.handle_touch_node,
             save_node_handler=self.handle_save_node,
+            create_edge_handler=self.handle_create_edge,
             allowed_directories=[Path(d) for d in self.target_directories],
             socket_path=socket_path,
         )
@@ -95,7 +101,44 @@ class WeaverDaemon:
 
     async def handle_get_neighbors(self, node_id: int) -> dict:
         logger.info(f"IPC Neighbors Request received for Node #{node_id}")
-        return await self.db.get_node_neighbors(node_id)
+        semantic_neighbors = await self.db.get_node_neighbors(node_id)
+        all_edges = await self.db.get_edges_for_node(node_id)
+        
+        persisted_edges = [e for e in all_edges if e.get("edge_type") != "temporal"]
+        
+        # Collect temporal edges involving the requested node
+        temporal_edges = [
+            {"source_id": t["source_id"], "target_id": t["target_id"], "edge_type": "temporal", "weight": t.get("weight", 0.5)}
+            for t in all_edges if t.get("edge_type") == "temporal"
+        ]
+        
+        return {
+            "neighbors": semantic_neighbors.get("edges", []) if isinstance(semantic_neighbors, dict) else [],
+            "persisted_edges": persisted_edges,
+            "temporal_edges": temporal_edges
+        }
+
+    async def handle_create_edge(self, source_id: int, target_id: int, edge_type: str) -> dict:
+        logger.info(f"IPC Create Edge Request: {source_id} -> {target_id} ({edge_type})")
+        try:
+            weight = 1.0
+            await self.db.upsert_edge(
+                source_id=source_id,
+                target_id=target_id,
+                edge_type=edge_type,
+                weight=weight,
+            )
+            
+            # Update Weaver's in-memory graph cache (undirected)
+            if hasattr(self, "graph") and self.graph is not None:
+                self.graph.add_edge(source_id, target_id, edge_type=edge_type, weight=weight)
+                self.graph.add_edge(target_id, source_id, edge_type=edge_type, weight=weight)
+                
+            print(f"[Weaver DB] Successfully committed edge {source_id} <-> {target_id} ({edge_type}) to disk")
+            return {"status": "success"}
+        except Exception as e:
+            logger.error(f"Create edge failed: {e}")
+            return {"status": "error", "message": str(e)}
 
     async def handle_save_node(self, node_id: int, content: str) -> dict:
         logger.info(f"IPC Save Request: Node #{node_id}")
@@ -135,6 +178,8 @@ class WeaverDaemon:
             reinforcement_boost=0.20,
         )
         
+        persisted_edges = await self.db.get_edges_for_node(node_id)
+        
         recent_node_ids = await self.db.get_recent_node_ids(
             window_minutes=self.temporal_window_minutes,
             min_weight=0.10,
@@ -148,6 +193,7 @@ class WeaverDaemon:
                 "node_id": node_id,
                 "reason": "temporal_link",
                 "temporal_edges": temporal_edges,
+                "persisted_edges": persisted_edges,
                 "recent_node_ids": recent_node_ids,
             }
         )
@@ -157,6 +203,7 @@ class WeaverDaemon:
             "event_type": event_type,
             "temporal_edges_created": len(temporal_edges),
             "temporal_edges": temporal_edges,
+            "persisted_edges": persisted_edges,
             "recent_node_ids": recent_node_ids,
         }
 
@@ -211,6 +258,9 @@ class WeaverDaemon:
 
         # Perform background tasks async
         async def background_init():
+            # Enforce Cache Limits
+            await asyncio.to_thread(self.thumbnail_manager.enforce_cache_limits)
+
             # Cold Start Ghost Node Reconciliation
             try:
                 all_nodes = await self.db.get_all_nodes()
@@ -282,9 +332,34 @@ class WeaverDaemon:
                             archetype=archetype,
                             snippet=snippet,
                             embedding=embedding,
+                            thumbnail_url="",
                         )
                         t2 = time.perf_counter()
                         logger.info(f"Indexed Node #{source_id} [{action.upper()}] -> {path.name} (Embed: {(t1-t0)*1000:.1f}ms, DB: {(t2-t1)*1000:.1f}ms)")
+
+                        ext = path.suffix.lower()
+                        if ext in ('.pdf', '.png', '.jpg', '.jpeg', '.webp'):
+                            async def background_thumb(p, h, sid):
+                                try:
+                                    url = await asyncio.get_running_loop().run_in_executor(
+                                        self.thumbnail_manager.executor,
+                                        self.thumbnail_manager.generate_thumbnail,
+                                        p, h
+                                    )
+                                    if url and self.db._conn and os.path.exists(url) and os.path.getsize(url) > 0:
+                                        async with self.db._conn.cursor() as cursor:
+                                            await cursor.execute(
+                                                "UPDATE nodes SET thumbnail_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                                (url, sid)
+                                            )
+                                        await self.db._conn.commit()
+                                        await self.ipc.broadcast_event(
+                                            "node_updated", {"node_id": sid, "file_path": str(p)}
+                                        )
+                                except Exception as e:
+                                    logger.error(f"Error in background thumbnail generation for Node #{sid}: {e}")
+
+                            asyncio.create_task(background_thumb(path, file_hash, source_id))
 
                     # --- SEMANTIC ENGINE ---
                     if self.enable_semantic_edges and embedding is not None:
@@ -328,12 +403,13 @@ class WeaverDaemon:
                                     archetype="document",
                                     snippet="",
                                     embedding=None,
+                                    thumbnail_url="",
                                 )
 
                                 await self.db.upsert_edge(
                                     source_id=source_id,
                                     target_id=target_id,
-                                    edge_type="explicit",
+                                    edge_type="wikilink",
                                     weight=1.0,
                                 )
                                 logger.info(

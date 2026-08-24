@@ -98,17 +98,27 @@ A completely generic log file. Open this file, then quickly edit another file to
     "orphan_coffee_routine.md": "# Morning Coffee Prep\nStrictly plain black coffee. Manual kettle pour-over setup, prepared exactly one cup at a time.",
     "orphan_lawn_care.md": "# Lawn Overseeding Schedule\nPlanning to wait until late August or early September to overseed the lawn with a drought-tolerant Tall Fescue blend.",
     "orphan_grooming.md": "# Safety Razor Maintenance\nChanging out the double-edge blades in the Henson AL13. Much better than the multi-blade cartridge systems.",
+    
+    # =========================================================================
+    # MULTI-FORMAT ASSETS
+    # =========================================================================
+    "job_applications_pipeline.csv": "Application_ID,Company,Role,Date_Applied,Status,Target_Base,Location,Stage,Last_Contact,Notes\n" + "\n".join([f"APP-{1000+i},Company_{i},Role_{i},2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit" for i in range(100)]),
+    "financial_q3_report.csv": """Department,Q1,Q2,Q3,Projected Q4
+Engineering,500000,520000,550000,580000
+Marketing,200000,210000,205000,220000
+Sales,300000,315000,330000,350000
+HR,150000,155000,160000,165000
+Support,250000,260000,270000,280000
+""",
+    "sample_image.svg": """<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="50" cy="50" r="40" stroke="green" stroke-width="4" fill="yellow" />
+</svg>"""
 }
 
 
 def seed_sandbox(target_dir: Path) -> None:
-    """Wipes and seeds the target sandbox directory."""
+    """Seeds the target sandbox directory without deleting existing files."""
     
-    # Clean slate
-    if target_dir.exists():
-        print(f"🧹 Wiping existing sandbox at: {target_dir.resolve()}")
-        shutil.rmtree(target_dir)
-        
     target_dir.mkdir(parents=True, exist_ok=True)
     print(f"🌱 Seeding fresh sandbox at: {target_dir.resolve()}")
 
@@ -117,6 +127,18 @@ def seed_sandbox(target_dir: Path) -> None:
         file_path = target_dir / filename
         file_path.write_text(content.strip() + "\n", encoding="utf-8")
         created_count += 1
+
+    # Generate dummy binary files for images and pdfs so Weaver indexer sees them
+    dummy_pdf_content = b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n%%EOF"
+    dummy_png_content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    
+    (target_dir / "annual_report.pdf").write_bytes(dummy_pdf_content)
+    (target_dir / "tax_return.pdf").write_bytes(dummy_pdf_content)
+    (target_dir / "logo.png").write_bytes(dummy_png_content)
+    (target_dir / "avatar.jpg").write_bytes(dummy_png_content)
+    (target_dir / "favicon.ico").write_bytes(dummy_png_content)
+    (target_dir / "animation.gif").write_bytes(dummy_png_content)
+    created_count += 6
         
     print(f"✅ Successfully generated {created_count} stress-test files across 4 clusters and mixed edge cases.")
 
