@@ -140,6 +140,18 @@ Item {
             value: root.nodeData
             when: nodePreviewLoader.status === Loader.Ready
         }
+        Binding {
+            target: nodePreviewLoader.item
+            property: "path"
+            value: root.filePath
+            when: nodePreviewLoader.status === Loader.Ready && root.filePath !== ""
+        }
+        Binding {
+            target: nodePreviewLoader.item
+            property: "archetype"
+            value: root.nodeData ? root.nodeData.archetype : "document"
+            when: nodePreviewLoader.status === Loader.Ready
+        }
     }
 
     // =====================================================================

@@ -52,8 +52,8 @@ QtObject {
     readonly property real tier2Height: 68
     readonly property real tier2Radius: 8
 
-    readonly property real tier1_5Width: 380
-    readonly property real tier1_5Height: 280
+    readonly property real tier1_5Width: 440
+    readonly property real tier1_5Height: 320
     readonly property real tier1_5Radius: 12
 
     // Timers
@@ -77,19 +77,19 @@ QtObject {
     readonly property color badgeDefault: "#94A3B8"  // Slate
 
     function getBadgeColor(ext, archetype) {
-        var e = (ext || "").toLowerCase().replace(".", "");
+        var e = (ext || "").toLowerCase().replace(/^\./, "").trim();
         if (e === "pdf") return badgePdf;
         if (e === "md" || e === "txt" || e === "markdown") return badgeDoc;
         if (e === "png" || e === "jpg" || e === "jpeg" || e === "webp" || e === "gif" || e === "svg" || e === "ico") return badgeMedia;
         if (e === "csv" || e === "tsv" || e === "json") return badgeTable;
         if (e === "py" || e === "sh" || e === "js" || e === "ts" || e === "cpp" || e === "qml") return badgeCode;
-        if (e === "zip" || e === "tar" || e === "gz" || e === "rar" || e === "7z") return badgeArchive;
+        if (e === "zip" || e === "tar" || e === "gz" || e === "tgz" || e === "bz2" || e === "xz" || e === "whl" || e === "jar" || e === "epub" || e === "rar" || e === "7z" || e.indexOf("tar.") !== -1) return badgeArchive;
         
         // Fallback checks using archetype
         var arch = (archetype || "").toLowerCase();
         if (arch === "pdf") return badgePdf;
         if (arch === "document" || arch === "text") return badgeDoc;
-        if (arch === "image" || arch === "video" || arch === "media") return badgeMedia;
+        if (arch === "image" || arch === "video" || arch === "media" || arch === "asset") return badgeMedia;
         if (arch === "table" || arch === "dataset") return badgeTable;
         if (arch === "code") return badgeCode;
         if (arch === "archive") return badgeArchive;
@@ -98,12 +98,17 @@ QtObject {
     }
 
     function normalizeExt(ext) {
-        var e = (ext || "").toLowerCase().replace(".", "").trim();
+        var e = (ext || "").toLowerCase().replace(/^\./, "").trim();
         if (e === "jpeg") return "JPG";
         if (e === "markdown") return "MD";
         if (e === "python") return "PY";
         if (e === "javascript") return "JS";
         if (e === "typescript") return "TS";
+        if (e === "tar" || e === "tar.gz" || e === "tgz" || e === "tar.bz2" || e === "tar.xz" || e === "gz" || e === "bz2" || e === "xz") return "TAR";
+        if (e === "zip" || e === "archive") return "ZIP";
+        if (e === "whl") return "WHL";
+        if (e === "jar") return "JAR";
+        if (e === "epub") return "EPUB";
         return e.substring(0, 3).toUpperCase();
     }
 }

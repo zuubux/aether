@@ -499,6 +499,14 @@ class CanvasBridge(QObject):
             return self.store.get_node(node_id)
         return None
 
+    @pyqtSlot(int, result="QVariantMap")
+    def get_node_data(self, node_id: int) -> dict:
+        if hasattr(self, "store") and self.store:
+            node = self.store.get_node(node_id)
+            if node:
+                return node.to_dict()
+        return {}
+
     @pyqtSlot(int)
     def set_hovered_node(self, node_id: int):
         self._hovered_node_id = node_id
@@ -733,7 +741,7 @@ class CanvasBridge(QObject):
         archetype = data.get("archetype", "document")
         snippet = data.get("snippet", "")
         size_bytes = data.get("size_bytes", 0)
-        thumbnail_url = data.get("thumbnail_url", "")
+        thumbnail_url = data.get("thumbnail_url", "") or data.get("thumbnail", "") or data.get("preview_path", "")
 
         node = self.store.get_node(node_id)
         if not node:

@@ -12,7 +12,7 @@ Item {
     
     // Extensible dimensions for overrides
     property real targetWidth: {
-        if (isSelected) return 380;
+        if (isSelected) return Theme.tier1_5Width;
         if (tierState === "TIER_4") return Theme.tier4Width;
         if (tierState === "TIER_3") return Theme.tier3Width;
         if (tierState === "TIER_2") return Theme.tier2Width;
@@ -21,7 +21,7 @@ Item {
     }
     
     property real targetHeight: {
-        if (isSelected) return 280;
+        if (isSelected) return Theme.tier1_5Height;
         if (tierState === "TIER_4") return Theme.tier4Height;
         if (tierState === "TIER_3") return Theme.tier3Height;
         if (tierState === "TIER_2") return Theme.tier2Height;

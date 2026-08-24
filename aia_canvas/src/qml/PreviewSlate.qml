@@ -26,8 +26,9 @@ FocusScope {
 
     property bool isBinaryFile: {
         var ext = filePath ? filePath.split('.').pop().toLowerCase() : "";
-        var binaryExts = ["sqlite", "db", "bin", "iso", "exe", "dll", "so", "dylib", "zip", "tar", "gz", "rar", "7z", "pdf", "docx", "xlsx", "pptx", "mp4", "mp3", "wav", "avi", "ico", "bmp", "svg", "webp", "png", "jpg", "jpeg", "gif"];
-        return archetype === "binary" || archetype === "archive" || archetype === "system" || binaryExts.indexOf(ext) !== -1;
+        var binaryExts = ["sqlite", "db", "bin", "iso", "exe", "dll", "so", "dylib", "zip", "tar", "gz", "tgz", "bz2", "xz", "whl", "jar", "epub", "rar", "7z", "pdf", "docx", "xlsx", "pptx", "mp4", "mp3", "wav", "avi", "ico", "bmp", "svg", "webp", "png", "jpg", "jpeg", "gif"];
+        var arch = (archetype || "").toLowerCase();
+        return arch === "binary" || arch === "archive" || arch === "system" || binaryExts.indexOf(ext) !== -1;
     }
 
     property bool supportsRichView: {

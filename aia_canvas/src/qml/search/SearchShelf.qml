@@ -30,6 +30,10 @@ Item {
                 var n = canvasBridge.get_node(nodeId);
                 if (n) return n;
             }
+            if (typeof canvasBridge.get_node_data === "function") {
+                var d = canvasBridge.get_node_data(nodeId);
+                if (d && (d.id || d.filePath || d.path)) return d;
+            }
             if (canvasBridge.nodes) {
                 for (var i = 0; i < canvasBridge.nodes.length; i++) {
                     if (canvasBridge.nodes[i].id === nodeId) {
@@ -123,7 +127,7 @@ Item {
         spacing: 32
 
         // =====================================================================
-        // Top Section: Active Item Tier 1.5 Preview Card (380x280px)
+        // Top Section: Active Item Tier 1.5 Preview Card (440x320px)
         // =====================================================================
         Rectangle {
             id: previewCard
@@ -137,9 +141,15 @@ Item {
             clip: true
 
             NodePreview {
+                id: activePreviewItem
+                objectName: "activePreviewItem"
                 anchors.fill: parent
                 anchors.margins: 24
                 nodeData: searchShelfRoot.activeNodeData
+                archetype: searchShelfRoot.activeNodeData ? (searchShelfRoot.activeNodeData.archetype || "document") : "document"
+                path: searchShelfRoot.activeNodeData ? (searchShelfRoot.activeNodeData.path || searchShelfRoot.activeNodeData.filePath || "") : ""
+                thumbnail: searchShelfRoot.activeNodeData ? (searchShelfRoot.activeNodeData.thumbnail || searchShelfRoot.activeNodeData.thumbnailUrl || searchShelfRoot.activeNodeData.preview_path || searchShelfRoot.activeNodeData.previewUrl || "") : ""
+                previewUrl: searchShelfRoot.activeNodeData ? (searchShelfRoot.activeNodeData.previewUrl || searchShelfRoot.activeNodeData.thumbnail || searchShelfRoot.activeNodeData.thumbnailUrl || searchShelfRoot.activeNodeData.preview_path || (activePreviewItem.isImage ? path : "")) : ""
             }
         }
 

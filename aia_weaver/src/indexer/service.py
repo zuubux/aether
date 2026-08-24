@@ -7,6 +7,7 @@ from pathlib import Path
 from indexer.embedder import LocalEmbedder
 from indexer.parser import extract_archetype_and_snippet, extract_explicit_links
 from indexer.thumbnail import ThumbnailManager
+from extractors.archive import is_archive_file
 
 logger = logging.getLogger("aia_weaver")
 
@@ -68,7 +69,11 @@ class IndexingService:
                     if action == "initial_scan":
                         existing_node = await self.db.get_node_by_path(file_path_str)
                     
-                    if existing_node and existing_node["file_hash"] == file_hash:
+                    needs_reparse = False
+                    if existing_node and is_archive_file(path) and (existing_node.get("archetype") != "ARCHIVE" or "Header:" in existing_node.get("snippet", "")):
+                        needs_reparse = True
+
+                    if existing_node and existing_node["file_hash"] == file_hash and not needs_reparse:
                         source_id = existing_node["id"]
                         embedding = None
                     else:

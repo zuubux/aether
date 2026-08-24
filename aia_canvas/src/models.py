@@ -83,9 +83,70 @@ class Node(QObject):
     def thumbnailUrl(self) -> str:
         return self._thumbnail_url
 
+    @pyqtProperty(str, constant=True)
+    def thumbnail(self) -> str:
+        return self._thumbnail_url
+
+    @pyqtProperty(str, constant=True)
+    def preview_path(self) -> str:
+        return self._thumbnail_url or self._file_path
+
+    @pyqtProperty(str, constant=True)
+    def previewUrl(self) -> str:
+        return self._thumbnail_url or self._file_path
+
+    @pyqtProperty(str, notify=filePathChanged)
+    def path(self) -> str:
+        return self._file_path
+
     @pyqtProperty(int, constant=True)
     def sizeBytes(self) -> int:
         return self._size_bytes
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self._id,
+            "filePath": self._file_path,
+            "file_path": self._file_path,
+            "path": self._file_path,
+            "fileName": Path(self._file_path).name if self._file_path else "",
+            "extension": self.extension,
+            "archetype": self._archetype,
+            "snippet": self._snippet,
+            "thumbnail": self._thumbnail_url,
+            "thumbnailUrl": self._thumbnail_url,
+            "thumbnail_url": self._thumbnail_url,
+            "preview_path": self._thumbnail_url or self._file_path,
+            "previewUrl": self._thumbnail_url or self._file_path,
+            "sizeBytes": self._size_bytes,
+            "size_bytes": self._size_bytes,
+            "x": self._x,
+            "y": self._y,
+            "focus": self._focus,
+            "clusterId": self._cluster_id,
+        }
+
+    def __getitem__(self, item: str):
+        if item in ("file_path", "path"):
+            return self._file_path
+        if item in ("thumbnail_url", "thumbnail"):
+            return self._thumbnail_url
+        if item in ("preview_path", "previewUrl"):
+            return self._thumbnail_url or self._file_path
+        if item in ("size_bytes", "sizeBytes"):
+            return self._size_bytes
+        if item in ("file_name", "fileName"):
+            return self.fileName
+        if hasattr(self, item):
+            val = getattr(self, item)
+            return val
+        raise KeyError(item)
+
+    def get(self, key: str, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
     # --- Positions & Velocities ---
     @pyqtProperty(float, notify=positionChanged)

@@ -106,7 +106,10 @@ def test_spotlight_search_shelf():
     search_scrim = root.findChild(object, "searchScrim")
     assert search_scrim is not None, "searchScrim not found in QML hierarchy"
     bridge.searchResultsReceived.emit([2, 4, 6])
-    app.processEvents()
+    import time
+    for _ in range(5):
+        time.sleep(0.05)
+        app.processEvents()
     assert search_shelf.property("searchActive") is True
     assert search_scrim.property("opacity") > 0.0
 

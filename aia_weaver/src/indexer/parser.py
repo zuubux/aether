@@ -2,6 +2,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from extractors.archive import extract_archive_manifest, is_archive_file
+
 # Matches [[Target]] or [[Target|Alias]]
 WIKILINK_PATTERN = re.compile(r"\[\[(.*?)\]\]")
 
@@ -18,6 +20,11 @@ def extract_explicit_links(file_content: str) -> list[str]:
 
 
 def extract_archetype_and_snippet(path: Path, content_bytes: bytes) -> tuple[str, str]:
+    if is_archive_file(path):
+        archetype = "ARCHIVE"
+        archive_info = extract_archive_manifest(path)
+        return archetype, archive_info.get("snippet", "")
+
     ext = path.suffix.lower()
     if ext in ('.md', '.txt', '.csv', '.tsv', '.json'):
         archetype = 'document'
@@ -25,9 +32,7 @@ def extract_archetype_and_snippet(path: Path, content_bytes: bytes) -> tuple[str
         archetype = 'code'
     elif ext in ('.so', '.bin', '.db', '.exe'):
         archetype = 'binary'
-    elif ext in ('.tar', '.zip', '.gz'):
-        archetype = 'archive'
-    elif ext in ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico'):
+    elif ext in ('.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp'):
         archetype = 'image'
     elif ext == '.pdf':
         archetype = 'document'
