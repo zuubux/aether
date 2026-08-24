@@ -69,3 +69,14 @@ class CanvasController(BaseController):
             self.apertureChanged.emit(new_val)
             if hasattr(self.bridge, '_wake_physics'):
                 self.bridge._wake_physics()
+
+    @pyqtSlot(float)
+    def set_aperture(self, value: float):
+        new_val = max(0.20, min(2.20, value))
+        if abs(new_val - self._aperture) > 0.005:
+            self._aperture = new_val
+            if hasattr(self.bridge, 'physics') and self.bridge.physics:
+                self.bridge.physics.set_aperture(new_val)
+            self.apertureChanged.emit(new_val)
+            if hasattr(self.bridge, '_wake_physics'):
+                self.bridge._wake_physics()

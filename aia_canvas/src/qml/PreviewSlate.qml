@@ -170,13 +170,10 @@ FocusScope {
         }
     }
 
-    Rectangle {
+    Item {
+        id: focalBackground
         anchors.fill: parent
-        radius: 12
-        color: "transparent"
-        border.width: 0
-        antialiasing: true
-        smooth: true
+        z: -1
 
         // Header
         Rectangle {
@@ -184,121 +181,120 @@ FocusScope {
             width: parent.width
             height: 40
             color: "transparent"
-            border.width: 0
 
-            Rectangle {
-                id: revealBtn
-                width: 80
-                height: 24
-                radius: 4
-                color: "#161b22"
-                border.color: "#30363d"
-                border.width: 1
-                anchors.right: parent.right
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
+                Rectangle {
+                    id: revealBtn
+                    width: 80
+                    height: 24
+                    radius: 4
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
+                    border.width: 1
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
 
-                Text {
-                    anchors.centerIn: parent
-                    text: "Reveal File"
-                    color: "#8b949e"
-                    font.family: "Monospace"
-                    font.pixelSize: 10
-                }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Reveal File"
+                        color: Theme.textMuted
+                        font.family: Theme.fontCode
+                        font.pixelSize: 10
+                    }
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    hoverEnabled: true
-                    onEntered: revealBtn.color = "#21262d"
-                    onExited: revealBtn.color = "#161b22"
-                    onClicked: {
-                        if (typeof bridge !== "undefined" && bridge) {
-                            bridge.open_in_file_manager(root.filePath)
-                        } else {
-                            Qt.openUrlExternally("file://" + root.filePath)
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        hoverEnabled: true
+                        onEntered: revealBtn.color = Theme.surfaceButtonHover
+                        onExited: revealBtn.color = Theme.surfaceButton
+                        onClicked: {
+                            if (typeof bridge !== "undefined" && bridge) {
+                                bridge.open_in_file_manager(root.filePath)
+                            } else {
+                                Qt.openUrlExternally("file://" + root.filePath)
+                            }
                         }
                     }
                 }
-            }
 
-            Rectangle {
-                id: openBtn
-                width: 100
-                height: 24
-                radius: 4
-                color: "#161b22"
-                border.color: "#30363d"
-                border.width: 1
-                anchors.right: revealBtn.left
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
+                Rectangle {
+                    id: openBtn
+                    width: 100
+                    height: 24
+                    radius: 4
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
+                    border.width: 1
+                    anchors.right: revealBtn.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
 
-                Text {
-                    anchors.centerIn: parent
-                    text: "Open in Editor"
-                    color: "#8b949e"
-                    font.family: "Monospace"
-                    font.pixelSize: 10
-                }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Open in Editor"
+                        color: Theme.textMuted
+                        font.family: Theme.fontCode
+                        font.pixelSize: 10
+                    }
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    hoverEnabled: true
-                    onEntered: openBtn.color = "#21262d"
-                    onExited: openBtn.color = "#161b22"
-                    onClicked: {
-                        if (typeof bridge !== "undefined" && bridge) {
-                            bridge.open_in_external_editor(root.filePath)
-                        } else {
-                            Qt.openUrlExternally("file://" + root.filePath)
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        hoverEnabled: true
+                        onEntered: openBtn.color = Theme.surfaceButtonHover
+                        onExited: openBtn.color = Theme.surfaceButton
+                        onClicked: {
+                            if (typeof bridge !== "undefined" && bridge) {
+                                bridge.open_in_external_editor(root.filePath)
+                            } else {
+                                Qt.openUrlExternally("file://" + root.filePath)
+                            }
                         }
                     }
                 }
-            }
 
-            Rectangle {
-                id: modeToggle
-                visible: root.supportsRichView
-                width: 65
-                height: 24
-                radius: 4
-                color: "#161b22"
-                border.color: "#30363d"
-                border.width: 1
-                anchors.right: openBtn.left
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
+                Rectangle {
+                    id: modeToggle
+                    visible: root.supportsRichView
+                    width: 65
+                    height: 24
+                    radius: 4
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
+                    border.width: 1
+                    anchors.right: openBtn.left
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
 
-                Text {
-                    anchors.centerIn: parent
-                    text: root.isSourceMode ? "Preview" : "Source"
-                    color: root.isSourceMode ? "#58a6ff" : "#7ee787"
-                    font.family: root.isSourceMode ? "Inter, sans-serif" : "monospace"
-                    font.pixelSize: 11
-                }
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.isSourceMode ? "Preview" : "Source"
+                        color: root.isSourceMode ? "#58a6ff" : "#7ee787"
+                        font.family: root.isSourceMode ? Theme.fontSans : Theme.fontCode
+                        font.pixelSize: 11
+                    }
 
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    hoverEnabled: true
-                    onEntered: modeToggle.color = "#21262d"
-                    onExited: modeToggle.color = "#161b22"
-                    onClicked: {
-                        if (root.isSourceMode) {
-                            root.triggerSave()
-                        }
-                        root.isSourceMode = !root.isSourceMode
-                        if (root.isSourceMode) {
-                            editor.forceActiveFocus()
-                        } else {
-                            root.refreshPreview()
-                            root.forceActiveFocus()
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        hoverEnabled: true
+                        onEntered: modeToggle.color = Theme.surfaceButtonHover
+                        onExited: modeToggle.color = Theme.surfaceButton
+                        onClicked: {
+                            if (root.isSourceMode) {
+                                root.triggerSave()
+                            }
+                            root.isSourceMode = !root.isSourceMode
+                            if (root.isSourceMode) {
+                                editor.forceActiveFocus()
+                            } else {
+                                root.refreshPreview()
+                                root.forceActiveFocus()
+                            }
                         }
                     }
                 }
-            }
 
             Row {
                 anchors.left: parent.left
@@ -320,7 +316,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: root.archetype === "document" ? "D" : (root.archetype === "code" ? "C" : (root.archetype === "binary" ? "B" : "A"))
                         color: root.accentColor
-                        font.family: "Monospace"
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                         font.bold: true
                     }
@@ -328,8 +324,8 @@ FocusScope {
 
                 Text {
                     text: root.fileName
-                    color: "#f8fafc"
-                    font.family: "Monospace"
+                    color: Theme.textPrimary
+                    font.family: Theme.fontCode
                     font.pixelSize: 12
                     font.bold: true
                     elide: Text.ElideRight
@@ -354,8 +350,8 @@ FocusScope {
 
                 Text {
                     text: root.filePath
-                    color: "#64748b"
-                    font.family: "Monospace"
+                    color: Theme.textDimmed
+                    font.family: Theme.fontCode
                     font.pixelSize: 10
                     elide: Text.ElideMiddle
                     width: Math.min(implicitWidth, 130)
@@ -459,7 +455,7 @@ FocusScope {
                                 anchors.right: parent.right
                                 anchors.rightMargin: 8
                                 color: "#484f58"
-                                font.family: "JetBrains Mono, Fira Code, monospace"
+                                font.family: Theme.fontCode
                                 font.pixelSize: 12
                                 horizontalAlignment: Text.AlignRight
                                 text: {
@@ -485,8 +481,8 @@ FocusScope {
                             mouseSelectionMode: TextEdit.SelectCharacters
                             cursorVisible: activeFocus
                             wrapMode: TextEdit.NoWrap
-                            color: "#c9d1d9"
-                            font.family: "JetBrains Mono, Fira Code, monospace"
+                            color: Theme.textSecondary
+                            font.family: Theme.fontCode
                             font.pixelSize: 12
                             background: Item {}
 
@@ -574,9 +570,8 @@ FocusScope {
                     anchors.centerIn: parent
                     width: Math.min(parent.width - 24, 380)
                     height: Math.min(parent.height - 24, 180)
-                    color: "#0a0c10"
-                    border.color: "#30363d"
-                    border.width: 1
+                    color: "transparent"
+                    border.width: 0
                     radius: 8
                     clip: true
 
@@ -606,7 +601,7 @@ FocusScope {
                                         return ext.slice(0, 3);
                                     }
                                     color: root.accentColor
-                                    font.family: "Monospace"
+                                    font.family: Theme.fontCode
                                     font.pixelSize: 11
                                     font.bold: true
                                 }
@@ -618,8 +613,8 @@ FocusScope {
 
                                 Text {
                                     text: root.fileName
-                                    color: "#f8fafc"
-                                    font.family: "Monospace"
+                                    color: Theme.textPrimary
+                                    font.family: Theme.fontCode
                                     font.pixelSize: 12
                                     font.bold: true
                                     elide: Text.ElideRight
@@ -628,15 +623,15 @@ FocusScope {
 
                                 Text {
                                     text: "Size: " + root.sizeFormatted
-                                    color: "#94a3b8"
-                                    font.family: "Monospace"
+                                    color: Theme.textMuted
+                                    font.family: Theme.fontCode
                                     font.pixelSize: 10
                                 }
 
                                 Text {
                                     text: "Type: " + (root.filePath ? root.filePath.split('.').pop().toLowerCase() : "") + " (" + root.archetype + ")"
-                                    color: "#64748b"
-                                    font.family: "Monospace"
+                                    color: Theme.textDimmed
+                                    font.family: Theme.fontCode
                                     font.pixelSize: 9
                                 }
                             }
@@ -648,16 +643,16 @@ FocusScope {
                             width: 180
                             height: 28
                             radius: 6
-                            color: "#161b22"
-                            border.color: "#30363d"
+                            color: Theme.surfaceButton
+                            border.color: Theme.borderSubtle
                             border.width: 1
                             anchors.horizontalCenter: parent.horizontalCenter
 
                             Text {
                                 anchors.centerIn: parent
                                 text: "Open in External App"
-                                color: "#c9d1d9"
-                                font.family: "Monospace"
+                                color: Theme.textSecondary
+                                font.family: Theme.fontCode
                                 font.pixelSize: 10
                                 font.bold: true
                             }
@@ -666,8 +661,8 @@ FocusScope {
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
                                 hoverEnabled: true
-                                onEntered: externalOpenBtn.color = "#21262d"
-                                onExited: externalOpenBtn.color = "#161b22"
+                                onEntered: externalOpenBtn.color = Theme.surfaceButtonHover
+                                onExited: externalOpenBtn.color = Theme.surfaceButton
                                 onClicked: {
                                     if (typeof bridge !== "undefined" && bridge) {
                                         bridge.open_in_external_editor(root.filePath)

@@ -22,6 +22,7 @@ class IPCServer:
         all_nodes_handler: Callable[[], Awaitable[list]] = None,
         touch_handler: Callable[[int, str], Awaitable[dict]] = None,
         save_node_handler: Callable[[int, str], Awaitable[dict]] = None,
+        create_edge_handler: Callable[[int, int, str], Awaitable[dict]] = None,
         allowed_directories: list[Path] | None = None,
     ):
         if socket_path is None:
@@ -38,6 +39,7 @@ class IPCServer:
         self.all_nodes_handler = all_nodes_handler
         self.touch_handler = touch_handler
         self.save_node_handler = save_node_handler
+        self.create_edge_handler = create_edge_handler
         self.allowed_directories = allowed_directories or []
         self.server: asyncio.Server | None = None
         self._clients: set[asyncio.StreamWriter] = set()
@@ -179,6 +181,23 @@ class IPCServer:
 
                 if self.touch_handler:
                     result = await self.touch_handler(node_id, event_type)
+                    return {"jsonrpc": "2.0", "result": result, "id": req_id}
+                return {"jsonrpc": "2.0", "result": {"status": "noop"}, "id": req_id}
+
+            elif method == "create_edge":
+                source_id = params.get("source_id")
+                target_id = params.get("target_id")
+                edge_type = params.get("edge_type", "semantic_link")
+
+                if source_id is None or target_id is None:
+                    return {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32602, "message": "Invalid params: 'source_id' and 'target_id' required"},
+                        "id": req_id,
+                    }
+
+                if self.create_edge_handler:
+                    result = await self.create_edge_handler(source_id, target_id, edge_type)
                     return {"jsonrpc": "2.0", "result": result, "id": req_id}
                 return {"jsonrpc": "2.0", "result": {"status": "noop"}, "id": req_id}
 

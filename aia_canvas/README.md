@@ -14,14 +14,23 @@ Designed to eliminate traditional window chrome, `aia_canvas` projects files dir
 
 ## ⚡ Features
 
-* **120Hz Stokes Fluid Dynamics:** Viscous, biological movement using quadratic drag, aspect-conformal orbital docking, and non-penetration potential barriers[cite: 2, 5].
-* **4-Tier Semantic Aperture:** Seamless LOD scaling ranging from live resizable Workbenches ($1400 \times 900\text{px}$) down to $16\text{px}$ luminous Star Beads with fish-eye hover blooms[cite: 2, 8]. Tier 1.5 previews (Preview Slates) are used for active search results and sustained hovers.
-* **Focal Lens States:** Strict geometric focus locking that pulls related semantic history directly into view and decouples background clusters to preserve kinetic calm.
-* **Tendril Pacing & Distance Damping:** Temporal and semantic edges breathe organically with slow pulse phases, dimming progressively based on span distance to reduce visual clutter across macro clusters.
-* **Enterprise Shield Membranes:** GPU-native containment bubbles that organically envelop active clusters while rejecting distant outliers[cite: 5, 7].
-* **Decoupled JSON-RPC 2.0 Architecture:** Asynchronous UNIX domain socket client connecting to `aia_weaver` with a 64 KB framing limit and auto-reconnect backoff[cite: 10].
-* **Hardened Path Security:** Strict path canonicalization guaranteeing all file actions are verified within safe workspace boundaries[cite: 2].
-* **SRE Golden Signal Observability:** Structured logging formatted for `systemd-journald` and an interactive `F3` diagnostic HUD tracking frametimes and socket saturation.
+* **120Hz Stokes Fluid Dynamics:** Viscous, biological movement using quadratic drag, aspect-conformal orbital docking, and non-penetration potential barriers.
+* **4-Tier Semantic Aperture:** Seamless LOD scaling ranging from live resizable Workbenches ($1400 \times 900\text{px}$) down to $14\text{px}$ luminous Star Beads with fish-eye hover blooms.
+* **Drag Transit & Settle Dynamics:**
+  * **Transit Escalation:** Moving nodes dynamically escalate (Tier 4 -> Tier 3 Capsule; Tier 3/2 -> Tier 2 Inspection Slate) for high legibility while dragging.
+  * **1000ms Settle Grace Period:** Releasing a node triggers a 1000ms settle delay with an electric cyan border luminosity pulse (`Theme.accentCyan`) before easing into its target cluster position.
+  * **Strict Input Isolation:** Drag gestures actively mute hover/dwell timers and model coordinate overrides to prevent kinetic fighting and visual flicker.
+* **Spotlight HUD & Search Shelf (`SearchShelf.qml`):**
+  * **Top 7 Ranked Carousel:** Smooth horizontal card shelf showing top vector/title matches above the OmniBar.
+  * **Live Tier 1.5 Preview:** Displays an expanded markdown/media preview card for the currently focused match.
+  * **Keyboard-Driven Traversal:** Seamless `Left` / `Right` / `Tab` index navigation and `Enter` selection with smooth camera focal transition (zero physics displacement).
+* **Modular HUD & Diagnostic Overlays:**
+  * **`DiagnosticsOverlay.qml`:** Toggleable `F3` SRE telemetry HUD showing frametimes, node/edge counts, and socket latency.
+  * **`CanvasHud.qml`:** Bottom-left ambient status pill showing IPC daemon connectivity and cognitive aperture percentage.
+* **Tendril Pacing & Distance Damping:** Temporal and semantic edges breathe organically with slow pulse phases, dimming progressively based on span distance.
+* **Enterprise Shield Membranes:** GPU-native containment bubbles that organically envelop active clusters while rejecting distant outliers.
+* **Decoupled JSON-RPC 2.0 Architecture:** Asynchronous UNIX domain socket client connecting to `aia_weaver` with a 64 KB framing limit and auto-reconnect backoff.
+* **Hardened Path Security:** Strict path canonicalization guaranteeing all file actions are verified within safe workspace boundaries.
 
 ---
 
@@ -36,31 +45,45 @@ aia_canvas/
 │   │   ├── node_controller.py
 │   │   ├── physics_controller.py
 │   │   └── search_controller.py
+│   ├── core/                # Core query and intent parsing
+│   │   ├── completion_engine.py
+│   │   ├── intent_dispatcher.py
+│   │   └── intent_grammar.py
 │   ├── ipc/
-│   │   └── client.py        # Asynchronous UNIX domain socket JSON-RPC 2.0 client[cite: 10]
+│   │   └── client.py        # Asynchronous UNIX domain socket JSON-RPC 2.0 client
 │   ├── physics/
-│   │   └── engine.py        # 120Hz Stokes physics, clustering, and horizon anchors[cite: 5]
+│   │   └── engine.py        # 120Hz Stokes physics, clustering, and horizon anchors
 │   ├── qml/
+│   │   ├── hud/             # Modular HUD Overlays
+│   │   │   ├── CanvasHud.qml           # Bottom-left IPC & Aperture status
+│   │   │   └── DiagnosticsOverlay.qml  # F3 Telemetry & Frametime overlay
 │   │   ├── node/            # Modular Leaf Delegates
 │   │   │   ├── NodeAura.qml # GPU-native semantic glow and selection halos
 │   │   │   ├── NodePill.qml # Tier 3 compact capsules and extension badges
 │   │   │   └── NodePreview.qml # Tier 1.5 hover-dwell preview cards
+│   │   ├── search/          # Spotlight Search Subsystem
+│   │   │   └── SearchShelf.qml         # Ranked result carousel & preview card
 │   │   ├── slates/          # Specialized Media Slates
 │   │   │   ├── ImageSlate.qml
 │   │   │   ├── PdfSlate.qml
 │   │   │   └── TableSlate.qml
-│   │   ├── Canvas.qml       # Root window, SRE HUD, and viewport orchestrator[cite: 6]
-│   │   ├── ClusterHalo.qml  # GPU-accelerated shield membrane component[cite: 7]
-│   │   ├── Node.qml         # 4-tier semantic card and Star Bead implementation coordinator[cite: 8]
-│   │   └── Tendril.qml      # Synaptic cubic Bezier connection lines[cite: 9]
+│   │   ├── Canvas.qml       # Root window and viewport orchestrator
+│   │   ├── ClusterHalo.qml  # GPU-accelerated shield membrane component
+│   │   ├── Node.qml         # Interactive coordinator & state-machine container
+│   │   ├── NodeContent.qml  # Slate/pill content loader delegate
+│   │   ├── OmniBar.qml      # Spotlight search and intent command bar
+│   │   ├── SurfaceShell.qml # Single-stroke perimeter and background shell
+│   │   ├── Tendril.qml      # Synaptic cubic Bezier connection lines
+│   │   ├── Theme.qml        # Global visual tokens, palettes, and easing
+│   │   └── qmldir           # QML module declarations
 │   ├── utils/
 │   │   └── security.py      # Path canonicalization & boundary traversal guards
 │   ├── workers/             # Asynchronous QThreadPool Pipelines
 │   │   └── media_worker.py  # Non-blocking PDF, CSV, Image offloading tasks
-│   ├── bridge.py            # Composite Root Coordinator & Python/QML adapter[cite: 2]
-│   ├── models.py            # Reactive QObject data models (Node, Edge)[cite: 3]
-│   ├── store.py             # In-memory graph ledger and neighborhood store[cite: 4]
-│   └── main.py              # Application entrypoint & systemd logger bootstrap[cite: 1]
+│   ├── bridge.py            # Composite Root Coordinator & Python/QML adapter
+│   ├── models.py            # Reactive QObject data models (Node, Edge)
+│   ├── store.py             # In-memory graph ledger and neighborhood store
+│   └── main.py              # Application entrypoint & systemd logger bootstrap
 ├── ARCHITECTURE.md          # Detailed system design specification
 └── requirements.txt
 ```
@@ -104,13 +127,15 @@ python3 src/main.py
 
 ## 🎮 Canvas Navigation & Keybindings
 
-* **Aperture Zoom:** `Mouse Wheel` on empty void (scales cognitive aperture from $20\%$ macro constellation up to $220\%$ deep focus)[cite: 6].
-* **Select / Expand Focus:** `Left Click` on any card or bead to open the live Workbench and pull related nodes into orbital horizon[cite: 2, 8].
-* **Clear Focus / Return to Void:** `Esc` or `Left Click` anywhere on the empty canvas[cite: 6].
-* **Drag & Relocate:** `Left Click + Drag` on any node to move it; nodes smoothly return to cluster equilibrium on release[cite: 8].
-* **Resize Workbench:** `Left Click + Drag` on the bottom-right cyan corner handle of an active Workbench card[cite: 8].
-* **Reveal in System File Manager:** `Right Click` any card or click **Reveal File** on the active Workbench[cite: 2, 8].
-* **Toggle SRE Telemetry HUD:** `F3` (renders node count, edge count, physics step latency, and socket status).
+* **OmniBar / Spotlight Search:** `Ctrl+Space` activates the Spotlight HUD bar. Type to search title & vector embeddings.
+* **Spotlight Carousel Navigation:** `Left Arrow` / `Right Arrow` / `Tab` cycles through top 7 ranked matches; dynamically updates the Tier 1.5 preview slate above.
+* **Confirm Search Selection:** `Enter` or `Left Click` on a carousel card centers the camera smoothly on the target node and dismisses the shelf (zero physics grid displacement).
+* **Aperture Zoom:** `Mouse Wheel` on empty void (scales cognitive aperture from $20\%$ macro constellation up to $220\%$ deep focus).
+* **Select / Expand Focus:** `Left Click` on any card or bead to open the live Workbench and pull related nodes into orbital horizon.
+* **Clear Focus / Return to Void:** `Esc` or `Left Click` anywhere on the empty canvas.
+* **Drag & Relocate (Drag-Settle Physics):** `Left Click + Drag` on any node to move it. Dragging escalates the node's visual tier for readability and mutes hover/dwell timers. Releasing initiates a 1000ms settle grace period with cyan border luminosity before easing into cluster equilibrium.
+* **Reveal in System File Manager:** `Right Click` any card or click **Reveal File** on the active Workbench.
+* **Toggle SRE Telemetry HUD:** `F3` overlays real-time node count, render edge count, physics step frametime, and backend socket status.
 
 ---
 

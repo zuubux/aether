@@ -158,7 +158,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: "T"
                         color: root.accentColor
-                        font.family: "Monospace"
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                         font.bold: true
                     }
@@ -166,8 +166,8 @@ FocusScope {
 
                 Text {
                     text: root.fileName
-                    color: "#f0f6fc"
-                    font.family: "JetBrains Mono, monospace"
+                    color: Theme.textPrimary
+                    font.family: Theme.fontCode
                     font.pixelSize: 13
                     font.bold: true
                     anchors.verticalCenter: parent.verticalCenter
@@ -176,15 +176,15 @@ FocusScope {
                 Rectangle {
                     width: 1
                     height: 16
-                    color: "#30363d"
+                    color: Theme.borderSubtle
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
                 // Metadata tag
                 Text {
                     text: ((root.tableData && root.tableData.total_rows) ? root.tableData.total_rows : 0) + " rows × " + ((root.tableData && root.tableData.total_cols) ? root.tableData.total_cols : 0) + " cols"
-                    color: "#8b949e"
-                    font.family: "JetBrains Mono, monospace"
+                    color: Theme.textMuted
+                    font.family: Theme.fontCode
                     font.pixelSize: 11
                     anchors.verticalCenter: parent.verticalCenter
                 }
@@ -202,15 +202,15 @@ FocusScope {
                     width: 80
                     height: 24
                     radius: 4
-                    color: "#161b22"
-                    border.color: "#30363d"
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
                     border.width: 1
 
                     Text {
                         anchors.centerIn: parent
                         text: "Copy All"
-                        color: "#8b949e"
-                        font.family: "Monospace"
+                        color: Theme.textMuted
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                     }
 
@@ -218,8 +218,8 @@ FocusScope {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
-                        onEntered: copyBtn.color = "#21262d"
-                        onExited: copyBtn.color = "#161b22"
+                        onEntered: copyBtn.color = Theme.surfaceButtonHover
+                        onExited: copyBtn.color = Theme.surfaceButton
                         onClicked: {
                             var b = getBridge()
                             if (b && b.copy_csv_data(root.filePath)) {
@@ -237,15 +237,15 @@ FocusScope {
                     width: 80
                     height: 24
                     radius: 4
-                    color: "#161b22"
-                    border.color: "#30363d"
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
                     border.width: 1
 
                     Text {
                         anchors.centerIn: parent
                         text: "Reveal File"
-                        color: "#8b949e"
-                        font.family: "Monospace"
+                        color: Theme.textMuted
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                     }
 
@@ -253,8 +253,8 @@ FocusScope {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
-                        onEntered: revealBtn.color = "#21262d"
-                        onExited: revealBtn.color = "#161b22"
+                        onEntered: revealBtn.color = Theme.surfaceButtonHover
+                        onExited: revealBtn.color = Theme.surfaceButton
                         onClicked: {
                             var b = getBridge()
                             if (b) {
@@ -270,15 +270,15 @@ FocusScope {
                     width: 100
                     height: 24
                     radius: 4
-                    color: "#161b22"
-                    border.color: "#30363d"
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
                     border.width: 1
 
                     Text {
                         anchors.centerIn: parent
                         text: "Open in Editor"
-                        color: "#8b949e"
-                        font.family: "Monospace"
+                        color: Theme.textMuted
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                     }
 
@@ -286,8 +286,8 @@ FocusScope {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
-                        onEntered: openBtn.color = "#21262d"
-                        onExited: openBtn.color = "#161b22"
+                        onEntered: openBtn.color = Theme.surfaceButtonHover
+                        onExited: openBtn.color = Theme.surfaceButton
                         onClicked: {
                             var b = getBridge()
                             if (b) {
@@ -349,8 +349,8 @@ FocusScope {
                                     anchors.leftMargin: 12
                                     anchors.rightMargin: 12
                                     text: modelData
-                                    color: "#f0f6fc"
-                                    font.family: "JetBrains Mono, monospace"
+                                    color: Theme.textPrimary
+                                    font.family: Theme.fontCode
                                     font.pixelSize: 11
                                     font.bold: true
                                     verticalAlignment: Text.AlignVCenter
@@ -417,8 +417,8 @@ FocusScope {
                                             anchors.leftMargin: 12
                                             anchors.rightMargin: 12
                                             text: modelData
-                                            color: "#c9d1d9"
-                                            font.family: "JetBrains Mono, monospace"
+                                            color: Theme.textSecondary
+                                            font.family: Theme.fontCode
                                             font.pixelSize: 11
                                             verticalAlignment: Text.AlignVCenter
                                             elide: Text.ElideRight
@@ -431,8 +431,8 @@ FocusScope {
                                             anchors.leftMargin: 12
                                             anchors.rightMargin: 12
                                             text: cellRect.isEditing ? root.editingValue : ""
-                                            color: "#ffffff"
-                                            font.family: "JetBrains Mono, monospace"
+                                            color: Theme.textPrimary
+                                            font.family: Theme.fontCode
                                             font.pixelSize: 11
                                             verticalAlignment: TextInput.AlignVCenter
                                             clip: true

@@ -44,9 +44,17 @@ The Aether framework is structured as a decoupled ecosystem of specialized daemo
 
 ---
 
-## ⚡ Core Pillars
+## ⚡ Core Pillars & Interaction Mechanics
 
 * **Ego-Centric Magnetism:** You never manually traverse a complex 3D star map; the data shifts, orbits, and presents itself based on your focal intent.
+* **Drag Transit & Settle Mechanics:**
+  * **Dynamic Escalation:** Dragging temporarily escalates micro nodes (Tier 4 Macro Bead -> Tier 3 Capsule; Tier 3 / Tier 2 -> Tier 2 Inspection Slate) for ergonomic legibility during transit.
+  * **Settle Delay & Border Glow:** Upon drop release, nodes enter a 1000ms settle grace period rendered with a cyan luminosity border glow (`Theme.accentCyan`) before easing into target cluster equilibrium.
+  * **Timer & Binding Muting:** Drag operations strictly mute hover/dwell timers and model coordinate overrides to prevent kinetic jitter and layout fighting.
+* **Spotlight HUD & Search Shelf:**
+  * **Ranked Carousel:** Non-modal overlay presenting top 7 search matches in an orbital Tier 2 horizontal card carousel.
+  * **Tier 1.5 Active Preview:** Inspects the active card in real-time with full markdown/media summary above the search carousel.
+  * **Keyboard Navigation:** Full `Left` / `Right` / `Tab` keyboard traversal; `Enter` smoothly focuses the camera on the target node and dismisses the shelf without displacing the physical layout.
 * **3-Tier Relational Graph:**
   * **Explicit Edges ($W = 1.0$):** Permanent, solid linkages driven by `[[WikiLinks]]` and code `import` trees.
   * **Semantic Edges ($W \in [0, 1]$):** Real-time KNN cosine proximity over 384-dimensional embeddings (`BAAI/bge-small-en-v1.5`).
@@ -61,7 +69,14 @@ The Aether framework is structured as a decoupled ecosystem of specialized daemo
 ```text
 aether/
 ├── aia_canvas/             # Visual presentation layer (PySide6 / QML / Shaders)
-│   ├── src/                # IPC client, physics engine, and QML lenses
+│   ├── src/                # Controllers, physics engine, HUDs, and QML lenses
+│   │   ├── controllers/    # Domain controllers (Canvas, Node, Physics, Search)
+│   │   ├── core/           # Intent grammar and query completion engine
+│   │   ├── qml/            # Modular QML scene graph and delegates
+│   │   │   ├── hud/        # Modular HUD overlays (CanvasHud, DiagnosticsOverlay)
+│   │   │   ├── node/       # Leaf delegates (NodePill, NodePreview, NodeAura)
+│   │   │   └── search/     # Spotlight Search Shelf and carousel
+│   │   └── bridge.py       # Composite Root coordinator & Python/QML adapter
 │   ├── ARCHITECTURE.md     # Canvas system design spec
 │   └── README.md
 ├── aia_saccade/            # Eye tracking & intent prediction daemon
@@ -72,6 +87,9 @@ aether/
 │   ├── watcher/            # Asynchronous inotify sentinel
 │   ├── ARCHITECTURE.md     # Weaver technical specification
 │   └── README.md
+├── docs/                   # Architectural contracts and audit documentation
+│   ├── interaction_model.md# Detailed Drag-Settle, Spotlight HUD, and tier specs
+│   └── qml_contract.md     # Modular QML frontend invariants
 ├── aia_charter.md          # Architectural mission charter
 └── .gitignore
 ```

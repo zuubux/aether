@@ -3,7 +3,7 @@
 ## 1. Role & Operating Paradigm
 - **Role:** Precision Implementation Engineer for Aether Interface Architecture (`aia_canvas`, `aia_weaver`, `aia_saccade`).
 - **Interaction Style:** Surgical, minimal diffs, zero architectural drift.
-- **Workflow:** Implement exact requested changes without unsolicited refactoring of adjacent physics loops, GLSL shaders, or state models.
+- **Workflow & Verification:** Implement exact requested changes without unsolicited refactoring. Never declare a UI/visual task complete based solely on a 0 exit code; verify that properties in the scene graph match the intended design state.
 
 ## 2. Technical Stack & Conventions
 - **UI & Graphics:** PyQt6, QML (Qt Quick 6), GLSL / `.qsb` shaders.
@@ -11,29 +11,35 @@
 - **IPC Pipeline:** Local Unix domain sockets (`/run/user/1000/aia_weaver/aia_weaver.sock`), asynchronous event-driven streaming.
 - **Target Workstation:** High-performance Linux environment running KDE Plasma on multi-head / ultrawide displays. Target smooth 120 FPS frame timing.
 
-## 3. Core Physics & Layout Guardrails
+## 3. Dynamic Geometry & Zero-Hardcoding Invariant
+- **Strict Anti-Magic Number Policy:** Never inject fallback pixel constants (e.g. `160`, `140`, `48`, `32`, `24`) or hardcoded tier dimension checks into layout, docking, or coordinate logic. 
+- **Debug Spike Exception:** Hardcoding is ONLY permitted if the prompt explicitly contains the phrase `TEMPORARY SPIKE`. Otherwise, you must dynamically query geometry or push back with a dynamic architectural proposal.
+- **Delegate-Exposed Anchors:** Leaf delegates (`NodePill.qml`, `NodePreview.qml`, `Node.qml`) are the single source of truth for their own perimeter boundaries. They must expose dynamic `readonly property point leftDock` and `rightDock` anchors mapped to canvas space.
+- **Tendril Docking:** Tendril renderers must strictly consume `targetItem.leftDock` / `targetItem.rightDock` with null-safe defensive checks, avoiding manual offset math.
+
+## 4. Visual Container & Scene Graph Invariants
+- **Single-Stroke Perimeter Rule:** A UI card or slate (e.g., `PreviewSlate.qml`, `SlateContainer.qml`) must have exactly ONE root visual element rendering `border.width > 0` and `color: "#0B0F19"` (opacity `1.0`). Never stack child rectangles with duplicate borders or transparent background fills.
+- **Z-Index Layer Hierarchy:**
+  - `z: 0` - Ambient void background & nebula halos.
+  - `z: 10` - Tendrils and synaptic socket blooms.
+  - `z: 15` - Node delegates (Pills, Capsules, Slates).
+  - `z: 20` - Focal Card (Preview Slate) & active modal overlays.
+
+## 5. Core Physics & Layout Guardrails
 - **Temporal Decoupling:** Temporal connections (`edge_type == 'temporal'`) must ALWAYS have zero spring constant ($k = 0.0$) in the physics engine. They are visual history telemetry only and must never exert physical tension between clusters.
 - **Kinematic Focus Isolation:** When Focus Mode is active (`focused_node_id` set):
   - Docked wing nodes (Tier 1/2) must be excluded from background cluster centroid calculations.
   - Spring tension between docked nodes and peripheral void nodes must be zeroed ($k = 0.0$).
-- **Geometry & Border Docking:**
-  - Standard Cards: Ray-box boundary docking strictly to rendered dimensions (`width * scale`, `height * scale`).
-  - Stadium / Capsule Nodes: Ray-capsule docking against semicircular end caps with zero air gaps.
-  - Star Beads (16x16): Strictly dock to geometric centers (`x + 8`, `y + 8`).
+- **Deterministic Port Distribution:** When assigning `flankPortRatio` in `bridge.py`, edges/nodes along a flank must be sorted by their target vertical $Y$ position before calculating ratios so tendril lines never cross.
 
-## 4. Shaders & Visual Aesthetics
+## 6. Shaders & Visual Aesthetics
 - **Nebula Halos:**
   - Must use smooth radial edge masks (`smoothstep`) to guarantee alpha hits absolute zero ($0.0$) before reaching UV texture boundaries (prevent rectangular quad clipping).
   - Center cores must be luminous and translucent (avoid opaque white flashbangs or dark hollow rings).
   - Only generate halos for connected communities with $N \ge 3$ nodes.
 - **Shader Compilation:** Whenever editing `.frag` or `.vert` files, compile using `/usr/lib64/qt6/bin/qsb --qt6 -o <path>.qsb <path>.frag`.
 
-## 5. Execution Rules & Safety
-- **No Hallucinated Functions:** Verify dictionary access syntax (`dict.get(k)` or `dict[k]`, never call dicts like functions `dict(k)`).
-- **Coordinate Integrity:** Avoid mutating global physics coordinates with local QML transient UI transforms (like hover bloom or temporary scales).
-- **Direct Output:** Keep implementation explanations concise, itemizing exact files and mathematical modifications made.
-
-## 6. Modular QML Frontend Contract
+## 7. Modular QML Frontend Contract
 - **QML Component Hierarchy:**
   - `Node.qml` acts strictly as an interactive coordinator / state-machine container. No visual rendering code or leaf delegate paths should be defined directly within `Node.qml` other than state transitions and structural layout coordination.
   - Leaf delegates reside strictly in `aia_canvas/src/qml/node/`:
@@ -51,14 +57,28 @@
     - **Tier 1.5 (Dwell/Search):** 320x220 preview card (`isPreviewMode`).
   - **Unified Animations:** All dimensional transitions (width, height, radius) must use unified 220ms `Easing.OutQuint` curves to guarantee visual consistency.
 
-## 7. Backend Concurrency & Security Invariants
-- **Rule 7.1:** Zero blocking I/O on the Qt main thread; all disk reads, PDFs, CSVs, and vector queries must run on `QThreadPool` via `QRunnable`.
-- **Rule 7.2:** Subprocess calls must use `shell=False` and canonicalized safe paths via `utils.security.canonicalize_safe_path`.
-- **Rule 7.3:** Exception handling must be explicit and typed; no bare `except Exception:`.
-- **Rule 7.4:** JSON-RPC IPC payloads must be validated for schema keys prior to dispatch.
-- **Rule 7.5:** Signal signatures across workers, controllers, and bridge must use matching Qt Meta-Object types (e.g., `'QVariantMap'` for dictionaries) to avoid PyQt connection failures.
+## 8. Backend Concurrency & Security Invariants
+- **Rule 8.1:** Zero blocking I/O on the Qt main thread; all disk reads, PDFs, CSVs, and vector queries must run on `QThreadPool` via `QRunnable`.
+- **Rule 8.2:** Subprocess calls must use `shell=False` and canonicalized safe paths via `utils.security.canonicalize_safe_path`.
+- **Rule 8.3:** Exception handling must be explicit and typed; no bare `except Exception:`.
+- **Rule 8.4:** JSON-RPC IPC payloads must be validated for schema keys prior to dispatch.
+- **Rule 8.5:** Signal signatures across workers, controllers, and bridge must use matching Qt Meta-Object types (e.g., `'QVariantMap'` for dictionaries) to avoid PyQt connection failures.
 
-## 8. Telemetry & Observability Invariants
-- **Rule 8.1:** Strict In-Memory Bounds: Telemetry collectors must use fixed-size ring buffers (`collections.deque(maxlen=120)`) with zero disk I/O churn or unbounded allocations.
-- **Rule 8.2:** Numeric Scalars Only: Telemetry samples must strictly record numerical values (latencies, counts, frametimes, byte lengths). File paths, queries, and payload content are forbidden in telemetry buffers.
-- **Rule 8.3:** Air-Gapped Local Boundaries: Telemetry endpoints must never initiate external network connections or web sockets; all telemetry exposure occurs via in-process `bridge.py` slots or standard POSIX standard streams (`journald`).
+## 9. Telemetry & Observability Invariants
+- **Rule 9.1:** Strict In-Memory Bounds: Telemetry collectors must use fixed-size ring buffers (`collections.deque(maxlen=120)`) with zero disk I/O churn or unbounded allocations.
+- **Rule 9.2:** Numeric Scalars Only: Telemetry samples must strictly record numerical values (latencies, counts, frametimes, byte lengths). File paths, queries, and payload content are forbidden in telemetry buffers.
+- **Rule 9.3:** Air-Gapped Local Boundaries: Telemetry endpoints must never initiate external network connections or web sockets; all telemetry exposure occurs via in-process `bridge.py` slots or standard POSIX standard streams (`journald`).
+
+## 10. Rigorous QA, Verification & Completion Protocol
+- **Zero False Declarations:** NEVER declare a visual, UI, or rendering task complete simply because code compiles or the process exits with code 0.
+- **Scene-Graph Property Verification:**
+  * When modifying geometry, anchors, or opacity, inspect the actual instantiated QML property tree or write a lightweight assert script to verify target values (e.g. confirming `opacity === 1.0`, `border.width === 1.5`, or `dockPoint != (0,0)`).
+- **Automated Visual Evidence:**
+  * For visual fixes, use Qt's grabToImage or a headless test harness (`pytest tests/test_visual_state.py`) to confirm that components exist in the active scene graph and are not transparent or clipped.
+- **Escalation Over Guesswork:**
+  * If a visual regression persists after 2 implementation attempts, STOP and report the exact scene tree hierarchy, active coordinates, and candidate blocking elements. Ask for human clarification instead of continuing speculative edits.
+- **Explicit Completion Report Format:**
+  * In the final response, itemize:
+    1. The exact files modified.
+    2. The exact programmatic checks/assertions performed.
+    3. The expected visual outcome with instructions on how the user can verify it on screen.

@@ -21,6 +21,7 @@ logger = logging.getLogger("aia_canvas.bridge")
 class CanvasBridge(QObject):
     nodesChanged = pyqtSignal()
     edgesChanged = pyqtSignal()
+    ambientEdgesChanged = pyqtSignal()
     selectedNodeChanged = pyqtSignal(int)
     hoveredNodeChanged = pyqtSignal(int)
     connectionStatusChanged = pyqtSignal(bool)
@@ -32,6 +33,7 @@ class CanvasBridge(QObject):
     searchCleared = pyqtSignal()
     searchActiveChanged = pyqtSignal(bool)
     nodeRemoved = pyqtSignal(int)
+    focalCardDimensionsChanged = pyqtSignal()
 
     # Async Media Signals
     pdfPageReady = pyqtSignal(str, int, str, arguments=['filePath', 'pageIndex', 'imagePath'])
@@ -52,11 +54,15 @@ class CanvasBridge(QObject):
         from controllers.node_controller import NodeController
         from controllers.physics_controller import PhysicsController
         from controllers.search_controller import SearchController
+        from core.intent_dispatcher import IntentDispatcher
+        from core.completion_engine import CompletionEngine
 
         self.canvas_ctrl = CanvasController(self)
+        self.intent_dispatcher = IntentDispatcher(self)
         self.search_ctrl = SearchController(self)
         self.node_ctrl = NodeController(self)
         self.physics_ctrl = PhysicsController(self)
+        self.completion_engine = CompletionEngine(self)
 
         # Connect controller child signals to the corresponding bridge signals
         self.canvas_ctrl.workbenchDimensionsChanged.connect(self.workbenchDimensionsChanged)
@@ -102,6 +108,8 @@ class CanvasBridge(QObject):
         self._aperture: float = 1.0
         self._workbench_width: float = 1600.0
         self._workbench_height: float = 1000.0
+        self._focal_card_width: float = 880.0
+        self._focal_card_height: float = 600.0
 
         self.physics.set_focal_card_dimensions(self._workbench_width, self._workbench_height)
         self.physics.set_aperture(self._aperture)
@@ -115,6 +123,14 @@ class CanvasBridge(QObject):
         self._structural_edges: list[Edge] = []
         self._ambient_edges: list[Edge] = []
         self._focal_edges: list[Edge] = []
+
+        self.TOPOLOGICAL_PRIORITY = {
+            "explicit": 3,
+            "wikilink": 3,
+            "direct": 3,
+            "semantic_link": 2,
+            "semantic": 1
+        }
 
         # Background IPC
         self.ipc = WeaverIPCClient()
@@ -140,8 +156,13 @@ class CanvasBridge(QObject):
                 node.focus = 0.35
             return
 
-        edges = self._focal_edges
-        first_degree: set[int] = set()
+        # Ensure explicit edges from ambient pool are also included to maintain Tier 1 retention
+        ambient_explicits = [e for e in self._ambient_edges if getattr(e, "edgeType", None) in ("explicit", "wikilink", "direct")]
+        edges = self._get_deduplicated_edges(self._focal_edges + ambient_explicits)
+        edges = self.deduplicate_undirected_focal_edges(primary_id, edges)
+        
+        explicit_first_degree: set[int] = set()
+        semantic_first_degree: set[int] = set()
         temporal_first_degree: set[int] = set()
         focal_weights: dict[int, float] = {}
         
@@ -151,9 +172,15 @@ class CanvasBridge(QObject):
                 if e.edgeType == "temporal":
                     temporal_first_degree.add(target)
                     self._cached_second_degree_parent[target] = primary_id
-                else:
-                    first_degree.add(target)
                     focal_weights[target] = max(focal_weights.get(target, 0.0), e.weight)
+                elif getattr(e, "edgeType", None) in ("explicit", "wikilink"):
+                    explicit_first_degree.add(target)
+                    focal_weights[target] = max(focal_weights.get(target, 0.0), e.weight)
+                else:
+                    semantic_first_degree.add(target)
+                    focal_weights[target] = max(focal_weights.get(target, 0.0), e.weight)
+
+        first_degree = explicit_first_degree.union(semantic_first_degree).union(temporal_first_degree)
 
         second_degree: set[int] = set()
         for e in edges:
@@ -166,8 +193,9 @@ class CanvasBridge(QObject):
                 if e.sourceId not in self._cached_second_degree_parent:
                     self._cached_second_degree_parent[e.sourceId] = e.targetId
 
-        # Push temporal breadcrumbs natively into the Tier 2 satellite orbit
-        second_degree.update(temporal_first_degree - first_degree)
+        # Temporals go to Tier 2 (Focus 0.35)
+        # To handle this cleanly we can keep them out of standard second_degree or just map their focus explicitly
+        temporal_only = temporal_first_degree - (explicit_first_degree | semantic_first_degree)
 
         self._cached_first_degree = first_degree
         self._cached_second_degree = second_degree
@@ -176,8 +204,12 @@ class CanvasBridge(QObject):
         for node in self.store.get_all_nodes():
             if node.id == primary_id:
                 node.focus = 1.0
-            elif node.id in first_degree:
+            elif node.id in explicit_first_degree:
                 node.focus = 0.70
+            elif node.id in semantic_first_degree:
+                node.focus = 0.60
+            elif node.id in temporal_only:
+                node.focus = 0.35
             elif node.id in second_degree:
                 node.focus = 0.45
             else:
@@ -248,8 +280,8 @@ class CanvasBridge(QObject):
             self._structural_edges.append(new_edge)
 
         temporals = [e for e in self._structural_edges if e.edgeType == "temporal"]
-        explicits = [e for e in self._structural_edges if e.edgeType == "explicit"]
-        semantics = [e for e in self._structural_edges if e.edgeType == "semantic"]
+        explicits = [e for e in self._structural_edges if e.edgeType in ("explicit", "wikilink", "direct")]
+        semantics = [e for e in self._structural_edges if e.edgeType in ("semantic", "semantic_link")]
 
         temporals.sort(key=lambda e: e.weight, reverse=True)
         explicits.sort(key=lambda e: e.weight, reverse=True)
@@ -269,7 +301,17 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(list, notify=edgesChanged)
     def edges(self) -> list[Edge]:
-        return self.physics_ctrl.edges
+        if hasattr(self.physics_ctrl, "edges"):
+            return self.physics_ctrl.edges
+        return getattr(self, "_ambient_edges", [])
+
+    @pyqtProperty(list, notify=ambientEdgesChanged)
+    def ambientEdges(self) -> list[Edge]:
+        return getattr(self, "_ambient_edges", [])
+
+    @pyqtProperty(list, notify=edgesChanged)
+    def focalEdges(self) -> list[Edge]:
+        return getattr(self, "_focal_edges", [])
 
     @pyqtProperty(int, notify=selectedNodeChanged)
     def selectedNodeId(self) -> int:
@@ -299,6 +341,30 @@ class CanvasBridge(QObject):
     def aperture(self) -> float:
         return self.canvas_ctrl.aperture
 
+    @pyqtProperty(float, notify=focalCardDimensionsChanged)
+    def focalCardWidth(self) -> float:
+        return self._focal_card_width
+
+    @focalCardWidth.setter
+    def focalCardWidth(self, val: float):
+        if self._focal_card_width != val:
+            self._focal_card_width = val
+            self.physics.set_focal_card_dimensions(self._focal_card_width, self._focal_card_height)
+            self.focalCardDimensionsChanged.emit()
+            self._wake_physics()
+
+    @pyqtProperty(float, notify=focalCardDimensionsChanged)
+    def focalCardHeight(self) -> float:
+        return self._focal_card_height
+
+    @focalCardHeight.setter
+    def focalCardHeight(self, val: float):
+        if self._focal_card_height != val:
+            self._focal_card_height = val
+            self.physics.set_focal_card_dimensions(self._focal_card_width, self._focal_card_height)
+            self.focalCardDimensionsChanged.emit()
+            self._wake_physics()
+
     @pyqtProperty(list, notify=clusterHalosChanged)
     def clusterHalos(self) -> list:
         return self.physics_ctrl.clusterHalos
@@ -313,7 +379,9 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(int, notify=telemetryChanged)
     def activeEdgeCount(self) -> int:
-        return self.physics_ctrl.activeEdgeCount
+        if hasattr(self.physics_ctrl, "activeEdgeCount"):
+            return self.physics_ctrl.activeEdgeCount
+        return len(getattr(self, "_ambient_edges", []))
 
     # --- Slots Invoked from QML ---
     
@@ -397,6 +465,16 @@ class CanvasBridge(QObject):
     def submit_query(self, query: str):
         self.search_ctrl.submit_query(query)
 
+    @pyqtSlot(str)
+    @pyqtSlot(str, int)
+    def execute_intent(self, raw_text: str, context_override: int = 0):
+        ctx = context_override if context_override > 0 else None
+        self.intent_dispatcher.dispatch(raw_text, ctx)
+
+    @pyqtSlot(str, int, result=list)
+    def get_completions(self, text: str, cursor_pos: int) -> list:
+        return self.completion_engine.get_completions(text, cursor_pos)
+
     @pyqtSlot()
     def clear_search(self):
         self.search_ctrl.clear_search()
@@ -405,12 +483,25 @@ class CanvasBridge(QObject):
     def set_search_active(self, active: bool):
         self.search_ctrl.set_search_active(active)
 
-    @pyqtSlot(list, float, float)
-    def set_staged_nodes(self, node_id_strs: list, viewport_w: float, shelf_y: float):
-        self.search_ctrl.set_staged_nodes(node_id_strs, viewport_w, shelf_y)
+    @pyqtSlot(int)
+    @pyqtSlot(str)
+    def focus_node(self, node_id):
+        if isinstance(node_id, str):
+            try:
+                node_id = int(node_id)
+            except ValueError:
+                return
+        self.node_ctrl.select_node(node_id)
+
+    @pyqtSlot(int, result=QObject)
+    def get_node(self, node_id: int):
+        if hasattr(self, "store") and self.store:
+            return self.store.get_node(node_id)
+        return None
 
     @pyqtSlot(int)
     def set_hovered_node(self, node_id: int):
+        self._hovered_node_id = node_id
         self.node_ctrl.set_hovered_node(node_id)
 
     @pyqtSlot(int, result=int)
@@ -443,6 +534,14 @@ class CanvasBridge(QObject):
 
     @pyqtSlot(int, float, float)
     def update_drag_pos(self, node_id: int, x: float, y: float):
+        self.node_ctrl.update_drag_pos(node_id, x, y)
+
+    @pyqtSlot(int, float, float)
+    def updateNodePosition(self, node_id: int, x: float, y: float):
+        self.node_ctrl.update_drag_pos(node_id, x, y)
+
+    @pyqtSlot(int, float, float)
+    def update_node_position(self, node_id: int, x: float, y: float):
         self.node_ctrl.update_drag_pos(node_id, x, y)
 
     @pyqtSlot(int, result=str)
@@ -523,6 +622,8 @@ class CanvasBridge(QObject):
                 Edge(source_id=src_id, target_id=tgt_id, edge_type=e_type, weight=weight)
             )
             
+        self._structural_edges = self._get_deduplicated_edges(self._structural_edges)
+            
         def load_batch(nodes_to_load, current_idx=0, batch_size=110):
             if current_idx >= len(nodes_to_load):
                 self._initial_sync_active = False
@@ -562,21 +663,34 @@ class CanvasBridge(QObject):
             return
 
         raw_temporal = result.get("temporal_edges", [])
-        if not raw_temporal:
-            return
+        raw_persisted = result.get("persisted_edges", [])
 
+        # Merge incoming edges with existing explicit links in memory
+        existing_explicit = [e for e in self._focal_edges if getattr(e, "edgeType", None) in ("explicit", "wikilink")]
+        
         for e in raw_temporal:
             src_id = int(e["source_id"])
             tgt_id = int(e["target_id"])
             weight = float(e.get("weight", 1.0))
-            edge_obj = Edge(source_id=src_id, target_id=tgt_id, edge_type="temporal", weight=weight)
+            edge_obj = Edge(source_id=src_id, target_id=tgt_id, edge_type="temporal", weight=weight, category="temporal")
             self._upsert_edge(edge_obj)
 
             if self._selected_node_id in (src_id, tgt_id):
-                if not any((fe.sourceId == src_id and fe.targetId == tgt_id and fe.edgeType == "temporal") or
-                           (fe.sourceId == tgt_id and fe.targetId == src_id and fe.edgeType == "temporal")
-                           for fe in self._focal_edges):
-                    self._focal_edges.append(edge_obj)
+                existing_explicit.append(edge_obj)
+
+        for e in raw_persisted:
+            src_id = int(e["source_id"])
+            tgt_id = int(e["target_id"])
+            edge_type = e.get("edge_type", "explicit")
+            weight = float(e.get("weight", 1.0))
+            edge_obj = Edge(source_id=src_id, target_id=tgt_id, edge_type=edge_type, weight=weight, category="topological")
+            self._upsert_edge(edge_obj)
+
+            if self._selected_node_id in (src_id, tgt_id):
+                existing_explicit.append(edge_obj)
+
+        # Run deduplication to fix lane offsets if topo exists
+        self._focal_edges = self._get_deduplicated_edges(existing_explicit)
 
         if not getattr(self, "_initial_sync_active", False):
             self._recalculate_focal_weights(self._selected_node_id)
@@ -587,16 +701,22 @@ class CanvasBridge(QObject):
             return
 
         raw_edges = result.get("edges", [])
+        raw_edges.extend(result.get("neighbors", []))
+        raw_edges.extend(result.get("persisted_edges", []))
+        raw_edges.extend(result.get("temporal_edges", []))
+        
         for e in raw_edges:
             src_id = int(e["source_id"])
             tgt_id = int(e["target_id"])
-            e_type = e["edge_type"]
-            weight = float(e["weight"])
+            e_type = e.get("edge_type", e.get("edgeType", "semantic"))
+            weight = float(e.get("weight", 1.0))
+            category = "temporal" if e_type == "temporal" else "topological"
             self._upsert_edge(
-                Edge(source_id=src_id, target_id=tgt_id, edge_type=e_type, weight=weight)
+                Edge(source_id=src_id, target_id=tgt_id, edge_type=e_type, weight=weight, category=category)
             )
 
-        if self._selected_node_id == 0 and not getattr(self, "_initial_sync_active", False):
+        if not getattr(self, "_initial_sync_active", False):
+            self.ambientEdgesChanged.emit()
             self.edgesChanged.emit()
 
     def _on_node_updated(self, data: dict):
@@ -613,6 +733,7 @@ class CanvasBridge(QObject):
         archetype = data.get("archetype", "document")
         snippet = data.get("snippet", "")
         size_bytes = data.get("size_bytes", 0)
+        thumbnail_url = data.get("thumbnail_url", "")
 
         node = self.store.get_node(node_id)
         if not node:
@@ -635,7 +756,8 @@ class CanvasBridge(QObject):
                 focus=0.35, 
                 archetype=archetype, 
                 snippet=snippet, 
-                size_bytes=size_bytes
+                size_bytes=size_bytes,
+                thumbnail_url=thumbnail_url
             )
             # Impart an initial outward impulse so it doesn't just sleep
             new_node.vx = math.cos(angle) * 40.0
@@ -648,6 +770,7 @@ class CanvasBridge(QObject):
             node._archetype = archetype
             node._snippet = snippet
             node._size_bytes = size_bytes
+            node._thumbnail_url = thumbnail_url
 
         self._recalculate_focal_weights(self._selected_node_id)
 
@@ -681,73 +804,211 @@ class CanvasBridge(QObject):
                 self.edgesChanged.emit()
                 self.nodeRemoved.emit(node_id)
 
+    def _get_deduplicated_edges(self, raw_edges: list) -> list:
+        topo_edges = {}
+        temporal_edges = {}
+
+        for e in raw_edges:
+            # Handle both Edge objects and dicts
+            is_obj = isinstance(e, Edge)
+            src = e.sourceId if is_obj else (e.get("source") or e.get("sourceId") or e.get("source_id"))
+            tgt = e.targetId if is_obj else (e.get("target") or e.get("targetId") or e.get("target_id"))
+            etype = e.edgeType if is_obj else (e.get("edgeType") or e.get("edge_type", "semantic"))
+            weight = e.weight if is_obj else float(e.get("weight", 1.0))
+            
+            pair_key = tuple(sorted([int(src), int(tgt)]))
+
+            if etype == "temporal":
+                if pair_key not in temporal_edges:
+                    temporal_edges[pair_key] = Edge(
+                        source_id=int(src), target_id=int(tgt), edge_type=etype, weight=weight,
+                        category="temporal"
+                    )
+            else:
+                if pair_key not in topo_edges:
+                    topo_edges[pair_key] = Edge(
+                        source_id=int(src), target_id=int(tgt), edge_type=etype, weight=weight,
+                        category="topological"
+                    )
+                else:
+                    curr_type = topo_edges[pair_key].edgeType
+                    if self.TOPOLOGICAL_PRIORITY.get(etype, 0) > self.TOPOLOGICAL_PRIORITY.get(curr_type, 0):
+                        topo_edges[pair_key] = Edge(
+                            source_id=int(src), target_id=int(tgt), edge_type=etype, weight=weight,
+                            category="topological"
+                        )
+
+        deduped_edges = list(topo_edges.values()) + list(temporal_edges.values())
+        # print(f"[Bridge] Edges before dedup: {len(raw_edges)} | After dedup: {len(deduped_edges)} (Topo + Temporal)")
+        return deduped_edges
+
+    def deduplicate_undirected_focal_edges(self, focal_id: int, edges: list) -> list:
+        seen_pairs = set()
+        deduped = []
+
+        for edge in edges:
+            is_obj = hasattr(edge, "sourceId") or isinstance(edge, Edge)
+            src = edge.sourceId if is_obj else (edge.get("source") or edge.get("sourceId") or edge.get("source_id"))
+            tgt = edge.targetId if is_obj else (edge.get("target") or edge.get("targetId") or edge.get("target_id"))
+            edge_type = edge.edgeType if is_obj else (edge.get("edgeType") or edge.get("edge_type", "semantic"))
+            
+            if src is None or tgt is None:
+                continue
+            src, tgt = int(src), int(tgt)
+            # 1. Enforce max 1 SEMANTIC edge per wing target
+            pair_key = (min(src, tgt), max(src, tgt), edge_type)
+            if pair_key in seen_pairs:
+                continue
+            
+            seen_pairs.add(pair_key)
+            deduped.append(edge)
+
+        # After basic pair-key deduplication, we also enforce:
+        # "each target node receives exactly ONE radial line from the focal card unless it has distinct explicit + temporal pairings."
+        by_target = {}
+        for edge in deduped:
+            is_obj = hasattr(edge, "sourceId") or isinstance(edge, Edge)
+            src = edge.sourceId if is_obj else (edge.get("source") or edge.get("sourceId") or edge.get("source_id"))
+            tgt = edge.targetId if is_obj else (edge.get("target") or edge.get("targetId") or edge.get("target_id"))
+            src, tgt = int(src), int(tgt)
+            other_id = tgt if src == focal_id else src
+            if other_id not in by_target:
+                by_target[other_id] = []
+            by_target[other_id].append(edge)
+            
+        final_deduped = []
+        for other_id, target_edges in by_target.items():
+            explicits = []
+            temporals = []
+            semantics = []
+            for e in target_edges:
+                is_obj = hasattr(e, "sourceId") or isinstance(e, Edge)
+                etype = e.edgeType if is_obj else (e.get("edgeType") or e.get("edge_type", "semantic"))
+                if etype in ("explicit", "wikilink", "direct"):
+                    explicits.append(e)
+                elif etype == "temporal":
+                    temporals.append(e)
+                elif etype in ("semantic", "knn", "semantic_link"):
+                    semantics.append(e)
+            
+            def get_weight(e):
+                is_obj = hasattr(e, "sourceId") or isinstance(e, Edge)
+                return e.weight if is_obj else float(e.get("weight", 0.0))
+
+            if explicits and temporals:
+                best_explicit = sorted(explicits, key=get_weight, reverse=True)[0]
+                best_temporal = sorted(temporals, key=get_weight, reverse=True)[0]
+                final_deduped.append(best_explicit)
+                final_deduped.append(best_temporal)
+            elif explicits:
+                best_explicit = sorted(explicits, key=get_weight, reverse=True)[0]
+                final_deduped.append(best_explicit)
+            elif temporals:
+                best_temporal = sorted(temporals, key=get_weight, reverse=True)[0]
+                final_deduped.append(best_temporal)
+            elif semantics:
+                best_semantic = sorted(semantics, key=get_weight, reverse=True)[0]
+                final_deduped.append(best_semantic)
+                
+        return final_deduped
+
+    def budget_focal_edges(self, focal_node_id: int, raw_edges: list, max_total: int = 8) -> list:
+        # Deduplicate raw edges first so we filter by unique pair keys/rules
+        deduped_raw = self.deduplicate_undirected_focal_edges(focal_node_id, raw_edges)
+
+        # Separate edges by classification
+        explicit_edges = [e for e in deduped_raw if getattr(e, "edgeType", None) in ("explicit", "wikilink")]
+        semantic_edges = sorted(
+            [e for e in deduped_raw if getattr(e, "edgeType", None) in ("semantic", "knn", "semantic_link")],
+            key=lambda e: getattr(e, "weight", 0.0),
+            reverse=True
+        )
+        temporal_edges = sorted(
+            [e for e in deduped_raw if getattr(e, "edgeType", None) == "temporal"],
+            key=lambda e: getattr(e, "weight", 0.0),
+            reverse=True
+        )
+
+        # Ensure only 1 temporal connection exists between any unique node pair
+        seen_temporal_targets = set()
+        deduped_temporal = []
+        for edge in temporal_edges:
+            target_id = edge.targetId if edge.sourceId == focal_node_id else edge.sourceId
+            if target_id not in seen_temporal_targets:
+                seen_temporal_targets.add(target_id)
+                deduped_temporal.append(edge)
+        temporal_edges = deduped_temporal
+
+        # Quota allocation
+        # Explicit: up to 4
+        explicit_quota = min(4, len(explicit_edges))
+        explicit_rollover = max(0, 4 - explicit_quota)
+        
+        # Semantic: 2 + explicit_rollover
+        semantic_target = 2 + explicit_rollover
+        semantic_quota = min(semantic_target, len(semantic_edges))
+        semantic_rollover = max(0, semantic_target - semantic_quota)
+        
+        # Temporal: 2 + semantic_rollover
+        temporal_target = 2 + semantic_rollover
+        temporal_quota = min(temporal_target, len(temporal_edges))
+        
+        selected_edges = (
+            explicit_edges[:explicit_quota] + 
+            semantic_edges[:semantic_quota] + 
+            temporal_edges[:temporal_quota]
+        )
+        
+        return selected_edges
+
     def _handle_neighbors_response(self, result: dict, error: str | None):
         if error or not result:
             return
 
         raw_edges = result.get("edges", [])
-        parsed_edges: list[Edge] = [
-            Edge(
-                source_id=int(e["source_id"]),
-                target_id=int(e["target_id"]),
-                edge_type=e["edge_type"],
-                weight=float(e["weight"])
-            )
-            for e in raw_edges
-        ]
-
+        raw_edges.extend(result.get("neighbors", []))
+        raw_edges.extend(result.get("persisted_edges", []))
+        raw_edges.extend(result.get("temporal_edges", []))
+        
         # 1. Vacuum Seal: ONLY preserve live temporal edges that ACTUALLY touch the current focal lens
         existing_temporals = [
             e for e in self._focal_edges 
             if e.edgeType == "temporal" and (e.sourceId == self._selected_node_id or e.targetId == self._selected_node_id)
         ]
-        
-        for te in existing_temporals:
-            if not any(
-                (pe.sourceId == te.sourceId and pe.targetId == te.targetId and pe.edgeType == te.edgeType) or
-                (pe.sourceId == te.targetId and pe.targetId == te.sourceId and pe.edgeType == te.edgeType)
-                for pe in parsed_edges
-            ):
-                parsed_edges.append(te)
 
-        # 2. Universal Deduplication: Keep only the highest priority relational bond
-        unique_edges = {}
-        for e in parsed_edges:
-            if e.sourceId != self._selected_node_id and e.targetId != self._selected_node_id:
-                continue
-                
-            pair_key = (min(e.sourceId, e.targetId), max(e.sourceId, e.targetId))
-            current = unique_edges.get(pair_key)
-            
-            if not current:
-                unique_edges[pair_key] = e
+        active_explicit = [
+            e for e in self._focal_edges 
+            if getattr(e, "edgeType", None) in ("explicit", "wikilink")
+        ]
+        
+        filtered_raw = [
+            e for e in raw_edges 
+            if e.get("edgeType", e.get("edge_type", None)) not in ("explicit", "wikilink")
+        ]
+        
+        combined_edges = filtered_raw + existing_temporals + active_explicit
+        
+        # 2. Universal Deduplication using the new dual-track method
+        deduped_edges = self._get_deduplicated_edges(combined_edges)
+        
+        # Sibling Edge Filtering
+        filtered_edges = []
+        for edge in deduped_edges:
+            is_direct_spoke = (edge.sourceId == self._selected_node_id or edge.targetId == self._selected_node_id)
+            edge_type = getattr(edge, "edgeType", "semantic")
+
+            if is_direct_spoke:
+                filtered_edges.append(edge)
             else:
-                # Priority mapping ensures Explicit and Semantic links aren't overwritten by Temporal history
-                priority = {"explicit": 3, "semantic": 2, "temporal": 1}
-                if priority[e.edgeType] > priority[current.edgeType] or priority[e.edgeType] == priority[current.edgeType] and e.weight > current.weight:
-                    unique_edges[pair_key] = e
-                
-        deduped_edges = list(unique_edges.values())
+                if edge_type in ("explicit", "wikilink", "temporal"):
+                    filtered_edges.append(edge)
+                elif edge_type in ("semantic", "knn"):
+                    continue
 
-        # 3. Categorize and Boost
-        temporals = [e for e in deduped_edges if e.edgeType == "temporal"]
-        explicits = [e for e in deduped_edges if e.edgeType == "explicit"]
-        
-        tier1_semantics = []
-        tier2_semantics = []
-        for e in deduped_edges:
-            if e.edgeType == "semantic":
-                tier1_semantics.append(e)
+        connected_edges = filtered_edges
 
-        # 4. Tier Allocations & Strict Secondary Quotas
-        tier1_edges = explicits + tier1_semantics
-        tier1_edges.sort(key=lambda e: e.weight, reverse=True)
-        
-        tier2_edges = temporals + tier2_semantics
-        tier2_edges.sort(key=lambda e: e.weight, reverse=True)
-
-        # Cap: Max 8 primary wings, and strictly cap Tier 2 temporal/satellites to max 4 total globally
-        self._focal_edges = tier1_edges[:8] + tier2_edges[:4]
+        # Use new budget logic (8 total max across left/right)
+        self._focal_edges = self.budget_focal_edges(self._selected_node_id, connected_edges, max_total=8)
 
         self._recalculate_focal_weights(self._selected_node_id)
         self.edgesChanged.emit()

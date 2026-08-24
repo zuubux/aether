@@ -1,41 +1,101 @@
-Application_ID,Company,Role,Date_Applied,Status,Target_Base_Comp,Location
-APP-1000,Fastly,Sr. Operations Manager,2026-08-13,Archived,"$189,000",Remote (US)
-APP-1001,Snowflake,Sr. Operations Manager,2026-08-11,Final Round,"$190,000",Remote (US)
-APP-1002,Cloudflare,Director of SRE,2026-08-08,Technical Panel,"$232,000",Remote (US)
-APP-1003,GitLab,Director of SRE,2026-08-01,Offer Pending,"$226,000",Remote (US)
-APP-1004,Cloudflare,Sr. Operations Manager,2026-08-16,Archived,"$233,000",Remote (US)
-APP-1005,GitLab,VP of Cloud Operations,2026-08-07,Archived,"$215,000",Remote (US)
-APP-1006,Upstart,VP of Cloud Operations,2026-08-17,Screening,"$238,000",Remote (US)
-APP-1007,CrowdStrike,Sr. Operations Manager,2026-08-05,Offer Pending,"$200,000",Remote (US)
-APP-1008,Fastly,VP of Cloud Operations,2026-08-20,Hired,"$188,999",Remote (US)
-APP-1009,CrowdStrike,Director of SRE,2026-08-09,Archive\\\\,"$192,000",Remote (US)
-APP-1010,Cloudflare,Director of SRE,2026-08-16,Screening,"$213,000",Remote (US)
-APP-1011,CrowdStrike,Sr. Operations Manager,2026-08-02,Archived,"$227,000",Remote (US)
-APP-1012,HashiCorp,Staff Infrastructure Engineer,2026-08-06,Applied,"$237,000",Remote (US)
-APP-1013,Fastly,Director of SRE,2026-08-03,Screening,"$217,000",Remote (US)
-APP-1014,Datadog,VP of Cloud Operations,2026-08-21,Archived,"$215,000",Remote (US)
-APP-1015,Snowflake,Director of SRE,2026-08-02,Archived,"$208,000",Remote (US)
-APP-1016,HashiCorp,Sr. Operations Manager,2026-08-21,Archived,"$235,000",Remote (US)
-APP-1017,Cloudflare,Director of SRE,2026-08-18,START FRESH,"$205,000",Remote (US)
-APP-1018,HashiCorp,Staff Infrastructure Engineer,2026-08-20,Screening,"$226,000",Remote (US)
-APP-1019,Fastly,Director of SRE,2026-08-10,Final Round,"$215,000",Remote (US)
-APP-1020,Datadog,VP of Cloud Operations,2026-08-16,Technical Panel,"$186,000",Remote (US)
-APP-1021,Datadog,Staff Infrastructure Engineer,2026-08-08,Offer Pending,"$195,000",Remote (US)
-APP-1022,HashiCorp,VP of Cloud Operations,2026-08-05,Technical Panel,"$238,0011",Remote (US)
-APP-1023,GitLab,VP of Cloud Operations,2026-08-11,Technical Panel,"$239,000",Remote (US)
-APP-1024,Fastly,Director of SRE,2026-08-18,Final Round,"$195,000",Remote (US)
-APP-1025,Cloudflare,Sr. Operations Manager,2026-08-20,Applied,"$192,000",Remote (US)
-APP-1026,HashiCorp,Staff Infrastructure Engineer,2026-08-02,Offer Pending,"$224,000",Remote (US)
-APP-1027,CrowdStrike,VP of Cloud Operations,2026-08-04,Screening,"$224,000",Remote (US)
-APP-1028,GitLab,VP of Cloud Operations,2026-08-05,Technical Panel,"$220,000",Remote (US)
-APP-1029,GitLab,Sr. Operations Manager,2026-08-14,Screening,"$240,000",Remote (US)
-APP-1030,Upstart,Director of SRE,2026-08-06,Offer Pending,"$210,000",Remote (US)
-APP-1031,Datadog,VP of Cloud Operations,2026-08-10,Applied,"$213,000",Remote (US)
-APP-1032,Fastly,Staff Infrastructure Engineer,2026-08-08,Archived,"$232,000",Remote (US)
-APP-1033,Datadog,Staff Infrastructure Engineer,2026-08-10,Offer Pending,"$212,000",Remote (US)
-APP-1034,Upstart,Sr. Operations Manager,2026-08-06,Technical Panel,"$199,000",Remote (US)
-APP-1035,Upstart,Director of SRE,2026-08-13,Screening,"$224,000",Remote (US)
-APP-1036,Fastly,VP of Cloud Operations,2026-08-05,Offer Pending,"$216,000",Remote (US)
-APP-1037,GitLab,Staff Infrastructure Engineer,2026-08-17,Final Round,"$227,000",Remote (US)
-APP-1038,Cloudflare,Sr. Operations Manager,2026-08-18,Final Round,"$197,000",Remote (US)
-APP-1039,Snowflake,Staff Infrastructure Engineer,2026-08-16,Offer Pending,"$220,000",Remote (US)
+Application_ID,Company,Role,Date_Applied,Status,Target_Base,Location,Stage,Last_Contact,Notes
+APP-1000,Company_0,Role_0,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1001,Company_1,Role_1,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1002,Company_2,Role_2,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1003,Company_3,Role_3,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1004,Company_4,Role_4,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1005,Company_5,Role_5,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1006,Company_6,Role_6,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1007,Company_7,Role_7,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1008,Company_8,Role_8,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1009,Company_9,Role_9,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1010,Company_10,Role_10,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1011,Company_11,Role_11,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1012,Company_12,Role_12,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1013,Company_13,Role_13,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1014,Company_14,Role_14,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1015,Company_15,Role_15,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1016,Company_16,Role_16,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1017,Company_17,Role_17,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1018,Company_18,Role_18,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1019,Company_19,Role_19,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1020,Company_20,Role_20,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1021,Company_21,Role_21,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1022,Company_22,Role_22,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1023,Company_23,Role_23,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1024,Company_24,Role_24,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1025,Company_25,Role_25,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1026,Company_26,Role_26,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1027,Company_27,Role_27,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1028,Company_28,Role_28,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1029,Company_29,Role_29,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1030,Company_30,Role_30,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1031,Company_31,Role_31,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1032,Company_32,Role_32,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1033,Company_33,Role_33,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1034,Company_34,Role_34,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1035,Company_35,Role_35,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1036,Company_36,Role_36,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1037,Company_37,Role_37,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1038,Company_38,Role_38,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1039,Company_39,Role_39,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1040,Company_40,Role_40,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1041,Company_41,Role_41,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1042,Company_42,Role_42,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1043,Company_43,Role_43,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1044,Company_44,Role_44,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1045,Company_45,Role_45,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1046,Company_46,Role_46,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1047,Company_47,Role_47,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1048,Company_48,Role_48,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1049,Company_49,Role_49,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1050,Company_50,Role_50,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1051,Company_51,Role_51,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1052,Company_52,Role_52,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1053,Company_53,Role_53,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1054,Company_54,Role_54,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1055,Company_55,Role_55,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1056,Company_56,Role_56,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1057,Company_57,Role_57,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1058,Company_58,Role_58,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1059,Company_59,Role_59,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1060,Company_60,Role_60,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1061,Company_61,Role_61,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1062,Company_62,Role_62,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1063,Company_63,Role_63,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1064,Company_64,Role_64,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1065,Company_65,Role_65,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1066,Company_66,Role_66,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1067,Company_67,Role_67,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1068,Company_68,Role_68,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1069,Company_69,Role_69,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1070,Company_70,Role_70,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1071,Company_71,Role_71,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1072,Company_72,Role_72,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1073,Company_73,Role_73,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1074,Company_74,Role_74,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1075,Company_75,Role_75,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1076,Company_76,Role_76,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1077,Company_77,Role_77,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1078,Company_78,Role_78,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1079,Company_79,Role_79,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1080,Company_80,Role_80,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1081,Company_81,Role_81,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1082,Company_82,Role_82,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1083,Company_83,Role_83,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1084,Company_84,Role_84,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1085,Company_85,Role_85,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1086,Company_86,Role_86,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1087,Company_87,Role_87,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1088,Company_88,Role_88,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1089,Company_89,Role_89,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1090,Company_90,Role_90,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1091,Company_91,Role_91,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1092,Company_92,Role_92,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1093,Company_93,Role_93,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1094,Company_94,Role_94,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1095,Company_95,Role_95,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1096,Company_96,Role_96,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1097,Company_97,Role_97,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1098,Company_98,Role_98,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit
+APP-1099,Company_99,Role_99,2026-08-01,Active,200k,Remote,Interview,2026-08-15,Good fit

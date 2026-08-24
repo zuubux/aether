@@ -1,4 +1,5 @@
 import QtQuick
+import ".."
 
 Item {
     id: pillRoot
@@ -14,41 +15,54 @@ Item {
     property bool isSearchResult: false
     property bool isBead: (typeof rootItem !== "undefined" && rootItem.currentAperture < 0.40) && !(typeof rootItem !== "undefined" && rootItem.showPreviewSlate) && !(typeof rootItem !== "undefined" && rootItem.isHovered)
 
-    implicitWidth: pillRow.implicitWidth
+    readonly property string cleanTitle: {
+        var name = pillRoot.fileName || "";
+        return name.lastIndexOf(".") > 0 ? name.substring(0, name.lastIndexOf(".")) : name;
+    }
+
     implicitHeight: 32
 
-    Row {
-        id: pillRow
-        anchors.centerIn: parent
-        spacing: 6
-        z: 2
+    // Extension Badge
+    Rectangle {
+        id: badge
+        width: Math.max(18, badgeLabel.implicitWidth + 6)
+        height: 14
+        radius: 3
+        color: Theme.getBadgeColor(pillRoot.extensionStr, pillRoot.archetype)
+        anchors.left: parent.left
+        anchors.leftMargin: 8
+        anchors.verticalCenter: parent.verticalCenter
         visible: !pillRoot.isBead
         opacity: pillRoot.isBead ? 0.0 : 1.0
+        z: 2
 
-        // Extension Badge
-        Rectangle {
-            width: 16
-            height: 14
-            radius: 3
-            color: pillRoot.accentColor || "#00E5FF"
-            anchors.verticalCenter: parent.verticalCenter
-            Text {
-                anchors.centerIn: parent
-                text: (pillRoot.extensionStr || "md").replace(".", "").toUpperCase()
-                font.pixelSize: 8
-                font.bold: true
-                color: "#0D1117"
-            }
-        }
-
-        // File Name
         Text {
-            text: pillRoot.fileName || ""
-            font.pixelSize: 11
-            font.weight: Font.DemiBold
-            color: "#E6EDF3"
-            elide: Text.ElideRight
-            anchors.verticalCenter: parent.verticalCenter
+            id: badgeLabel
+            anchors.centerIn: parent
+            text: Theme.normalizeExt(pillRoot.extensionStr)
+            font.pixelSize: 8
+            font.family: Theme.fontCode
+            font.bold: true
+            color: "#0D1117"
         }
+    }
+
+    // File Name
+    Text {
+        id: label
+        text: pillRoot.cleanTitle
+        font.pixelSize: 10
+        font.family: Theme.fontSans
+        font.weight: Font.Normal
+        color: Theme.textPrimary
+        elide: Text.ElideRight
+        anchors.left: badge.right
+        anchors.leftMargin: 6
+        anchors.right: parent.right
+        anchors.rightMargin: 8
+        anchors.verticalCenter: parent.verticalCenter
+        visible: !pillRoot.isBead
+        opacity: pillRoot.isBead ? 0.0 : 1.0
+        z: 2
     }
 }

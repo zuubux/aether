@@ -27,6 +27,7 @@ class Node(QObject):
         archetype: str = "document",
         snippet: str = "",
         size_bytes: int = 0,
+        thumbnail_url: str = "",
     ):
         super().__init__()
         self._id = id
@@ -42,6 +43,7 @@ class Node(QObject):
         self._archetype = archetype
         self._snippet = snippet
         self._size_bytes = size_bytes
+        self._thumbnail_url = thumbnail_url
         self._is_deleted = False
 
     # --- ID ---
@@ -76,6 +78,10 @@ class Node(QObject):
     @pyqtProperty(str, constant=True)
     def snippet(self) -> str:
         return self._snippet
+
+    @pyqtProperty(str, constant=True)
+    def thumbnailUrl(self) -> str:
+        return self._thumbnail_url
 
     @pyqtProperty(int, constant=True)
     def sizeBytes(self) -> int:
@@ -164,6 +170,7 @@ class Node(QObject):
 
 class Edge(QObject):
     weightChanged = pyqtSignal()
+    edgeChanged = pyqtSignal()
 
     def __init__(
         self,
@@ -171,12 +178,18 @@ class Edge(QObject):
         target_id: int,
         edge_type: str = "explicit",
         weight: float = 1.0,
+        category: str = "topological",
     ):
         super().__init__()
         self._source_id = source_id
         self._target_id = target_id
         self._edge_type = edge_type
         self._weight = weight
+        self._category = category
+
+    @pyqtProperty(str, constant=True)
+    def category(self) -> str:
+        return self._category
 
     @pyqtProperty(int, constant=True)
     def sourceId(self) -> int:

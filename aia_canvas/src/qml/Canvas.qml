@@ -1,13 +1,41 @@
 import QtQuick
 import QtQuick.Controls
+import "hud"
+import "search"
 
 Window {
-    id: root
+    id: canvasRoot
     width: 2560
     height: 1440
     title: "Aether Canvas"
     color: "#07080b"
     property bool showDiagnostics: false
+
+    readonly property Item focalCardItem: (canvasBridge && canvasBridge.selectedNodeId > 0) ? canvasViewport.getNode(canvasBridge.selectedNodeId) : null
+
+    readonly property int nodeCount: (canvasBridge && canvasBridge.nodes) ? Math.max(1, canvasBridge.nodes.length) : 1
+    readonly property real viewportArea: width * height
+    readonly property real pixelBudgetPerNode: (viewportArea * Math.pow(canvasBridge ? canvasBridge.aperture : 1.0, 2)) / nodeCount
+
+    readonly property string ambientTier: {
+        var ap = canvasBridge ? canvasBridge.aperture : 1.0;
+        if (ap < 0.45 || pixelBudgetPerNode < 15000) return "TIER_4";
+        if (ap >= 1.6 && pixelBudgetPerNode > 120000) return "TIER_2";
+        return "TIER_3";
+    }
+
+    Binding {
+        target: canvasBridge
+        property: "focalCardWidth"
+        value: focalCardItem ? focalCardItem.width : 880.0
+        when: canvasBridge !== null && focalCardItem !== null
+    }
+    Binding {
+        target: canvasBridge
+        property: "focalCardHeight"
+        value: focalCardItem ? focalCardItem.height : 600.0
+        when: canvasBridge !== null && focalCardItem !== null
+    }
     
     screen: Qt.application.screens[targetScreenIdx !== undefined ? targetScreenIdx : 0]
     visibility: (isFullscreen || isSpanAll) ? Window.FullScreen : Window.Windowed
@@ -28,11 +56,11 @@ Window {
                     omniBar.clearTextAndCancel()
                 } else {
                     omniBar.dismiss()
-                    if (canvasViewport.searchActive && canvasBridge) {
+                    if (searchShelf.searchActive && canvasBridge) {
                         canvasBridge.clear_search()
                     }
                 }
-            } else if (canvasViewport.searchActive) {
+            } else if (searchShelf.searchActive) {
                 if (canvasBridge) {
                     canvasBridge.clear_search()
                 }
@@ -82,7 +110,7 @@ Window {
 
     function syncViewportDimensions() {
         if (canvasBridge) {
-            canvasBridge.update_viewport_dimensions(root.width, root.height)
+            canvasBridge.update_viewport_dimensions(canvasRoot.width, canvasRoot.height)
         }
     }
 
@@ -102,7 +130,7 @@ Window {
             anchors.fill: parent
 
             onClicked: function(mouse) {
-                if (canvasViewport.searchActive && canvasBridge) {
+                if (searchShelf.searchActive && canvasBridge) {
                     canvasBridge.clear_search()
                 } else if (canvasBridge) {
                     canvasBridge.select_node(0)
@@ -117,14 +145,43 @@ Window {
             }
         }
 
+        // Ambient Canvas Dimming Scrim
+        Rectangle {
+            id: searchScrim
+            objectName: "searchScrim"
+            anchors.fill: parent
+            z: 9000
+            color: "#07080B"
+            opacity: (searchShelf.searchActive || (omniBar.active && omniBar.textLength > 0)) ? 0.72 : 0.0
+            visible: opacity > 0.001
+
+            Behavior on opacity {
+                NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                preventStealing: true
+                onClicked: {
+                    if (omniBar.active) {
+                        omniBar.dismiss()
+                    }
+                    if (canvasBridge) {
+                        canvasBridge.clear_search()
+                    }
+                }
+            }
+        }
+
         OmniBar {
             id: omniBar
+            searchShelf: searchShelf
             anchors.horizontalCenter: parent.horizontalCenter
             z: 10000
 
             onQuerySubmitted: function(text) {
                 if (canvasBridge) {
-                    canvasBridge.submit_query(text)
+                    canvasBridge.execute_intent(text)
                 }
             }
 
@@ -140,6 +197,14 @@ Window {
                     canvasBridge.clear_search()
                 }
             }
+        }
+
+        SearchShelf {
+            id: searchShelf
+            objectName: "searchShelf"
+            z: 10000
+            viewport: canvasViewport
+            omniBar: omniBar
         }
 
         Item {
@@ -158,82 +223,9 @@ Window {
             }
 
             property var nodeRegistry: ({})
-            property var searchResultIds: []
-            property bool searchActive: false
-            property real searchVisualScrollY: 0
-            property real targetSearchScrollY: 0
-            readonly property real maxScrollLimit: Math.max(0, (canvasViewport.searchTotalRows - 3) * 210)
-
-            // Fluid critically damped spring motion (Apple-like easing)
-            Behavior on searchVisualScrollY {
-                SpringAnimation {
-                    spring: 4.5
-                    damping: 0.35
-                    epsilon: 0.25
-                    mass: 1.0
-                }
-            }
-
-            // Timer / boundary pull-back: softly snaps overscroll back to [0, maxScrollLimit]
-            Timer {
-                id: boundarySnapTimer
-                interval: 16
-                running: (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.searchActive) && (canvasViewport.targetSearchScrollY < 0 || canvasViewport.targetSearchScrollY > canvasViewport.maxScrollLimit)
-                repeat: true
-                onTriggered: {
-                    if (canvasViewport.targetSearchScrollY < 0) {
-                        canvasViewport.targetSearchScrollY = canvasViewport.targetSearchScrollY * 0.75;
-                        if (Math.abs(canvasViewport.targetSearchScrollY) < 0.5) canvasViewport.targetSearchScrollY = 0;
-                    } else if (canvasViewport.targetSearchScrollY > canvasViewport.maxScrollLimit) {
-                        canvasViewport.targetSearchScrollY = canvasViewport.maxScrollLimit + (canvasViewport.targetSearchScrollY - canvasViewport.maxScrollLimit) * 0.75;
-                        if (Math.abs(canvasViewport.targetSearchScrollY - canvasViewport.maxScrollLimit) < 0.5) canvasViewport.targetSearchScrollY = canvasViewport.maxScrollLimit;
-                    }
-                    canvasViewport.searchVisualScrollY = canvasViewport.targetSearchScrollY;
-                }
-            }
-
-            readonly property int searchColumns: {
-                var total = searchResultIds.length;
-                if (total <= 4) return Math.max(1, total);
-                if (total === 5 || total === 6) return 3;
-                if (total === 7 || total === 8) return 4;
-                return (width >= 2560) ? 5 : 4;
-            }
-            readonly property int searchTotalRows: Math.ceil(searchResultIds.length / Math.max(1, searchColumns))
-
-            readonly property real searchGridWidth: searchColumns * 266 + 40
-            readonly property real searchGridHeight: searchTotalRows * 210 + 40
-            readonly property real searchGridY: (root.height - 60 - 28 - 18 - 85) - (searchTotalRows - 1) * 210 - 85 - 20
-
-            MouseArea {
-                id: searchScrollWheelCapture
-                anchors.fill: parent
-                z: 9000
-                visible: canvasViewport.searchActive
-                hoverEnabled: false
-                acceptedButtons: Qt.NoButton // Allows clicks to pass through to cards
-                propagateComposedEvents: true
-                
-                onWheel: (wheel) => {
-                    var delta = wheel.angleDelta.y * 0.85;
-                    var maxLimit = canvasViewport.maxScrollLimit;
-
-                    var minOverscroll = -50;
-                    var maxOverscroll = maxLimit + 50;
-
-                    if ((canvasViewport.targetSearchScrollY <= 0 && delta > 0) || (canvasViewport.targetSearchScrollY >= maxLimit && delta < 0)) {
-                        delta *= 0.25;
-                    }
-
-                    canvasViewport.targetSearchScrollY = Math.max(minOverscroll, Math.min(canvasViewport.targetSearchScrollY - delta, maxOverscroll));
-                    canvasViewport.searchVisualScrollY = canvasViewport.targetSearchScrollY;
-                    console.log("[WHEEL CAPTURED] delta:", delta, "searchVisualScrollY:", canvasViewport.searchVisualScrollY, "maxLimit:", maxLimit);
-                    wheel.accepted = true;
-                }
-            }
 
             Connections {
-                target: canvasBridge
+                target: typeof canvasBridge !== "undefined" ? canvasBridge : null
                 
                 function onSelectedNodeChanged(nodeId) {
                     if (nodeId > 0) {
@@ -242,43 +234,6 @@ Window {
                         canvasViewport.targetY = 0;
                         canvasViewport.targetScale = 1.0;
                     }
-                }
-
-                function onSearchResultsReceived(results) {
-                    canvasViewport.searchResultIds = results
-                    canvasViewport.searchActive = true
-                    canvasViewport.targetSearchScrollY = 0.0;
-                    canvasViewport.searchVisualScrollY = 0.0;
-
-                    var sumX = 0
-                    var sumY = 0
-                    var count = 0
-
-                    for (var i = 0; i < results.length; i++) {
-                        var node = canvasViewport.getNode(results[i])
-                        if (node) {
-                            sumX += node.x + node.width / 2
-                            sumY += node.y + node.height / 2
-                            count++
-                        }
-                    }
-
-                    if (count > 0 && canvasBridge) {
-                        // Position bottom row above OmniBar
-                        var shelfY = root.height - 60 - 28 - 18 - 85; // 85 is half of card height
-                        canvasBridge.set_staged_nodes(results, root.width, shelfY);
-                    }
-                }
-
-                function onSearchCleared() {
-                    canvasViewport.searchActive = false
-                    canvasViewport.searchResultIds = []
-                    canvasViewport.targetSearchScrollY = 0.0;
-                    canvasViewport.searchVisualScrollY = 0.0;
-                    // Retain target defaults explicitly
-                    canvasViewport.targetX = 0
-                    canvasViewport.targetY = 0
-                    canvasViewport.targetScale = 1.0
                 }
 
                 function onNodeRemoved(nodeId) {
@@ -313,55 +268,6 @@ Window {
                 var _dummy = registryEpoch
                 return nodeRegistry[id] || null
             }
-
-            function closeSearchAndOmniBar() {
-                if (typeof omniBar !== "undefined" && omniBar) {
-                    if (typeof omniBar.clearTextAndCancel === "function") {
-                        omniBar.clearTextAndCancel()
-                    }
-                    omniBar.dismiss()
-                }
-                if (searchActive && canvasBridge) {
-                    if (typeof canvasBridge.set_search_active === "function") {
-                        canvasBridge.set_search_active(false)
-                    }
-                    searchActive = false
-                }
-                canvasSpace.forceActiveFocus()
-            }
-
-            // Ethereal Focus Shield & Pointer Occlusion
-            Rectangle {
-                id: searchScrim
-                visible: (typeof omniBar !== "undefined" && omniBar.active && omniBar.opacity > 0) || canvasViewport.searchActive
-                opacity: visible ? 1.0 : 0.0
-                color: "transparent"
-                z: 7500 // Above background (1000-7000), below search results (8000+)
-                
-                width: canvasViewport.searchActive ? canvasViewport.searchGridWidth : parent.width
-                height: canvasViewport.searchActive ? canvasViewport.searchGridHeight : parent.height
-                x: canvasViewport.searchActive ? (parent.width - width) / 2 : 0
-                y: canvasViewport.searchActive ? canvasViewport.searchGridY : 0
-                radius: canvasViewport.searchActive ? 16 : 0
-
-                Behavior on opacity {
-                    NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    // Consume pointer events inside the bounds
-                    preventStealing: true
-                    onClicked: {
-                        if (omniBar) {
-                            omniBar.dismiss()
-                        }
-                        if (canvasBridge) {
-                            canvasBridge.clear_search()
-                        }
-                    }
-                }
-            }
             
             // 1. Atmospheric Cluster Halos (Background Layer)
             Repeater {
@@ -386,228 +292,69 @@ Window {
             }
 
             // 2. Dynamic Synaptic Tendrils (Midground Layer)
-            Repeater {
-                model: canvasBridge ? canvasBridge.edges : []
+            Item {
+                id: tendrilLayer
+                anchors.fill: parent
+                z: 10
 
-                Tendril {
-                    required property var modelData
+                Repeater {
+                    // In focal mode, ONLY feed the deduplicated focalEdges list
+                    model: (canvasBridge && canvasBridge.selectedNodeId > 0) ? canvasBridge.focalEdges : (canvasBridge ? canvasBridge.ambientEdges : [])
 
-                    sourceId: modelData.sourceId
-                    targetId: modelData.targetId
-                    edgeType: modelData.edgeType
-                    weight: modelData.weight
-                    currentAperture: canvasBridge ? canvasBridge.aperture : 1.0
-                    selectedNodeId: canvasBridge ? canvasBridge.selectedNodeId : 0
-                    hoveredNodeId: canvasBridge ? canvasBridge.hoveredNodeId : 0
-                    sourceNode: canvasViewport.getNode(modelData.sourceId)
-                    targetNode: canvasViewport.getNode(modelData.targetId)
+                    Tendril {
+                        required property var modelData
+
+                        sourceId: modelData.sourceId
+                        targetId: modelData.targetId
+                        edgeType: modelData.edgeType
+                        weight: modelData.weight
+                        currentAperture: canvasBridge ? canvasBridge.aperture : 1.0
+                        selectedNodeId: canvasBridge ? canvasBridge.selectedNodeId : 0
+                        hoveredNodeId: canvasBridge ? canvasBridge.hoveredNodeId : 0
+                        sourceNode: canvasViewport.getNode(modelData.sourceId)
+                        targetNode: canvasViewport.getNode(modelData.targetId)
+                    }
                 }
             }
 
             // 3. Cards & Constellations (Foreground Layer)
-            Repeater {
-                model: canvasBridge ? canvasBridge.nodes : []
+            Item {
+                id: nodeLayer
+                anchors.fill: parent
+                z: 15
 
-                Node {
-                    id: nodeItem
-                    required property var modelData
+                Repeater {
+                    model: canvasBridge ? canvasBridge.nodes : []
 
-                    bridge: canvasBridge
-                    viewportContainer: canvasViewport
-                    nodeModel: modelData
+                    Node {
+                        id: nodeItem
+                        required property var modelData
 
-                    Component.onCompleted: {
-                        canvasViewport.registerNode(modelData.id, nodeItem)
-                    }
-                    Component.onDestruction: {
-                        canvasViewport.unregisterNode(modelData.id)
+                        bridge: canvasBridge
+                        viewportContainer: canvasViewport
+                        nodeModel: modelData
+                        ambientTier: canvasRoot.ambientTier
+
+                        Component.onCompleted: {
+                            canvasViewport.registerNode(modelData.id, nodeItem)
+                        }
+                        Component.onDestruction: {
+                            canvasViewport.unregisterNode(modelData.id)
+                        }
                     }
                 }
             }
         }
-    }
 
-    // =========================================================================
-    // Bottom Controls: IPC Status & Aperture Gauge
-    // =========================================================================
-    Row {
-        id: bottomHud
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.margins: 20
-        spacing: 12
-        z: 10
-
-        // IPC Status Pill
-        Rectangle {
-            width: 130
-            height: 30
-            radius: 15
-            color: "#0e1117"
-            border.color: (canvasBridge && canvasBridge.isConnected) ? "#10b981" : "#475569"
-            border.width: 1
-            opacity: 0.85
-
-            Row {
-                anchors.centerIn: parent
-                spacing: 8
-
-                Rectangle {
-                    width: 7
-                    height: 7
-                    radius: 3.5
-                    color: (canvasBridge && canvasBridge.isConnected) ? "#10b981" : "#64748b"
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    SequentialAnimation on opacity {
-                        running: canvasBridge ? canvasBridge.isConnected : false
-                        loops: Animation.Infinite
-                        PropertyAnimation { to: 0.4; duration: 1200; easing.type: Easing.InOutSine }
-                        PropertyAnimation { to: 1.0; duration: 1200; easing.type: Easing.InOutSine }
-                    }
-                }
-
-                Text {
-                    text: (canvasBridge && canvasBridge.isConnected) ? "Weaver Live" : "Standalone"
-                    color: (canvasBridge && canvasBridge.isConnected) ? "#e2e8f0" : "#94a3b8"
-                    font.family: "Monospace"
-                    font.pixelSize: 10
-                    font.bold: true
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
+        CanvasHud {
+            id: bottomHud
+            objectName: "bottomHud"
         }
 
-        // Aperture Gauge Pill
-        Rectangle {
-            width: 140
-            height: 30
-            radius: 15
-            color: "#0e1117"
-            border.color: "#1e293b"
-            border.width: 1
-            opacity: 0.85
-
-            Row {
-                anchors.centerIn: parent
-                spacing: 8
-
-                Text {
-                    text: "Aperture"
-                    color: "#64748b"
-                    font.family: "Monospace"
-                    font.pixelSize: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                Text {
-                    text: Math.round((canvasBridge ? canvasBridge.aperture : 1.0) * 100) + "%"
-                    color: "#38bdf8"
-                    font.family: "Monospace"
-                    font.pixelSize: 11
-                    font.bold: true
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-        }
-    }
-
-    // =========================================================================
-    // Diagnostic HUD (F3 Toggle)
-    // =========================================================================
-    Rectangle {
-        visible: root.showDiagnostics
-        width: 270
-        height: 270
-        anchors.top: parent.top
-        anchors.right: parent.right
-        anchors.margins: 20
-        color: "#0a0c10"
-        border.color: "#334155"
-        border.width: 1
-        radius: 8
-        opacity: 0.90
-        z: 9000
-
-        Column {
-            anchors.fill: parent
-            anchors.margins: 14
-            spacing: 8
-
-            Text {
-                text: "AIA CANVAS SRE HUD"
-                color: "#f8fafc"
-                font.family: "Monospace"
-                font.pixelSize: 12
-                font.bold: true
-            }
-
-            Rectangle { width: parent.width; height: 1; color: "#1e293b" }
-
-            Grid {
-                columns: 2
-                spacing: 8
-                rowSpacing: 6
-
-                Text { text: "Nodes:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
-                Text { text: canvasBridge ? canvasBridge.activeNodeCount : 0; color: "#38bdf8"; font.family: "Monospace"; font.pixelSize: 11; font.bold: true }
-
-                Text { text: "Edges (Render):"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
-                Text { text: canvasBridge ? canvasBridge.activeEdgeCount : 0; color: "#fbbf24"; font.family: "Monospace"; font.pixelSize: 11; font.bold: true }
-
-                Text { text: "Physics Step:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
-                Text { 
-                    text: canvasBridge ? canvasBridge.physicsFrametime.toFixed(2) + " ms" : "0.00 ms"
-                    color: (canvasBridge && canvasBridge.physicsFrametime > 6.5) ? "#ef4444" : "#10b981" 
-                    font.family: "Monospace"; font.pixelSize: 11; font.bold: true 
-                }
-
-                Text { text: "Backend Socket:"; color: "#94a3b8"; font.family: "Monospace"; font.pixelSize: 11; width: 120 }
-                Text { 
-                    text: (canvasBridge && canvasBridge.isConnected) ? "CONNECTED" : "OFFLINE" 
-                    color: (canvasBridge && canvasBridge.isConnected) ? "#10b981" : "#ef4444"
-                    font.family: "Monospace"; font.pixelSize: 11; font.bold: true 
-                }
-            }
-
-            Rectangle { width: parent.width; height: 1; color: "#1e293b" }
-
-            Text {
-                text: "TENDRIL COLOR KEY"
-                color: "#94a3b8"
-                font.family: "Monospace"
-                font.pixelSize: 10
-                font.bold: true
-            }
-
-            Column {
-                spacing: 5
-                width: parent.width
-
-                Row {
-                    spacing: 8
-                    Rectangle { width: 14; height: 3; radius: 1.5; color: "#38bdf8"; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "Explicit ([[WikiLinks]])"; color: "#e2e8f0"; font.family: "Monospace"; font.pixelSize: 10 }
-                }
-
-                Row {
-                    spacing: 8
-                    Rectangle { width: 14; height: 3; radius: 1.5; color: "#a78bfa"; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "Semantic (Embeddings)"; color: "#e2e8f0"; font.family: "Monospace"; font.pixelSize: 10 }
-                }
-
-                Row {
-                    spacing: 8
-                    Rectangle { width: 14; height: 3; radius: 1.5; color: "#fbbf24"; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "Temporal (Co-edit / Session)"; color: "#e2e8f0"; font.family: "Monospace"; font.pixelSize: 10 }
-                }
-
-                Row {
-                    spacing: 8
-                    Rectangle { width: 14; height: 3; radius: 1.5; color: "#67e8f9"; anchors.verticalCenter: parent.verticalCenter }
-                    Text { text: "Hover / Active Bloom"; color: "#e2e8f0"; font.family: "Monospace"; font.pixelSize: 10 }
-                }
-            }
+        DiagnosticsOverlay {
+            id: diagnosticsOverlay
+            objectName: "diagnosticsOverlay"
+            showDiagnostics: canvasRoot.showDiagnostics
         }
     }
 }

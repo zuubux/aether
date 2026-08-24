@@ -43,19 +43,21 @@ class SearchController(BaseController):
             
             # Prepend local extension/filename matches
             for node in local_matches:
-                node_id_str = str(node.id)
-                if node_id_str not in seen_ids:
-                    node_ids.append(node_id_str)
-                    seen_ids.add(node_id_str)
+                if node.id not in seen_ids:
+                    node_ids.append(node.id)
+                    seen_ids.add(node.id)
                     
             # Add server semantic search results
             for n in search_result:
                 n_id = n.get('id') if 'id' in n else n.get('node_id')
                 if n_id is not None:
-                    node_id_str = str(n_id)
-                    if node_id_str not in seen_ids:
-                        node_ids.append(node_id_str)
-                        seen_ids.add(node_id_str)
+                    try:
+                        n_id_int = int(n_id)
+                        if n_id_int not in seen_ids:
+                            node_ids.append(n_id_int)
+                            seen_ids.add(n_id_int)
+                    except ValueError:
+                        pass
 
             if node_ids:
                 self.searchResultsReceived.emit(node_ids)
@@ -75,38 +77,13 @@ class SearchController(BaseController):
 
     @pyqtSlot()
     def clear_search(self):
-        if hasattr(self.bridge, "physics") and self.bridge.physics and hasattr(self.bridge, "store") and self.bridge.store:
-            self.bridge.physics.set_staged_nodes([], self.bridge.physics.viewport_w, 0.0, self.bridge.store.get_all_nodes())
-            
-        if hasattr(self.bridge, "_wake_physics"):
-            self.bridge._wake_physics()
-            
         self.searchCleared.emit()
 
     @pyqtSlot(bool)
     def set_search_active(self, active: bool):
         if not active:
-            if hasattr(self.bridge, "physics") and self.bridge.physics and hasattr(self.bridge, "store") and self.bridge.store:
-                self.bridge.physics.set_staged_nodes([], self.bridge.physics.viewport_w, 0.0, self.bridge.store.get_all_nodes())
-            if hasattr(self.bridge, "_wake_physics"):
-                self.bridge._wake_physics()
             if hasattr(self.bridge, "_search_active"):
                 self.bridge._search_active = False
             if hasattr(self.bridge, "searchActiveChanged"):
                 self.bridge.searchActiveChanged.emit(False)
             # Do NOT emit searchCleared or clear selection here
-
-    @pyqtSlot(list, float, float)
-    def set_staged_nodes(self, node_id_strs: list, viewport_w: float, shelf_y: float):
-        node_ids = []
-        for nid in node_id_strs:
-            try:
-                node_ids.append(int(nid))
-            except ValueError:
-                pass
-                
-        if hasattr(self.bridge, "physics") and self.bridge.physics and hasattr(self.bridge, "store") and self.bridge.store:
-            self.bridge.physics.set_staged_nodes(node_ids, viewport_w, shelf_y, self.bridge.store.get_all_nodes())
-            
-        if hasattr(self.bridge, "_wake_physics"):
-            self.bridge._wake_physics()

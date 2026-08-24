@@ -49,3 +49,12 @@ Exactly one visual delegate component must be visible (`opacity: 1.0`) at any ti
 
 ### 2.4 Unified Animations
 All dynamic layout transformations (e.g., width, height, and border-radius transitions) must use a unified duration of **220ms** paired with an **`Easing.OutQuint`** curve. This guarantees consistent, biological feeling spatial transitions.
+
+---
+
+## 3. Drag Transit & Settle Contract
+
+* **Transit Tier Escalation:** Dragging elevates Tier 4 micro-beads to Tier 3 Capsule, and Tier 3 / Tier 2 nodes to Tier 2 Inspection Slate.
+* **Settle Grace Period:** Releasing a dragged node triggers a 1000ms `settleTimer` with `Theme.accentCyan` border luminosity fade before settling into cluster equilibrium.
+* **Input Isolation:** Dragging actively cancels and inhibits `intentTimer` and `hoverDwellTimer`, and decouples physics model bindings (`x`, `y`) during motion.
+

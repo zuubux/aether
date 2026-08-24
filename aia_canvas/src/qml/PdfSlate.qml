@@ -203,16 +203,16 @@ FocusScope {
                     width: 45
                     height: 24
                     radius: 4
-                    color: root.currentPageIndex > 0 ? "#161b22" : "#0d1117"
-                    border.color: "#30363d"
+                    color: root.currentPageIndex > 0 ? Theme.surfaceButton : "transparent"
+                    border.color: root.currentPageIndex > 0 ? Theme.borderSubtle : "transparent"
                     border.width: 1
                     opacity: root.currentPageIndex > 0 ? 1.0 : 0.4
 
                     Text {
                         anchors.centerIn: parent
                         text: "Prev"
-                        color: root.currentPageIndex > 0 ? "#c9d1d9" : "#8b949e"
-                        font.family: "Monospace"
+                        color: root.currentPageIndex > 0 ? Theme.textSecondary : Theme.textMuted
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                     }
 
@@ -220,8 +220,8 @@ FocusScope {
                         anchors.fill: parent
                         cursorShape: root.currentPageIndex > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
                         hoverEnabled: true
-                        onEntered: if (root.currentPageIndex > 0) prevBtn.color = "#21262d"
-                        onExited: prevBtn.color = root.currentPageIndex > 0 ? "#161b22" : "#0d1117"
+                        onEntered: if (root.currentPageIndex > 0) prevBtn.color = Theme.surfaceButtonHover
+                        onExited: prevBtn.color = root.currentPageIndex > 0 ? Theme.surfaceButton : "transparent"
                         onPressed: (mouse) => { mouse.accepted = true }
                         onClicked: (mouse) => {
                             mouse.accepted = true
@@ -235,8 +235,8 @@ FocusScope {
                 // Page count indicator
                 Text {
                     text: "Page " + (root.pageCount > 0 ? (root.currentPageIndex + 1) : 0) + " / " + root.pageCount
-                    color: "#8b949e"
-                    font.family: "Monospace"
+                    color: Theme.textMuted
+                    font.family: Theme.fontCode
                     font.pixelSize: 10
                     anchors.verticalCenter: parent.verticalCenter
                 }
@@ -247,16 +247,16 @@ FocusScope {
                     width: 45
                     height: 24
                     radius: 4
-                    color: root.currentPageIndex < root.pageCount - 1 ? "#161b22" : "#0d1117"
-                    border.color: "#30363d"
+                    color: root.currentPageIndex < root.pageCount - 1 ? Theme.surfaceButton : "transparent"
+                    border.color: root.currentPageIndex < root.pageCount - 1 ? Theme.borderSubtle : "transparent"
                     border.width: 1
                     opacity: root.currentPageIndex < root.pageCount - 1 ? 1.0 : 0.4
 
                     Text {
                         anchors.centerIn: parent
                         text: "Next"
-                        color: root.currentPageIndex < root.pageCount - 1 ? "#c9d1d9" : "#8b949e"
-                        font.family: "Monospace"
+                        color: root.currentPageIndex < root.pageCount - 1 ? Theme.textSecondary : Theme.textMuted
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                     }
 
@@ -264,8 +264,8 @@ FocusScope {
                         anchors.fill: parent
                         cursorShape: root.currentPageIndex < root.pageCount - 1 ? Qt.PointingHandCursor : Qt.ArrowCursor
                         hoverEnabled: true
-                        onEntered: if (root.currentPageIndex < root.pageCount - 1) nextBtn.color = "#21262d"
-                        onExited: nextBtn.color = root.currentPageIndex < root.pageCount - 1 ? "#161b22" : "#0d1117"
+                        onEntered: if (root.currentPageIndex < root.pageCount - 1) nextBtn.color = Theme.surfaceButtonHover
+                        onExited: nextBtn.color = root.currentPageIndex < root.pageCount - 1 ? Theme.surfaceButton : "transparent"
                         onPressed: (mouse) => { mouse.accepted = true }
                         onClicked: (mouse) => {
                             mouse.accepted = true
@@ -282,15 +282,15 @@ FocusScope {
                     width: 80
                     height: 24
                     radius: 4
-                    color: "#161b22"
-                    border.color: "#30363d"
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
                     border.width: 1
 
                     Text {
                         anchors.centerIn: parent
                         text: root.isFitted ? "Fit Width" : "1:1 View"
-                        color: "#8b949e"
-                        font.family: "Monospace"
+                        color: Theme.textMuted
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                     }
 
@@ -298,8 +298,8 @@ FocusScope {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
-                        onEntered: fitBtn.color = "#21262d"
-                        onExited: fitBtn.color = "#161b22"
+                        onEntered: fitBtn.color = Theme.surfaceButtonHover
+                        onExited: fitBtn.color = Theme.surfaceButton
                         onClicked: {
                             root.isFitted = !root.isFitted
                             root.zoomLevel = 1.0
@@ -320,15 +320,15 @@ FocusScope {
                     width: 80
                     height: 24
                     radius: 4
-                    color: "#161b22"
-                    border.color: "#30363d"
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
                     border.width: 1
 
                     Text {
                         anchors.centerIn: parent
                         text: "Copy Page"
-                        color: "#8b949e"
-                        font.family: "Monospace"
+                        color: Theme.textMuted
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                     }
 
@@ -336,8 +336,8 @@ FocusScope {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
-                        onEntered: copyBtn.color = "#21262d"
-                        onExited: copyBtn.color = "#161b22"
+                        onEntered: copyBtn.color = Theme.surfaceButtonHover
+                        onExited: copyBtn.color = Theme.surfaceButton
                         onClicked: {
                             var b = getBridge()
                             if (b) {
@@ -355,15 +355,15 @@ FocusScope {
                     width: 80
                     height: 24
                     radius: 4
-                    color: "#161b22"
-                    border.color: "#30363d"
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
                     border.width: 1
 
                     Text {
                         anchors.centerIn: parent
                         text: "Reveal File"
-                        color: "#8b949e"
-                        font.family: "Monospace"
+                        color: Theme.textMuted
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                     }
 
@@ -371,8 +371,8 @@ FocusScope {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
-                        onEntered: revealBtn.color = "#21262d"
-                        onExited: revealBtn.color = "#161b22"
+                        onEntered: revealBtn.color = Theme.surfaceButtonHover
+                        onExited: revealBtn.color = Theme.surfaceButton
                         onClicked: {
                             var b = getBridge()
                             if (b) {
@@ -390,15 +390,15 @@ FocusScope {
                     width: 100
                     height: 24
                     radius: 4
-                    color: "#161b22"
-                    border.color: "#30363d"
+                    color: Theme.surfaceButton
+                    border.color: Theme.borderSubtle
                     border.width: 1
 
                     Text {
                         anchors.centerIn: parent
                         text: "Open in Editor"
-                        color: "#8b949e"
-                        font.family: "Monospace"
+                        color: Theme.textMuted
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                     }
 
@@ -406,8 +406,8 @@ FocusScope {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
-                        onEntered: openBtn.color = "#21262d"
-                        onExited: openBtn.color = "#161b22"
+                        onEntered: openBtn.color = Theme.surfaceButtonHover
+                        onExited: openBtn.color = Theme.surfaceButton
                         onClicked: {
                             var b = getBridge()
                             if (b) {
@@ -442,7 +442,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: "P"
                         color: root.accentColor
-                        font.family: "Monospace"
+                        font.family: Theme.fontCode
                         font.pixelSize: 10
                         font.bold: true
                     }
@@ -451,8 +451,8 @@ FocusScope {
                 Text {
                     id: titleText
                     text: root.fileName
-                    color: "#f8fafc"
-                    font.family: "Monospace"
+                    color: Theme.textPrimary
+                    font.family: Theme.fontCode
                     font.pixelSize: 12
                     font.bold: true
                     elide: Text.ElideRight
@@ -472,8 +472,8 @@ FocusScope {
                 Text {
                     id: metadataText
                     text: (imgElement.naturalWidth > 0 ? Math.round(imgElement.naturalWidth) : 1200) + "x" + (imgElement.naturalHeight > 0 ? Math.round(imgElement.naturalHeight) : 1600) + " | " + root.sizeFormatted
-                    color: "#64748b"
-                    font.family: "Monospace"
+                    color: Theme.textDimmed
+                    font.family: Theme.fontCode
                     font.pixelSize: 10
                     elide: Text.ElideMiddle
                     anchors.verticalCenter: parent.verticalCenter
@@ -615,65 +615,65 @@ FocusScope {
                             border.width: 1.5
                             anchors.verticalCenter: parent.verticalCenter
 
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "PDF"
+                                    color: root.accentColor
+                                    font.family: Theme.fontCode
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                }
+                            }
+
+                            Column {
+                                anchors.verticalCenter: parent.verticalCenter
+                                spacing: 4
+
+                                Text {
+                                    text: root.fileName
+                                    color: Theme.textPrimary
+                                    font.family: Theme.fontCode
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                    width: Math.min(180, parent.parent.width - 76)
+                                }
+
+                                Text {
+                                    text: "Format decoder not available"
+                                    color: "#f87171"
+                                    font.family: Theme.fontCode
+                                    font.pixelSize: 10
+                                }
+                            }
+                        }
+
+                        // Open in External App action button
+                        Rectangle {
+                            id: extOpenBtn
+                            width: 180
+                            height: 28
+                            radius: 6
+                            color: Theme.surfaceButton
+                            border.color: Theme.borderSubtle
+                            border.width: 1
+                            anchors.horizontalCenter: parent.horizontalCenter
+
                             Text {
                                 anchors.centerIn: parent
-                                text: "PDF"
-                                color: root.accentColor
-                                font.family: "Monospace"
-                                font.pixelSize: 11
-                                font.bold: true
-                            }
-                        }
-
-                        Column {
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 4
-
-                            Text {
-                                text: root.fileName
-                                color: "#f8fafc"
-                                font.family: "Monospace"
-                                font.pixelSize: 12
-                                font.bold: true
-                                elide: Text.ElideRight
-                                width: Math.min(180, parent.parent.width - 76)
-                            }
-
-                            Text {
-                                text: "Format decoder not available"
-                                color: "#f87171"
-                                font.family: "Monospace"
+                                text: "Open in External App"
+                                color: Theme.textSecondary
+                                font.family: Theme.fontCode
                                 font.pixelSize: 10
+                                font.bold: true
                             }
-                        }
-                    }
 
-                    // Open in External App action button
-                    Rectangle {
-                        id: extOpenBtn
-                        width: 180
-                        height: 28
-                        radius: 6
-                        color: "#161b22"
-                        border.color: "#30363d"
-                        border.width: 1
-                        anchors.horizontalCenter: parent.horizontalCenter
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Open in External App"
-                            color: "#c9d1d9"
-                            font.family: "Monospace"
-                            font.pixelSize: 10
-                            font.bold: true
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            hoverEnabled: true
-                            onEntered: extOpenBtn.color = "#21262d"
-                            onExited: extOpenBtn.color = "#161b22"
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                hoverEnabled: true
+                                onEntered: extOpenBtn.color = Theme.surfaceButtonHover
+                                onExited: extOpenBtn.color = Theme.surfaceButton
                             onClicked: {
                                 var b = getBridge()
                                 if (b) {
@@ -697,8 +697,8 @@ FocusScope {
         anchors.bottomMargin: 20
         height: 32
         radius: 16
-        color: "#161b22"
-        border.color: "#30363d"
+        color: Theme.surfaceButton
+        border.color: Theme.borderSubtle
         border.width: 1
         opacity: 0.0
         z: 100
@@ -710,7 +710,7 @@ FocusScope {
             anchors.centerIn: parent
             text: ""
             color: "#ef4444" // Crimson matching the accent Color
-            font.family: "Monospace"
+            font.family: Theme.fontCode
             font.pixelSize: 11
             font.bold: true
         }

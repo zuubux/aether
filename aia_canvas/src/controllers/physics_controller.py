@@ -32,21 +32,30 @@ class PhysicsController(BaseController):
             selected_node_id = self.bridge._selected_node_id
             for e in getattr(self.bridge, "_ambient_edges", []):
                 if e.sourceId == selected_node_id or e.targetId == selected_node_id:
-                    continue
+                    if getattr(e, "edgeType", None) not in ("explicit", "wikilink", "direct"):
+                        continue
                 base_edges.append(e)
         else:
             base_edges = getattr(self.bridge, "_ambient_edges", [])
             
         # 3. Global deduplication by priority to ensure no visual overlap
         unique_edges = {}
-        priority = {"explicit": 3, "semantic": 2, "temporal": 1}
+        priority = {
+            "explicit": 3,
+            "wikilink": 3,
+            "direct": 3,
+            "semantic_link": 2,
+            "semantic": 1,
+            "temporal": 0
+        }
         for e in base_edges:
-            pair_key = (min(e.sourceId, e.targetId), max(e.sourceId, e.targetId))
+            # Include category in pair_key so temporal and topological can coexist as dual tendrils
+            pair_key = (min(e.sourceId, e.targetId), max(e.sourceId, e.targetId), e.category)
             current = unique_edges.get(pair_key)
             if not current:
                 unique_edges[pair_key] = e
             else:
-                if priority.get(e.edgeType, 0) > priority.get(current.edgeType, 0) or priority.get(e.edgeType, 0) == priority.get(current.edgeType, 0) and e.weight > current.weight:
+                if priority.get(e.edgeType, 0) > priority.get(current.edgeType, 0) or (priority.get(e.edgeType, 0) == priority.get(current.edgeType, 0) and e.weight > current.weight):
                     unique_edges[pair_key] = e
                     
         return list(unique_edges.values())

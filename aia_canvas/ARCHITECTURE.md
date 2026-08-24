@@ -200,156 +200,133 @@ $$\mathbf{P}_1 = \mathbf{P}_0 + (\Delta x_{\text{clamped}}, S_{\text{sag}}), \qu
 
 ---
 
-## 7. IPC Protocol & Event Consumption
+## 7. Drag Transit & Settle Mechanics
 
-`aia_canvas` consumes the JSON-RPC 2.0 interface served by `aia_weaver` over `$XDG_RUNTIME_DIR/aia_weaver/aia_weaver.sock`[cite: 1, 10]:
+To eliminate kinetic disruption while ensuring high legibility during node rearrangement, `Node.qml` implements a stateful Drag Transit and Settle cycle:
 
-### 7.1 RPC Methods Invoked
-* **`get_neighbors`**: Dispatched when a node is selected to populate 1st-degree relational context[cite: 2].
+```text
+┌──────────────┐     Left Drag Press      ┌──────────────────────┐
+│ Rest State   │ ───────────────────────► │ Dragging Active      │
+│ (Tier 4/3/2) │                          │ (Tier 3 or Tier 2)   │
+└──────────────┘                          └──────────┬───────────┘
+       ▲                                             │
+       │           1000ms Timeout                    │ Mouse Release
+       └─────────────────────────────────────────────┴───────────┐
+                  ┌──────────────────────┐                       │
+                  │ Settling State       │ ◄─────────────────────┘
+                  │ (Theme.accentCyan)   │
+                  └──────────────────────┘
+```
+
+### 7.1 Tier Escalation During Transit
+- **Tier 4 Escalation:** Micro-beads ($14 \times 14\text{px}$) escalate to **Tier 3 Capsule** ($32\text{px}$ height) when dragged, providing immediate visual surface area and title clarity.
+- **Tier 3 / Tier 2 Escalation:** Ambient Tier 3 capsules and Tier 2 slates clamp directly to **Tier 2 Inspection Slate** ($220 \times 64\text{px}$) during transit.
+- **Elevated Z-Index:** Active dragging promotes the node to `z: 1000`, rendering it above all standard cluster nodes and tendril paths.
+
+### 7.2 1000ms Settle Delay & Luminosity Fade
+- **Settle State:** Upon mouse release, `settleTimer` runs for `1000ms`, keeping the node in its escalated tier while transitioning its border to `Theme.accentCyan` (`#00F0FF`) with a width of `2px`.
+- **Luminosity Dissipation:** As the settle timer elapses, the border smoothly transitions back to subtle ambient styling, and the node relaxes into the standard ambient tier.
+
+### 7.3 Strict Input & Binding Isolation
+- **Timer Muting:** Mouse dragging and settling actively clear and disable `intentTimer` and `hoverDwellTimer` to prevent spurious hover/dwell state escalation.
+- **Coordinate Decoupling:** Property bindings (`x`, `y`) to the underlying physics model are conditionally disabled (`when: !rootItem.isDragging`) during drag, ensuring direct 1:1 cursor tracking without physics jitter.
+
+---
+
+## 8. Spotlight HUD & Search Architecture
+
+The Spotlight search experience provides rapid query completion and orbital navigation without taking over the full viewport or displacing the physics layout:
+
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│ Spotlight Search Architecture                                          │
+│                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │ OmniBar (OmniBar.qml) - Input & Intent Dispatch                  │  │
+│  └──────────────────────────────────┬───────────────────────────────┘  │
+│                                     │ onQuerySubmitted / Text Changed  │
+│                                     ▼                                  │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │ SearchShelf (search/SearchShelf.qml)                             │  │
+│  │                                                                  │  │
+│  │  ┌────────────────────────────────────────────────────────────┐  │  │
+│  │  │ Tier 1.5 Active Preview Card (NodePreview.qml)             │  │  │
+│  │  │ (Dynamically updates with currently focused match)         │  │  │
+│  │  └───────────────────────────────┬────────────────────────────┘  │  │
+│  │                                  │ Synchronized Index Selection  │  │
+│  │  ┌───────────────────────────────▼────────────────────────────┐  │  │
+│  │  │ Top 7 Ranked Results Carousel (ListView)                   │  │  │
+│  │  │ [Card 0]  [Card 1]*  [Card 2]  [Card 3]  [Card 4]  ...     │  │  │
+│  │  └────────────────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────┬───────────────────────────────┘  │
+│                                     │ Enter / Key_Return               │
+│                                     ▼                                  │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │ Viewport Camera Focus & Search Shelf Dismissal                   │  │
+│  │ (Smooth pan/zoom to target; zero physical grid displacement)     │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 8.1 Top 7 Ranked Carousel
+- Search queries query the backend vector/graph index and return ranked candidate IDs (`searchResultIds`).
+- `SearchShelf.qml` extracts the top 7 matches (`topMatches = searchResultIds.slice(0, 7)`) into a horizontal `ListView`.
+- Each carousel item renders as a compact Tier 2 card displaying the file extension badge, file name, and preview snippet.
+
+### 8.2 Live Tier 1.5 Active Preview Card
+- An expanded Tier 1.5 preview card is anchored directly above the carousel.
+- As the user navigates across candidates, the preview card reactively binds to `activeNodeData`, rendering rich markdown text, snippets, and connection stats.
+
+### 8.3 Keyboard Traversal & Focus Flow
+- **Traversal:** `Left Arrow`, `Right Arrow`, and `Tab` cycle through candidate items with automatic carousel centering (`positionViewAtIndex`).
+- **Focus & Dismissal:** Pressing `Enter` or clicking an item invokes `canvasBridge.focus_node(nodeId)`, smoothly centering the viewport camera onto the target node while dismissing the OmniBar and clearing search scrims without altering physical cluster positions.
+
+---
+
+## 9. Modular HUD & Viewport Components
+
+The UI shell separates global telemetry, status indicators, and search components into modular QML units:
+
+```text
+aia_canvas/src/qml/
+├── Canvas.qml                  # Root window & viewport camera coordinator
+├── hud/
+│   ├── DiagnosticsOverlay.qml  # F3 SRE telemetry HUD overlay
+│   └── CanvasHud.qml           # Bottom-left IPC connection & Aperture pill
+├── search/
+│   └── SearchShelf.qml         # Spotlight search carousel & Tier 1.5 preview
+├── node/
+│   ├── NodeAura.qml            # GPU shaders for selection and glow
+│   ├── NodePill.qml            # Compact capsule and badge delegate
+│   └── NodePreview.qml         # Tier 1.5 rich preview card
+├── SurfaceShell.qml            # Single-perimeter border and background shell
+└── NodeContent.qml             # Adaptive content loader for active tier
+```
+
+* **`DiagnosticsOverlay.qml`:** Anchored to the top-right (`z: 9000`), toggled via `F3`. Displays live node counts, rendered edge counts, physics frametimes (with red alert highlighting above $6.5\text{ms}$), and socket connection status.
+* **`CanvasHud.qml`:** Anchored to the bottom-left (`z: 10`). Houses the IPC status indicator (pulsing green indicator when connected) and live cognitive aperture percentage gauge.
+* **`SearchShelf.qml`:** Anchored above the OmniBar (`z: 10000`). Manages search carousel layout, active item previewing, and keyboard navigation.
+
+---
+
+## 10. IPC Protocol & Event Consumption
+
+`aia_canvas` consumes the JSON-RPC 2.0 interface served by `aia_weaver` over `$XDG_RUNTIME_DIR/aia_weaver/aia_weaver.sock`:
+
+### 10.1 RPC Methods Invoked
+* **`get_neighbors`**: Dispatched when a node is selected to populate 1st-degree relational context.
   ```json
   {"jsonrpc": "2.0", "method": "get_neighbors", "params": {"node_id": 1}, "id": 1}
   ```
 
-### 7.2 Broadcast Notifications Handled
-* **`node_updated`**: Dynamically creates or updates spatial positions and metadata when files are touched[cite: 2, 10, 11].
-* **`node_deleted`**: Prunes dead nodes and cascades edge removals immediately from the layout graph[cite: 2, 10, 11].
+### 10.2 Broadcast Notifications Handled
+* **`node_updated`**: Dynamically creates or updates spatial positions and metadata when files are touched.
+* **`node_deleted`**: Prunes dead nodes and cascades edge removals immediately from the layout graph.
 
 ---
 
-## 8. Teardown Lifecycle & POSIX Hygiene
+## 11. Teardown Lifecycle & POSIX Hygiene
 
-1. **Signal Traps:** Intercepts `SIGINT` via a native terminal heartbeat timer, ensuring prompt termination under POSIX process managers[cite: 1].
-2. **IPC Thread Termination:** Cancels pending futures, closes Unix streams, and terminates the background `asyncio` event loop cleanly[cite: 10].
+1. **Signal Traps:** Intercepts `SIGINT` via a native terminal heartbeat timer, ensuring prompt termination under POSIX process managers.
+2. **IPC Thread Termination:** Cancels pending futures, closes Unix streams, and terminates the background `asyncio` event loop cleanly.
 3. **GPU Context Release:** Tears down QML Scene Graph textures, shape paths, and layer buffers without leaking Wayland/X11 display handles.
-
----
----
-
-# ==============================================================================
-# README.md
-# ==============================================================================
-
-# 🌌 Aether: Canvas (`aia_canvas`)
-
-> **GPU-Accelerated Spatial Presentation Layer & Cognitive Workbench for Linux**[cite: 1]
-
-`aia_canvas` is the visual presentation frontend for the **Aether Interface Architecture**[cite: 1]. Operating on an obsidian canvas, it renders knowledge nodes, project clusters, and relational tendrils driven by a 120Hz Stokes fluid dynamics engine[cite: 1, 2, 5].
-
-Designed to eliminate traditional window chrome, `aia_canvas` projects files directly as interactive surfaces, dynamically adapting their detail from full documents down to glowing Star Beads based on cognitive aperture and gaze focus[cite: 8].
-
----
-
-## ⚡ Features
-
-* **120Hz Stokes Fluid Dynamics:** Viscous, biological movement using quadratic drag, aspect-conformal orbital docking, and non-penetration potential barriers[cite: 2, 5].
-* **4-Tier Semantic Aperture:** Seamless LOD scaling ranging from live resizable Workbenches ($1400 \times 900\text{px}$) down to $16\text{px}$ luminous Star Beads with fish-eye hover blooms[cite: 2, 8].
-* **Enterprise Shield Membranes:** GPU-native containment bubbles that organically envelop active clusters while rejecting distant outliers[cite: 5, 7].
-* **Decoupled JSON-RPC 2.0 Architecture:** Asynchronous UNIX domain socket client connecting to `aia_weaver` with a 64 KB framing limit and auto-reconnect backoff[cite: 10].
-* **Hardened Path Security:** Strict path canonicalization guaranteeing all file actions are verified within safe workspace boundaries[cite: 2].
-* **SRE Golden Signal Observability:** Structured logging formatted for `systemd-journald` and an interactive `F3` diagnostic HUD tracking frametimes and socket saturation.
-
----
-
-## 📂 Project Structure
-
-```text
-aia_canvas/
-├── src/
-│   ├── controllers/         # Domain Controller Hierarchy
-│   │   ├── base_controller.py
-│   │   ├── canvas_controller.py
-│   │   ├── node_controller.py
-│   │   ├── physics_controller.py
-│   │   └── search_controller.py
-│   ├── ipc/
-│   │   └── client.py        # Asynchronous UNIX domain socket JSON-RPC 2.0 client[cite: 10]
-│   ├── physics/
-│   │   └── engine.py        # 120Hz Stokes physics, clustering, and horizon anchors[cite: 5]
-│   ├── qml/
-│   │   ├── node/            # Modular Leaf Delegates
-│   │   │   ├── NodeAura.qml # GPU-native semantic glow and selection halos
-│   │   │   ├── NodePill.qml # Tier 3 compact capsules and extension badges
-│   │   │   └── NodePreview.qml # Tier 1.5 hover-dwell preview cards
-│   │   ├── slates/          # Specialized Media Slates
-│   │   │   ├── ImageSlate.qml
-│   │   │   ├── PdfSlate.qml
-│   │   │   └── TableSlate.qml
-│   │   ├── Canvas.qml       # Root window, SRE HUD, and viewport orchestrator[cite: 6]
-│   │   ├── ClusterHalo.qml  # GPU-accelerated shield membrane component[cite: 7]
-│   │   ├── Node.qml         # 4-tier semantic card and Star Bead implementation coordinator[cite: 8]
-│   │   └── Tendril.qml      # Synaptic cubic Bezier connection lines[cite: 9]
-│   ├── utils/
-│   │   └── security.py      # Path canonicalization & boundary traversal guards
-│   ├── workers/             # Asynchronous QThreadPool Pipelines
-│   │   └── media_worker.py  # Non-blocking PDF, CSV, Image offloading tasks
-│   ├── bridge.py            # Composite Root Coordinator & Python/QML adapter[cite: 2]
-│   ├── models.py            # Reactive QObject data models (Node, Edge)[cite: 3]
-│   ├── store.py             # In-memory graph ledger and neighborhood store[cite: 4]
-│   └── main.py              # Application entrypoint & systemd logger bootstrap[cite: 1]
-├── ARCHITECTURE.md          # Detailed system design specification
-└── requirements.txt
-```
-
----
-
-## 🚀 Quickstart
-
-### 1. Prerequisites
-* Linux (Fedora 38+, Ubuntu 22.04+, or Arch Linux)
-* Python 3.11+
-* GPU support with OpenGL 3.3+ / Vulkan
-
-### 2. Installation
-```bash
-# Clone repository
-git clone [https://github.com/your-username/aia_canvas.git](https://github.com/your-username/aia_canvas.git)
-cd aia_canvas
-
-# Create and activate virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies (PyQt6)
-pip install -r requirements.txt
-```
-
-### 3. Running the Canvas
-```bash
-# Run standalone (Hardware/Mock mode or auto-attaching to live aia_weaver)
-python3 src/main.py
-```
-
----
-
-## 🎮 Canvas Navigation & Keybindings
-
-* **Aperture Zoom:** `Mouse Wheel` on empty void (scales cognitive aperture from $20\%$ macro constellation up to $220\%$ deep focus)[cite: 6].
-* **Select / Expand Focus:** `Left Click` on any card or bead to open the live Workbench and pull related nodes into orbital horizon[cite: 2, 8].
-* **Clear Focus / Return to Void:** `Esc` or `Left Click` anywhere on the empty canvas[cite: 6].
-* **Drag & Relocate:** `Left Click + Drag` on any node to move it; nodes smoothly return to cluster equilibrium on release[cite: 8].
-* **Resize Workbench:** `Left Click + Drag` on the bottom-right cyan corner handle of an active Workbench card[cite: 8].
-* **Reveal in System File Manager:** `Right Click` any card or click **Reveal File** on the active Workbench[cite: 2, 8].
-* **Toggle SRE Telemetry HUD:** `F3` (renders node count, edge count, physics step latency, and socket status).
-
----
-
-## 🛠️ Diagnostics & Observability
-
-### SRE Diagnostic HUD
-Press `F3` while running to overlay real-time runtime metrics:
-* **Physics Step Latency:** Real-time execution duration of the integration loop (alert threshold: $> 6.5\text{ms}$).
-* **Active Topology:** Live counts of active nodes and edges.
-* **Backend Socket:** Real-time state of the connection to `aia_weaver.sock`.
-
-### Systemd Journald Logs
-Inspect structured logs directly in the terminal or via `journalctl`:
-```bash
-# When running as a systemd user unit
-journalctl --user -u aia_canvas -f
-```
-
----
-
-## 🤝 Development & Attribution
-
-`aia_canvas` was designed and architected by Nic Mansfield as part of the Aether Interface Architecture, using human-in-the-loop AI pair programming (Gemini) for iterative implementation, graphics tuning, and documentation.

@@ -205,8 +205,16 @@ class PhysicsEngine:
         else:
             self.center_x = self.viewport_w / 2.0
 
-        first_degree_set = first_degree_set or set()
-        second_degree_set = second_degree_set or set()
+        if not isinstance(first_degree_set, (set, list, tuple)):
+            first_degree_set = set()
+        else:
+            first_degree_set = set(first_degree_set)
+
+        if not isinstance(second_degree_set, (set, list, tuple)):
+            second_degree_set = set()
+        else:
+            second_degree_set = set(second_degree_set)
+
         second_degree_parent = second_degree_parent or {}
         focal_weights = focal_weights or {}
 
@@ -236,27 +244,6 @@ class PhysicsEngine:
                     node_comp_map[nid] = c_idx
                     if nid in node_map:
                         node_map[nid].clusterId = c_idx
-
-        # 3. Wing Target Allocation (Top 8 Companions Flanked Left / Right)
-        wing_targets: dict[int, tuple[float, float]] = {}
-        if has_active_focus:
-            sorted_companions = sorted(list(first_degree_set), key=lambda nid: focal_weights.get(nid, 0.0), reverse=True)
-            top_companions = sorted_companions[:8]
-            
-            left_wing = [nid for idx, nid in enumerate(top_companions) if idx % 2 == 0]
-            right_wing = [nid for idx, nid in enumerate(top_companions) if idx % 2 != 0]
-
-            def compute_wing_slots(c_ids: list[int], is_left: bool):
-                total = len(c_ids)
-                sign = -1.0 if is_left else 1.0
-                # Bring wings closer to the card (was 480.0, putting them off-screen)
-                target_x = self.center_x + sign * ((self.focal_card_w / 2.0) + 450.0) 
-                for idx, nid in enumerate(c_ids):
-                    y_offset = (idx - (total - 1) / 2.0) * 160.0 
-                    wing_targets[nid] = (target_x, self.center_y + y_offset)
-
-            compute_wing_slots(left_wing, is_left=True)
-            compute_wing_slots(right_wing, is_left=False)
 
         # 4. Initialize Forces
         forces: dict[int, list[float]] = {n.id: [0.0, 0.0] for n in nodes}
@@ -369,17 +356,6 @@ class PhysicsEngine:
                 if is_cross_desk_temporal:
                     k_spring *= 0.10
                 
-            # --- FOCAL DECOUPLING FIX ---
-            # Temporarily disable or zero out spring forces (k = 0) between docked wing nodes and non-focused peripheral nodes.
-            if has_active_focus:
-                n1_docked = (n1.id in first_degree_set or n1.id in second_degree_set)
-                n2_docked = (n2.id in first_degree_set or n2.id in second_degree_set)
-                n1_peripheral = (n1.id != focused_node_id and not n1_docked)
-                n2_peripheral = (n2.id != focused_node_id and not n2_docked)
-                
-                if (n1_docked and n2_peripheral) or (n2_docked and n1_peripheral) or (n1.id == focused_node_id and n2_peripheral) or (n2.id == focused_node_id and n1_peripheral):
-                    k_spring = 0.0
-
             if n1.id in self.staged_targets or n2.id in self.staged_targets:
                 k_spring = 0.0
 
@@ -391,6 +367,44 @@ class PhysicsEngine:
 
             fx = (dx / dist) * spring_force
             fy = (dy / dist) * spring_force
+
+            # --- FOCAL DECOUPLING FIX ---
+            # Implement Tier-Decoupled Physics Loop
+            if has_active_focus:
+                def get_tier(nid):
+                    if nid == focused_node_id:
+                        return 0
+                    if nid in first_degree_set:
+                        return 1
+                    if nid in second_degree_set:
+                        return 2
+                    return 3
+
+                t1 = get_tier(n1.id)
+                t2 = get_tier(n2.id)
+
+                # Tier 0 (Focal Card) to Tier 1: One-way pull toward wing target slots
+                # (Handled by wing target attractor, zero reaction force on card)
+                if t1 == 0 or t2 == 0:
+                    continue
+
+                # Tier 1 to Tier 2: One-way gentle guidance toward Tier 2 backdrop
+                if t1 == 1 and t2 == 2:
+                    forces[n2.id][0] -= fx * 0.3
+                    forces[n2.id][1] -= fy * 0.3
+                    continue
+                elif t2 == 1 and t1 == 2:
+                    forces[n1.id][0] += fx * 0.3
+                    forces[n1.id][1] += fy * 0.3
+                    continue
+
+                # Tier 2 to Tier 3 (Ambient): ZERO force transfer (infinite spring slack)
+                if (t1 == 2 and t2 >= 3) or (t2 == 2 and t1 >= 3):
+                    continue
+                
+                # Tier 1 to Tier 3: Also zero
+                if (t1 == 1 and t2 >= 3) or (t2 == 1 and t1 >= 3):
+                    continue
 
             forces[n1.id][0] += fx
             forces[n1.id][1] += fy
@@ -445,10 +459,7 @@ class PhysicsEngine:
 
                     forces[node.id][0] += (target_x - node.x) * self.k_gutter_anchor
 
-                    if node.id in wing_targets:
-                        _, wy = wing_targets[node.id]
-                        forces[node.id][1] += (wy - node.y) * self.k_gutter_anchor
-                    elif node.id in second_degree_parent:
+                    if node.id in second_degree_parent:
                         parent_node = node_map.get(second_degree_parent[node.id])
                         if parent_node:
                             y_spread = ((node.id % 5) - 2) * 140.0
@@ -590,6 +601,36 @@ class PhysicsEngine:
                 forces[node.id][1] -= k_cushion * (penetration ** 1.8)
 
         # 9. Viscous Fluid Drag & Integration
+        left_flank_nodes = []
+        right_flank_nodes = []
+        if has_active_focus:
+            for node in nodes:
+                if node.id in first_degree_set:
+                    if getattr(node, "flank", "") == "left":
+                        left_flank_nodes.append(node)
+                    elif getattr(node, "flank", "") == "right":
+                        right_flank_nodes.append(node)
+            left_flank_nodes = sorted(left_flank_nodes, key=lambda n: focal_weights.get(n.id, 0.0), reverse=True)
+            right_flank_nodes = sorted(right_flank_nodes, key=lambda n: focal_weights.get(n.id, 0.0), reverse=True)
+
+            # 2D Soft Sibling Repulsion
+            for flank_list in (left_flank_nodes, right_flank_nodes):
+                for i in range(len(flank_list)):
+                    for j in range(i + 1, len(flank_list)):
+                        na = flank_list[i]
+                        nb = flank_list[j]
+                        dy = nb.y - na.y
+                        dx = nb.x - na.x
+                        dist_sq = dx * dx + dy * dy
+                        min_dist = 60.0  # desired clearance
+                        if dist_sq < (min_dist * min_dist) and dist_sq > 0.001:
+                            dist = math.sqrt(dist_sq)
+                            push = (min_dist - dist) / dist * 0.15
+                            na.vy -= dy * push
+                            na.vx -= dx * push
+                            nb.vy += dy * push
+                            nb.vx += dx * push
+
         for node in nodes:
             if node.id in self.staged_targets:
                 tx, ty = self.staged_targets[node.id]
@@ -605,6 +646,7 @@ class PhysicsEngine:
                 node.x = self.center_x
                 node.y = self.center_y
                 continue
+
 
             # NEW: Freeze hovered node under mouse in ambient mode
             if node.id == hovered_node_id and node.id != self.pinned_node_id:

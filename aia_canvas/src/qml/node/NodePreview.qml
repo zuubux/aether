@@ -62,31 +62,35 @@ Item {
         
         Row {
             anchors.fill: parent
-            spacing: 8
+            spacing: 6
             
             Rectangle {
-                width: 14
-                height: 14
+                id: badgeRect
+                width: Math.max(16, badgeText.implicitWidth + 6)
+                height: 13
                 radius: 3
-                color: Theme.surfaceBorder
+                color: Theme.getBadgeColor(previewRoot.fileExt, previewRoot.nodeData ? previewRoot.nodeData.archetype : "")
                 anchors.verticalCenter: parent.verticalCenter
                 Text {
+                    id: badgeText
                     anchors.centerIn: parent
-                    text: previewRoot.fileExt ? previewRoot.fileExt.replace(".", "").substring(0, 3).toUpperCase() : "DOC"
-                    color: "#94A3B8"
+                    text: Theme.normalizeExt(previewRoot.fileExt)
+                    font.family: Theme.fontCode
                     font.pixelSize: 7
                     font.bold: true
+                    color: "#0D1117"
                 }
             }
             
             Text {
                 text: previewRoot.fileName || "Untitled"
-                color: "#F1F5F9"
+                color: Theme.textPrimary
+                font.family: Theme.fontSans
                 font.pixelSize: 11
                 font.weight: Font.Medium
                 anchors.verticalCenter: parent.verticalCenter
                 elide: Text.ElideRight
-                width: parent.width - 22
+                width: parent.width - badgeRect.width - 6
             }
         }
     }
@@ -101,32 +105,43 @@ Item {
         anchors.bottomMargin: 4
         clip: true
         
-        Image {
-            id: previewImg
-            property bool isThumbnailValid: previewRoot.hasThumbnail && status !== Image.Error
-            visible: (previewRoot.isHeavyImage && isThumbnailValid) || (previewRoot.isImage && !previewRoot.isHeavyImage && !previewRoot.isGif) || (previewRoot.isPdf && isThumbnailValid)
-            anchors.centerIn: parent
-            width: previewRoot.isIcon ? Math.min(implicitWidth, 64) : parent.width
-            height: previewRoot.isIcon ? Math.min(implicitHeight, 64) : parent.height
-            source: previewRoot.hasThumbnail ? (previewRoot.thumbnailUrl.startsWith("file://") ? previewRoot.thumbnailUrl : "file://" + previewRoot.thumbnailUrl) : ""
-            fillMode: previewRoot.isPdf ? Image.PreserveAspectCrop : (previewRoot.isIcon ? Image.Pad : Image.PreserveAspectFit)
-            smooth: !previewRoot.isIcon
-            verticalAlignment: previewRoot.isPdf ? Image.AlignTop : Image.AlignVCenter
-            horizontalAlignment: Image.AlignHCenter
-            asynchronous: true
-            sourceSize.width: previewRoot.isSvg ? 300 : 0
-        }
-        
-        AnimatedImage {
-            visible: previewRoot.isGif
-            anchors.centerIn: parent
-            width: parent.width
-            height: parent.height
-            source: previewRoot.isGif ? "file://" + previewRoot.filePath : ""
-            fillMode: Image.PreserveAspectFit
-            verticalAlignment: Image.AlignVCenter
-            horizontalAlignment: Image.AlignHCenter
-            asynchronous: true
+        Rectangle {
+            id: mediaFrame
+            anchors.fill: parent
+            anchors.margins: 4
+            radius: 8
+            color: "transparent"
+            clip: true
+            visible: previewImg.visible || gifImg.visible
+
+            Image {
+                id: previewImg
+                property bool isThumbnailValid: previewRoot.hasThumbnail && status !== Image.Error
+                visible: (previewRoot.isHeavyImage && isThumbnailValid) || (previewRoot.isImage && !previewRoot.isHeavyImage && !previewRoot.isGif) || (previewRoot.isPdf && isThumbnailValid)
+                anchors.centerIn: parent
+                width: previewRoot.isIcon ? Math.min(implicitWidth, 64) : parent.width
+                height: previewRoot.isIcon ? Math.min(implicitHeight, 64) : parent.height
+                source: previewRoot.hasThumbnail ? (previewRoot.thumbnailUrl.startsWith("file://") ? previewRoot.thumbnailUrl : "file://" + previewRoot.thumbnailUrl) : ""
+                fillMode: previewRoot.isPdf ? Image.PreserveAspectCrop : (previewRoot.isIcon ? Image.Pad : Image.PreserveAspectFit)
+                smooth: !previewRoot.isIcon
+                verticalAlignment: previewRoot.isPdf ? Image.AlignTop : Image.AlignVCenter
+                horizontalAlignment: Image.AlignHCenter
+                asynchronous: true
+                sourceSize.width: previewRoot.isSvg ? 300 : 0
+            }
+
+            AnimatedImage {
+                id: gifImg
+                visible: previewRoot.isGif
+                anchors.centerIn: parent
+                width: parent.width
+                height: parent.height
+                source: previewRoot.isGif ? "file://" + previewRoot.filePath : ""
+                fillMode: Image.PreserveAspectFit
+                verticalAlignment: Image.AlignVCenter
+                horizontalAlignment: Image.AlignHCenter
+                asynchronous: true
+            }
         }
         
         Column {
@@ -166,10 +181,10 @@ Item {
                                     anchors.rightMargin: 8
                                     verticalAlignment: Text.AlignVCenter
                                     text: modelData
-                                    font.family: "Monospace"
+                                    font.family: Theme.fontCode
                                     font.pixelSize: 9
                                     font.weight: rowRect.rowIndex === 0 ? Font.Medium : Font.Normal
-                                    color: rowRect.rowIndex === 0 ? "#94A3B8" : "#E2E8F0"
+                                    color: rowRect.rowIndex === 0 ? Theme.textMuted : Theme.textPrimary
                                     elide: Text.ElideRight
                                 }
                             }
@@ -183,8 +198,8 @@ Item {
             visible: previewRoot.isTabular && (!previewRoot.isCsv || !csvTable.visible)
             anchors.fill: parent
             text: previewRoot.cleanSnippetText
-            color: "#94A3B8"
-            font.family: "Monospace"
+            color: Theme.textMuted
+            font.family: Theme.fontCode
             font.pixelSize: 10
             lineHeight: 1.3
             wrapMode: Text.NoWrap
@@ -195,7 +210,8 @@ Item {
             visible: !previewRoot.isGif && !previewRoot.isTabular && previewImg.status !== Image.Ready
             anchors.fill: parent
             text: previewRoot.cleanSnippetText
-            color: "#94A3B8"
+            color: Theme.textMuted
+            font.family: Theme.fontSans
             font.pixelSize: 11
             lineHeight: 1.3
             wrapMode: Text.Wrap

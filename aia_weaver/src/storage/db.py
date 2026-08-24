@@ -17,18 +17,20 @@ CREATE TABLE IF NOT EXISTS nodes (
     size_bytes INTEGER,
     archetype TEXT NOT NULL DEFAULT 'document',
     snippet TEXT DEFAULT '',
+    thumbnail_url TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 2. Graph Relationship Edges
 CREATE TABLE IF NOT EXISTS edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_id INTEGER NOT NULL,
     target_id INTEGER NOT NULL,
     edge_type TEXT NOT NULL,         -- 'explicit', 'semantic', 'temporal'
     weight REAL NOT NULL DEFAULT 1.0,-- 0.0 to 1.0 score
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (source_id, target_id, edge_type),
+    UNIQUE(source_id, target_id, edge_type),
     FOREIGN KEY (source_id) REFERENCES nodes(id) ON DELETE CASCADE,
     FOREIGN KEY (target_id) REFERENCES nodes(id) ON DELETE CASCADE
 );
@@ -66,6 +68,7 @@ class DatabaseManager:
     async def initialize(self) -> None:
         """Connects to SQLite, loads sqlite-vec extension, and executes DDL schema."""
         logger.info(f"Initializing SQLite database ledger at: {self.db_path}")
+        print(f"[Weaver DB] Connected to SQLite database at: {self.db_path}")
 
         self._conn = await aiosqlite.connect(self.db_path)
         self._conn.row_factory = aiosqlite.Row
@@ -75,17 +78,22 @@ class DatabaseManager:
         await self._conn.enable_load_extension(False)
 
         await self._conn.execute("PRAGMA journal_mode=WAL;")
+        await self._conn.execute("PRAGMA synchronous=NORMAL;")
         await self._conn.execute("PRAGMA foreign_keys=ON;")
 
         async with self._conn.cursor() as cursor:
             await cursor.executescript(SCHEMA_SQL)
             await cursor.execute(VEC_TABLE_SQL)
+            try:
+                await cursor.execute("ALTER TABLE nodes ADD COLUMN thumbnail_url TEXT DEFAULT '';")
+            except Exception:
+                pass
 
         await self._conn.commit()
         logger.info("Database schema and sqlite-vec vector table initialized.")
 
     async def upsert_node(
-        self, file_path: str, file_hash: str, extension: str, size_bytes: int, archetype: str = 'document', snippet: str = '', embedding: list[float] | None = None
+        self, file_path: str, file_hash: str, extension: str, size_bytes: int, archetype: str = 'document', snippet: str = '', embedding: list[float] | None = None, thumbnail_url: str = ''
     ) -> int:
         """Inserts or updates a file node and its vector embedding."""
         if not self._conn:
@@ -94,17 +102,18 @@ class DatabaseManager:
         async with self._conn.cursor() as cursor:
             await cursor.execute(
                 """
-                INSERT INTO nodes (file_path, file_hash, extension, size_bytes, archetype, snippet, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO nodes (file_path, file_hash, extension, size_bytes, archetype, snippet, thumbnail_url, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(file_path) DO UPDATE SET
                     file_hash=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.file_hash ELSE excluded.file_hash END,
                     size_bytes=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.size_bytes ELSE excluded.size_bytes END,
                     archetype=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.archetype ELSE excluded.archetype END,
                     snippet=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.snippet ELSE excluded.snippet END,
+                    thumbnail_url=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.thumbnail_url ELSE excluded.thumbnail_url END,
                     updated_at=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.updated_at ELSE CURRENT_TIMESTAMP END
                 RETURNING id;
                 """,
-                (file_path, file_hash, extension, size_bytes, archetype, snippet),
+                (file_path, file_hash, extension, size_bytes, archetype, snippet, thumbnail_url),
             )
             row = await cursor.fetchone()
             node_id = row[0]
@@ -129,7 +138,7 @@ class DatabaseManager:
 
         async with self._conn.cursor() as cursor:
             await cursor.execute(
-                "SELECT id, file_path, extension, size_bytes, archetype, snippet, updated_at FROM nodes ORDER BY id ASC;"
+                "SELECT id, file_path, extension, size_bytes, archetype, snippet, thumbnail_url, updated_at FROM nodes ORDER BY id ASC;"
             )
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
@@ -145,6 +154,27 @@ class DatabaseManager:
             rows = await cursor.fetchall()
             return [dict(r) for r in rows]
 
+    async def get_edges_for_node(self, node_id: int) -> list:
+        if not self._conn:
+            raise RuntimeError("Database not initialized.")
+
+        async with self._conn.cursor() as cursor:
+            await cursor.execute("""
+                SELECT source_id, target_id, edge_type, weight
+                FROM edges
+                WHERE source_id = ? OR target_id = ?
+            """, (int(node_id), int(node_id)))
+            rows = await cursor.fetchall()
+            return [
+                {
+                    "source_id": r[0],
+                    "target_id": r[1],
+                    "edge_type": r[2],
+                    "weight": r[3]
+                }
+                for r in rows
+            ]
+
     async def upsert_edge(
         self,
         source_id: int,
@@ -155,17 +185,27 @@ class DatabaseManager:
         if not self._conn:
             raise RuntimeError("Database not initialized.")
 
-        async with self._conn.cursor() as cursor:
-            await cursor.execute(
-                """
-                INSERT INTO edges (source_id, target_id, edge_type, weight)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(source_id, target_id, edge_type) DO UPDATE SET
-                    weight = excluded.weight;
-                """,
-                (source_id, target_id, edge_type, weight),
-            )
+        try:
+            async with self._conn.cursor() as cursor:
+                await cursor.execute(
+                    """
+                    INSERT INTO edges (source_id, target_id, edge_type, weight)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(source_id, target_id, edge_type) DO UPDATE SET
+                        weight = excluded.weight;
+                    """,
+                    (int(source_id), int(target_id), str(edge_type), float(weight)),
+                )
             await self._conn.commit()
+            
+            async with self._conn.cursor() as cursor:
+                await cursor.execute("SELECT COUNT(*), edge_type FROM edges GROUP BY edge_type")
+                stats = await cursor.fetchall()
+                print(f"[Weaver DB STATS] Edge counts in SQLite: {stats}")
+            
+            print(f"[Weaver DB] Successfully committed edge {source_id} <-> {target_id} ({edge_type}) to disk")
+        except Exception as e:
+            print(f"[Weaver DB ERROR] Failed to commit edge: {e}")
 
     async def search_similar_nodes(self, query_vector: list[float], limit: int = 5) -> list[dict]:
         if not self._conn:
@@ -180,6 +220,7 @@ class DatabaseManager:
                     n.file_path, 
                     n.archetype,
                     n.snippet,
+                    n.thumbnail_url,
                     v.distance 
                 FROM node_embeddings v
                 JOIN nodes n ON n.id = v.node_id
@@ -305,7 +346,7 @@ class DatabaseManager:
             return
         async with self._conn.cursor() as cursor:
             await cursor.execute(
-                "DELETE FROM edges WHERE source_id = ? AND edge_type = 'explicit'",
+                "DELETE FROM edges WHERE source_id = ? AND edge_type = 'wikilink'",
                 (source_id,),
             )
             await self._conn.commit()

@@ -19,6 +19,7 @@ class NodeController(BaseController):
     selectedNodeChanged = pyqtSignal(int)
     hoveredNodeChanged = pyqtSignal(int)
     nodeRemoved = pyqtSignal(int)
+    edge_added = pyqtSignal(int, int, str, arguments=['source_id', 'target_id', 'edge_type'])
 
     # Async Media Signals
     pdfPageReady = pyqtSignal(str, int, str, arguments=['filePath', 'pageIndex', 'imagePath'])
@@ -86,6 +87,15 @@ class NodeController(BaseController):
             self.hoveredNodeChanged.emit(node_id)
             if hasattr(self.bridge, "_wake_physics"):
                 self.bridge._wake_physics()
+                
+            is_connected = getattr(self.bridge, "_is_connected", False)
+            if is_connected and node_id > 0:
+                if hasattr(self.bridge, "ipc") and self.bridge.ipc:
+                    self.bridge.ipc.call_rpc_sync(
+                        "get_neighbors",
+                        {"node_id": node_id},
+                        callback=getattr(self.bridge, "_handle_ambient_edges_response", None),
+                    )
 
     @pyqtSlot(str)
     def navigate_to_link(self, target_name: str):
@@ -165,6 +175,57 @@ class NodeController(BaseController):
                 {"node_id": node_id, "content": new_content},
                 callback=_handle_save
             )
+
+    @pyqtSlot(int, int, str)
+    def create_edge(self, source_id: int, target_id: int, edge_type: str = "explicit"):
+        is_connected = getattr(self.bridge, "_is_connected", False)
+        if not is_connected or source_id <= 0 or target_id <= 0:
+            return
+
+        def _handle_create(result: Any, error: str | None):
+            if error:
+                self.log_error(f"Failed to create edge: {error}")
+            else:
+                self.log_info(f"Edge successfully created between {source_id} and {target_id}.")
+
+        if hasattr(self.bridge, "ipc") and self.bridge.ipc:
+            self.bridge.ipc.call_rpc_sync(
+                "create_edge",
+                {"source_id": source_id, "target_id": target_id, "edge_type": edge_type},
+                callback=_handle_create
+            )
+            
+        # Update local physics engine & edge models immediately
+        if hasattr(self.bridge, "_upsert_edge"):
+            from models import Edge
+            edge_obj = Edge(
+                source_id=int(source_id),
+                target_id=int(target_id),
+                edge_type=str(edge_type),
+                category="topological",
+                weight=1.0,
+                lane_offset=-1
+            )
+            self.bridge._upsert_edge(edge_obj)
+            
+            # Since _upsert_edge handles structural edges but we also want to ensure focal update
+            if getattr(self.bridge, "_selected_node_id", 0) in (int(source_id), int(target_id)):
+                self.bridge._focal_edges.append(edge_obj)
+                
+                # Deduplicate to fix lane offsets if temporal already exists
+                if hasattr(self.bridge, "_get_deduplicated_edges"):
+                    self.bridge._focal_edges = self.bridge._get_deduplicated_edges(self.bridge._focal_edges)
+
+                if hasattr(self.bridge, "_recalculate_focal_weights"):
+                    self.bridge._recalculate_focal_weights(self.bridge._selected_node_id)
+        
+        if hasattr(self.bridge, "edgesChanged"):
+            self.bridge.edgesChanged.emit()
+            if hasattr(self.bridge, "ambientEdgesChanged"):
+                self.bridge.ambientEdgesChanged.emit()
+            
+        if hasattr(self, "edge_added"):
+            self.edge_added.emit(source_id, target_id, edge_type)
 
     @pyqtSlot(str, result=bool)
     def is_image_file(self, file_path: str) -> bool:
@@ -401,6 +462,14 @@ class NodeController(BaseController):
             if node:
                 node.x = x
                 node.y = y
+
+    @pyqtSlot(int, float, float)
+    def updateNodePosition(self, node_id: int, x: float, y: float):
+        self.update_drag_pos(node_id, x, y)
+
+    @pyqtSlot(int, float, float)
+    def update_node_position(self, node_id: int, x: float, y: float):
+        self.update_drag_pos(node_id, x, y)
 
     @pyqtSlot(int)
     def release_node(self, node_id: int):

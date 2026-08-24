@@ -1,62 +1,58 @@
-# ==============================================================================
-# AETHER: IMPLEMENTATION ROADMAP
-# ==============================================================================
+# Aether Interface Architecture: Anti-WIMP In-Place Spatial Roadmap
 
-This document serves as the master execution plan for the Aether Interface Architecture[cite: 2]. 
-Instructions for implementation agents (e.g., Cline): Do not proceed to a new phase until 
-the current active phase is explicitly requested by the user, fully tested, and verified[cite: 2].
-
----
-
-## 🟢 PHASE 1: Volumetric SDF Nebula Clusters (COMPLETED / REFINEMENT)
-**Target:** `aia_canvas/src/qml/ClusterHalo.qml` & `aia_canvas/src/qml/halo.frag`
-
-**Current State & Observations:**
-* Basic GLSL SDF capsule shader compiled with `qsb` is functional with velocity-linked Brownian motion[cite: 2].
-* Nebulas currently render as hard-edged boxes due to tight Item bounding boxes and missing edge alpha falloff.
-
-**Refinement Tasks:**
-* **Item Bounds Expansion:** Inflate `ClusterHalo.qml` geometry with a $+150\text{px}$ margin on all sides so the fragment shader decays cleanly to `0.0` alpha before hitting the Item edge.
-* **Organic Falloff & Smooth-Min Absorption:**
-  * Update `halo.frag` to use a smooth radial polynomial Hermite curve for border transparency.
-  * Implement smooth-minimum (`smin`) blending in the distance field calculation so approaching nodes ($\le 120\text{px}$) cause the nebula boundary to organically stretch and envelope them.
+## 1. Architectural Philosophy & Anti-WIMP Core
+* **Anti-WIMP Invariant:** No monolithic modal dialogs that lock screen context. Information expands directly in-place on the canvas without artificial viewport takeovers.
+* **Single Surface Shell Invariant:** Exactly ONE visual element (`Surface`) per entity owns:
+  * Solid background fill (`color: "#0B0F19"`, `opacity: 1.0`).
+  * Perimeter border stroke (`border.width`, `border.color`).
+  * Corner radius and bounding dimensions (`width`, `height`).
+* **Universal Docking Contract:** Every entity implements `leftDock` and `rightDock` derived directly from outer shell boundaries in local/canvas space.
+* **Spatial Filaments Over Flank Slots:** Tendrils trace organic Bezier curves across the canvas between nodes in their natural clusters, completely eliminating rigid left/right wing slots and physics fighting.
 
 ---
 
-## 🟡 PHASE 2: Focal Dominance, Progressive Z-Depth Yield & Elastic Cushions (ACTIVE)
-**Target:** `aia_canvas/src/physics/engine.py`, `aia_canvas/src/bridge.py`, & `aia_canvas/src/qml/Node.qml`
-
-**The Problem:**
-1. Expanding the focal lens laterally compresses available wing space, pushing 1st and 2nd degree nodes off-screen instead of yielding naturally into 3D depth[cite: 2].
-2. Zoom/aperture transforms calculate radially from monitor center rather than available void space.
-
-**Design Intent & Architectural Constraints:**
-* **Available Wing Calculation:** Dynamically compute available lateral space:
-  $$\text{wing\_width} = \frac{\text{viewport\_width} - \text{focal\_lens\_width}}{2}$$
-* **Progressive Z-Recession Cascade:**
-  * **Comfortable ($\ge 260\text{px}$):** Tier 1 at $Z = 0$ (scale $1.0$, full labels); Tier 2 at $Z \approx -100\text{px}$ (scale $0.85$).
-  * **Compressed ($120\text{px} - 260\text{px}$):** Tier 1 stays pinned at $Z = 0$; Tier 2 yields into depth ($Z \to -350\text{px}$, scale $0.6$, collapsed badge tokens).
-  * **Extreme Squeeze ($< 120\text{px}$):** Tier 1 yields into depth ($Z \to -250\text{px}$, scale $0.7$, labels fade out leaving only glowing anchor ports along the lens flank). Tier 2 drops to $Z \to -500\text{px}$ (opacity $\to 0.2$).
-* **Elastic Viewport Wall:**
-  * Implement an exponential restoring force along a $32\text{px}$ inner boundary cushion on display borders in `engine.py` to prevent lateral clipping while retaining fluid kinetic bounce[cite: 2].
-* **Viewport-Aware Zoom Origin:**
-  * When a focal lens or wing is pinned, anchor the aperture zoom center to the midpoint of the available void (`(viewport_width - wing_width) / 2`).
-
-**Verification:**
-Resize the active focal workbench from compact to maximum width. Verify that Tier 2 nodes gracefully recede into the $Z$-depth with scaled down badges, Tier 1 nodes yield only under extreme expansion, and zero elements clip beyond physical monitor borders.
+## 2. Interaction Tier Contract (In-Place Escalation)
+1. **Tier 4 / 3 (Bead / Capsule at Rest):** Compact representations for ambient scanning.
+2. **Tier 2 (Inspection Slate - 220x64):** Triggered at 250ms+ dwell or glance. Exposes title, badges, and socket anchors.
+3. **Tier 1.5 (Rich In-Place Preview - 320x220 to 600x400):** Triggered by selection/sustained focus directly in canvas space. Renders markdown/media previews in-place. Multiple nodes can remain expanded simultaneously.
 
 ---
 
-## ⚪ PHASE 3: Synaptic Tendril Respiration & Edge Weights (PENDING)
-**Target:** `aia_canvas/src/qml/Tendril.qml`, `TendrilLayer.qml`, & `aia_canvas/src/bridge.py`
+## 3. Phased Implementation Roadmap
 
-**The Problem:**
-Tertiary and ambient connections appear statically faint rather than dynamically breathing, creating visual clutter across deep zoom levels[cite: 2].
+## Phase 1: Single-Surface Shell & Universal Docking
+- **Status:** COMPLETED
+- Consolidated entity rendering into a single root `Rectangle` with solid background fills and border strokes.
+- Removed margin/padding offsets from `.leftDock` and `.rightDock` anchors.
 
-**Design Intent & Constraints:**
-* **Biological Respiration Loop:** Bind ambient and tertiary edge opacities to a low-frequency sine wave modulation ($\sin(\text{time} \times 0.8 + \text{edge\_id})$) so they gently breathe into view and fade out[cite: 2].
-* **Weight-Tiered Visualization:**
-  * **Explicit Edges ($W = 1.0$):** Radiant, crisp bezier arcs with active tension anchors.
-  * **Semantic Edges ($W \in [0, 1]$):** Medium glow with distance-decayed alpha falloff.
-  * **Temporal Edges ($W(t)$):** Transient synaptic pulses that scale down with memory half-life decay.
-* **Hover Stabilization:** Instantly lock any hovered or focused tendril to full solid opacity[cite: 2].
+## Phase 2: Staged Interaction Engine (Timer-Driven Dwell)
+- **Status:** COMPLETED
+- Implemented non-disruptive 2-stage dwell escalation (250ms Tier 2 Slate, 1200ms Tier 1.5 Rich Preview) bound to `220ms` OutQuint easing curves.
+
+## Phase 3: Decoupled Quota Tendril Engine
+- **Status:** COMPLETED
+- Backend (`bridge.py`) restricted to pure 8-slot quota distribution (Explicit -> Semantic -> Temporal with rollovers).
+- QML handles declarative Bezier line rendering with defensive `(0,0)` visibility suppression.
+
+---
+
+## Phase 4: Deprecate Modal Wings & Implement In-Place Spatial Focus
+- **Status:** IN PROGRESS
+- **Scope:** `aia_canvas/src/physics/engine.py`, `aia_canvas/src/bridge.py`, `aia_canvas/src/qml/Canvas.qml`, `aia_canvas/src/qml/Node.qml`
+- **Objectives:**
+  1. **Purge Modal Wings:** Remove `compute_wing_slots`, left/right wing arrays, and artificial companion lock targets from `engine.py`. Nodes stay in their natural clusters.
+  2. **In-Place Escalation:** Deprecate the centralized viewport-modal overlay. Clicking/focusing an entity expands its own `Node.qml` Surface Shell directly on the canvas to Tier 1.5.
+  3. **Organic Tendril Filaments:** Re-route `Tendril.qml` to connect the active in-place card directly to companion nodes across the canvas using their dynamic `leftDock` / `rightDock` anchors.
+  4. **Multi-Node Expansion:** Enable multiple nodes to remain expanded in-place simultaneously without forcing canvas-wide dimming.
+
+## Phase 5: Surface Transparency, Ambient Falloff & Compositing
+- **Status:** PENDING
+- **Objectives:**
+  - Enforce 100% solid background opacity on all Surface Shells to eliminate text/node bleed-through.
+  - Tune the canvas ambient void falloff and background contrast.
+
+## Phase 6: Filaments Polish & Spatial Teleportation
+- **Status:** PENDING
+- **Objectives:**
+  - Polish cubic Bezier tension for long-distance canvas connections.
+  - Implement smooth viewport camera shifts when clicking tendril connection sockets.

@@ -13,6 +13,26 @@ Item {
     property string edgeType: "explicit"
     property real weight: 1.0
     property real currentAperture: 1.0
+    readonly property real portRatio: (typeof modelData !== "undefined" && modelData && modelData.flankPortRatio !== undefined) ? modelData.flankPortRatio : 0.5
+    property real flankPortRatio: modelData && modelData.flankPortRatio !== undefined ? modelData.flankPortRatio : 0
+    property real portSpacing: 6.0
+
+    property real driftTime: 0.0
+    NumberAnimation on driftTime {
+        from: 0; to: 6.28318
+        duration: 12000
+        loops: Animation.Infinite
+        running: true
+    }
+
+    readonly property real organicPortRatio: {
+        if (flankPortRatio <= 0) return 0.5;
+        var phase = (sourceId * 1.618 + driftTime) % 6.28318
+        return flankPortRatio + Math.sin(phase) * 0.03
+    }
+
+    readonly property bool isSibling: modelData !== undefined && modelData.isSiblingEdge !== undefined ? modelData.isSiblingEdge : false
+    readonly property bool isHovered: hoveredNodeId > 0 && (sourceId === hoveredNodeId || targetId === hoveredNodeId)
 
     // Relational Context
     readonly property bool isFirstDegree: {
@@ -89,10 +109,21 @@ Item {
     readonly property var sClusterPt: centroidBlend > 0 ? getProjectedCentroid(sourceClusterId) : null
     readonly property var tClusterPt: centroidBlend > 0 ? getProjectedCentroid(targetClusterId) : null
 
-    readonly property real rawSCx: sourceNode ? (sourceNode.cardCenterX !== undefined ? sourceNode.cardCenterX : (sourceNode.nodeModel ? sourceNode.nodeModel.x : sourceNode.x)) : 0
-    readonly property real rawSCy: sourceNode ? (sourceNode.cardCenterY !== undefined ? sourceNode.cardCenterY : (sourceNode.nodeModel ? sourceNode.nodeModel.y : sourceNode.y)) : 0
-    readonly property real rawSW: sourceNode ? (sourceNode.cardWidth !== undefined ? sourceNode.cardWidth : 280) : 280
-    readonly property real rawSH: sourceNode ? (sourceNode.cardHeight !== undefined ? sourceNode.cardHeight : 120) : 120
+    // Reactive properties that automatically recompute every frame as the node floats
+    readonly property real sourceCurrentX: sourceNode ? sourceNode.x : 0
+    readonly property real sourceCurrentY: sourceNode ? sourceNode.y : 0
+    readonly property real sourceCurrentW: sourceNode ? (sourceNode.width > 0 ? sourceNode.width : sourceNode.implicitWidth) * sourceNode.scale : 280
+    readonly property real sourceCurrentH: sourceNode ? (sourceNode.height > 0 ? sourceNode.height : sourceNode.implicitHeight) * sourceNode.scale : 120
+
+    readonly property real targetCurrentX: targetNode ? targetNode.x : 0
+    readonly property real targetCurrentY: targetNode ? targetNode.y : 0
+    readonly property real targetCurrentW: targetNode ? (targetNode.width > 0 ? targetNode.width : targetNode.implicitWidth) * targetNode.scale : 280
+    readonly property real targetCurrentH: targetNode ? (targetNode.height > 0 ? targetNode.height : targetNode.implicitHeight) * targetNode.scale : 120
+
+    readonly property real rawSCx: sourceCurrentX + sourceCurrentW * 0.5
+    readonly property real rawSCy: sourceCurrentY + sourceCurrentH * 0.5
+    readonly property real rawSW: sourceCurrentW
+    readonly property real rawSH: sourceCurrentH
 
     readonly property bool sourceIsWing: sourceNode ? (selectedNodeId > 0 && sourceId !== selectedNodeId && (sourceNode.focusWeight > 0.35 || (sourceNode.nodeModel && sourceNode.nodeModel.focus > 0.35))) : false
     readonly property bool targetIsWing: targetNode ? (selectedNodeId > 0 && targetId !== selectedNodeId && (targetNode.focusWeight > 0.35 || (targetNode.nodeModel && targetNode.nodeModel.focus > 0.35))) : false
@@ -102,10 +133,10 @@ Item {
     readonly property real sW: (sClusterPt && !sourceIsSelected && !sourceIsWing) ? (rawSW * (1 - centroidBlend) + sClusterPt.w * centroidBlend) : rawSW
     readonly property real sH: (sClusterPt && !sourceIsSelected && !sourceIsWing) ? (rawSH * (1 - centroidBlend) + sClusterPt.h * centroidBlend) : rawSH
 
-    readonly property real rawTCx: targetNode ? (targetNode.cardCenterX !== undefined ? targetNode.cardCenterX : (targetNode.nodeModel ? targetNode.nodeModel.x : targetNode.x)) : 0
-    readonly property real rawTCy: targetNode ? (targetNode.cardCenterY !== undefined ? targetNode.cardCenterY : (targetNode.nodeModel ? targetNode.nodeModel.y : targetNode.y)) : 0
-    readonly property real rawTW: targetNode ? (targetNode.cardWidth !== undefined ? targetNode.cardWidth : 280) : 280
-    readonly property real rawTH: targetNode ? (targetNode.cardHeight !== undefined ? targetNode.cardHeight : 120) : 120
+    readonly property real rawTCx: targetCurrentX + targetCurrentW * 0.5
+    readonly property real rawTCy: targetCurrentY + targetCurrentH * 0.5
+    readonly property real rawTW: targetCurrentW
+    readonly property real rawTH: targetCurrentH
 
     readonly property real tCx: (tClusterPt && targetId !== selectedNodeId && !targetIsWing) ? (rawTCx * (1 - centroidBlend) + tClusterPt.x * centroidBlend) : rawTCx
     readonly property real tCy: (tClusterPt && targetId !== selectedNodeId && !targetIsWing) ? (rawTCy * (1 - centroidBlend) + tClusterPt.y * centroidBlend) : rawTCy
@@ -114,102 +145,97 @@ Item {
 
     readonly property real jitterSeed: ((sourceId * 37 + targetId * 19) % 16) - 8
 
-    function calculateSynapticPoint(cx, cy, w, h, targetX, targetY, jitter) {
-        var dx = targetX - cx
-        var dy = targetY - cy
-        if (dx === 0 && dy === 0) return Qt.point(cx, cy)
-
-        if (w > h) {
-            var r = h / 2
-            var L = (w / 2) - r
-
-            if (dy !== 0) {
-                var t_flat = (dy > 0 ? r : -r) / dy
-                if (t_flat > 0) {
-                    var x_flat = cx + t_flat * dx
-                    if (x_flat >= cx - L && x_flat <= cx + L) {
-                        var clampedJitter = Math.max(-L + 12, Math.min(L - 12, jitter))
-                        return Qt.point(x_flat + clampedJitter, cy + (dy > 0 ? r : -r))
-                    }
-                }
-            }
-
-            var A = dx * dx + dy * dy
-            var signX = dx > 0 ? 1 : -1
-            var B = -2 * L * dx * signX
-            var C = L * L - r * r
-
-            var disc = B * B - 4 * A * C
-            if (disc >= 0) {
-                var t = (-B + Math.sqrt(disc)) / (2 * A)
-                if (t > 0) {
-                    var px = cx + t * dx
-                    var py = cy + t * dy
-                    return Qt.point(px, py)
-                }
-            }
-        }
-
-        var halfW = w / 2
-        var halfH = h / 2
-        if (Math.abs(dx) * halfH > Math.abs(dy) * halfW) {
-            var signX = dx > 0 ? 1 : -1
-            var clampedJitter = Math.max(-halfH + 12, Math.min(halfH - 12, jitter))
-            return Qt.point(cx + (signX * halfW), cy + (dy / Math.abs(dx)) * halfW + clampedJitter)
-        } else {
-            var signY = dy > 0 ? 1 : -1
-            var clampedJitter = Math.max(-halfW + 12, Math.min(halfW - 12, jitter))
-            return Qt.point(cx + (dx / Math.abs(dy)) * halfH + clampedJitter, cy + (signY * halfH))
-        }
-    }
-
     readonly property bool sourceIsBead: sourceNode ? !!(sourceNode.isMacroBead || sourceNode.isHoverBloomed) : false
     readonly property bool targetIsBead: targetNode ? !!(targetNode.isMacroBead || targetNode.isHoverBloomed) : false
 
-    readonly property point startPt: (sourceNode && targetNode) ?
-        (sourceIsBead ? Qt.point(sCx, sCy) : calculateSynapticPoint(sCx, sCy, sW, sH, tCx, tCy, jitterSeed)) : Qt.point(0, 0)
-
-    readonly property point endPt: (sourceNode && targetNode) ?
-        (targetIsBead ? Qt.point(tCx, tCy) : calculateSynapticPoint(tCx, tCy, tW, tH, sCx, sCy, -jitterSeed)) : Qt.point(0, 0)
-
-    // =========================================================================
-    // Neutral-Buoyancy Fluid Geometry (Perpendicular Normal Deflection)
-    // =========================================================================
-    readonly property real deltaX: endPt.x - startPt.x
-    readonly property real deltaY: endPt.y - startPt.y
-    readonly property real spanDist: Math.max(1.0, Math.sqrt(deltaX * deltaX + deltaY * deltaY))
-
-    // Unit Chord & Normal Vectors
-    readonly property real dirX: deltaX / spanDist
-    readonly property real dirY: deltaY / spanDist
-    readonly property real normX: -dirY
-    readonly property real normY: dirX
-
-    // Tangent Projection Length
-    readonly property real tangentLength: Math.min(spanDist * 0.35, 160.0)
-
-    // Edge-Specific Chirality & Fluid Arc Amplitude
-    readonly property real strandChirality: ((sourceId * 31 + targetId * 17) % 2 === 0) ? 1.0 : -1.0
-    readonly property real fluidBaseAmp: Math.min(24.0, Math.max(8.0, spanDist * 0.09))
-    
-    // Slow Fluid Micro-Sway (Tied to Respiration Phase)
-    readonly property real fluidSway: Math.sin(pulsePhase * 6.28318 + (sourceId % 7)) * 4.0
-    readonly property real normalOffset: (fluidBaseAmp * strandChirality) + fluidSway
-
-    // Workbench Egress Projection (Gently kicks straight outward from lens walls)
-    readonly property real focalBiasX: {
-        if (!isFirstDegree || !sourceNode) return 0.0
-        var fcx = sourceId === selectedNodeId ? sCx : tCx
-        var ptX = sourceId === selectedNodeId ? startPt.x : endPt.x
-        return (ptX - fcx) > 0 ? 1.0 : -1.0
+    function debugStartPt() {
+        if (!sourceNode || !targetNode) return Qt.point(0, 0);
+        if (sourceIsBead) return Qt.point(sCx, sCy);
+        
+        var focalX = (targetId === selectedNodeId && targetNode) ? targetNode.x : ((sourceId === selectedNodeId && sourceNode) ? sourceNode.x : targetNode.x);
+        
+        if (sourceId === selectedNodeId && sourceNode) {
+            var isLeft = targetNode.x < sourceNode.x;
+            if (sourceNode && typeof sourceNode.getFlankSocket === "function") {
+                return sourceNode.getFlankSocket(isLeft, organicPortRatio);
+            }
+            return isLeft ? sourceNode.leftDock : sourceNode.rightDock;
+        }
+        
+        var dockRight = sourceNode.x < (focalX - 30);
+        var dockLeft = sourceNode.x > (focalX + 30);
+        var useRight = sourceNode.x < focalX;
+        if (dockRight) useRight = true;
+        else if (dockLeft) useRight = false;
+        
+        var baseDock = useRight ? sourceNode.rightDock : sourceNode.leftDock;
+        if (!baseDock) return Qt.point(sCx, sCy);
+        return baseDock;
     }
-    readonly property real emergenceKick: isFirstDegree ? Math.min(32.0, spanDist * 0.18) : 0.0
 
-    // Fluid Spline Control Points
-    readonly property real cp1X: startPt.x + (dirX * tangentLength) + (normX * normalOffset) + (sourceId === selectedNodeId ? focalBiasX * emergenceKick : 0.0)
-    readonly property real cp1Y: startPt.y + (dirY * tangentLength) + (normY * normalOffset)
-    readonly property real cp2X: endPt.x - (dirX * tangentLength) + (normX * normalOffset * 0.6) + (targetId === selectedNodeId ? focalBiasX * emergenceKick : 0.0)
-    readonly property real cp2Y: endPt.y - (dirY * tangentLength) + (normY * normalOffset * 0.6)
+    readonly property point rawStartPt: debugStartPt()
+
+    function debugEndPt() {
+        if (!sourceNode || !targetNode) return Qt.point(0, 0);
+        if (targetIsBead) return Qt.point(tCx, tCy);
+        
+        var focalX = (sourceId === selectedNodeId && sourceNode) ? sourceNode.x : ((targetId === selectedNodeId && targetNode) ? targetNode.x : sourceNode.x);
+        
+        if (targetId === selectedNodeId && targetNode) {
+            var isLeft = sourceNode.x < targetNode.x;
+            if (targetNode && typeof targetNode.getFlankSocket === "function") {
+                return targetNode.getFlankSocket(isLeft, organicPortRatio);
+            }
+            return isLeft ? targetNode.leftDock : targetNode.rightDock;
+        }
+        
+        var dockRight = targetNode.x < (focalX - 30);
+        var dockLeft = targetNode.x > (focalX + 30);
+        var useRight = targetNode.x < focalX;
+        if (dockRight) useRight = true;
+        else if (dockLeft) useRight = false;
+        
+        var baseDock = useRight ? targetNode.rightDock : targetNode.leftDock;
+        if (!baseDock) return Qt.point(tCx, tCy);
+        return baseDock;
+    }
+
+    readonly property point rawEndPt: debugEndPt()
+
+    readonly property real dx: rawEndPt.x - rawStartPt.x
+    readonly property real dy: rawEndPt.y - rawStartPt.y
+    readonly property real len: Math.max(1.0, Math.sqrt(dx * dx + dy * dy))
+    readonly property real nx: -dy / len
+    readonly property real ny: dx / len
+
+    readonly property point startPt: rawStartPt
+    readonly property point endPt: rawEndPt
+
+    readonly property real startX: startPt.x
+    readonly property real startY: startPt.y
+    readonly property real endX: endPt.x
+    readonly property real endY: endPt.y
+
+    // Deterministic edge hash seed (values 0.0 to 1.0)
+    readonly property int srcId: (typeof modelData !== "undefined" && modelData && modelData.sourceId !== undefined) ? modelData.sourceId : sourceId
+    readonly property int tgtId: (typeof modelData !== "undefined" && modelData && modelData.targetId !== undefined) ? modelData.targetId : targetId
+    readonly property int edgeHash: ((srcId * 7919) ^ (tgtId * 104729)) & 0xFFFF
+    readonly property real rand1: ((edgeHash % 100) / 100.0) - 0.5        // -0.5 to +0.5
+    readonly property real rand2: (((edgeHash >> 4) % 100) / 100.0) - 0.5  // -0.5 to +0.5
+
+    // Organic Radial Arc Slack (proportional to distance, capped gracefully)
+    readonly property real spanDist: Math.max(1.0, Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2)))
+
+    // Dynamic asymmetric handle flare
+    readonly property real maxFlare: Math.min(Math.max(spanDist * 0.22, 18.0), 65.0)
+    readonly property real flare1: (rand1 * 2.0 * maxFlare)
+    readonly property real flare2: (rand2 * 2.0 * maxFlare)
+
+    // Asymmetric Control Points (CP1 and CP2 explore independent normal offsets)
+    readonly property real cp1X: startX + ((endX - startX) * 0.30) + (nx * flare1)
+    readonly property real cp1Y: startY + ((endY - startY) * 0.30) + (ny * flare1)
+    readonly property real cp2X: startX + ((endX - startX) * 0.70) + (nx * flare2)
+    readonly property real cp2Y: startY + ((endY - startY) * 0.70) + (ny * flare2)
 
     // =========================================================================
     // Bioluminescent Respiration Wave (Continuous Calm Biological Breathing)
@@ -279,9 +305,10 @@ Item {
 
     readonly property real targetOpacity: {
         if (isHoverBloomed) return 1.0
+        if (isSibling) return 0.22 // Subdued secondary background line
         if (isConnectedToSelected) {
             if (isFirstDegree) {
-                return 1.0
+                return edgeType === "temporal" ? 0.45 : 0.85; // Primary radial spoke
             } else {
                 return 0.25 // Subdued secondary edge opacity
             }
@@ -299,25 +326,33 @@ Item {
         return Math.max(0.0, (currentAperture - 0.20) / 0.15)
     }
 
+    readonly property bool hasValidDocks: {
+        if (!sourceNode || !targetNode) return false;
+        if (rawStartPt.x === 0 && rawStartPt.y === 0) return false;
+        if (rawEndPt.x === 0 && rawEndPt.y === 0) return false;
+        return true;
+    }
+
     opacity: targetOpacity * macroOpacityFade
-    visible: sourceNode !== null && targetNode !== null && opacity > 0.005
+    visible: sourceNode !== null && targetNode !== null && opacity > 0.005 && hasValidDocks
 
     Behavior on opacity {
         NumberAnimation { duration: 240; easing.type: Easing.OutCubic }
     }
 
-    readonly property color filamentColor: {
-        if (isHoverBloomed || isConnectedToSelected) {
-            if (edgeType === "temporal") return "#fef08a"
-            if (edgeType === "explicit") return "#7dd3fc"
-            if (edgeType === "semantic") return "#c084fc"
-            return "#e9d5ff"
+    readonly property color edgeColor: {
+        var et = (modelData !== undefined && modelData && modelData.edgeType !== undefined) ? modelData.edgeType : edgeType;
+        switch (et) {
+            case "explicit":  return Theme.tendrilExplicit;
+            case "wikilink":  return Theme.tendrilWikilink;
+            case "temporal":  return Theme.tendrilTemporal;
+            case "semantic":  return Theme.tendrilSemantic;
+            case "knn":       return Theme.tendrilSemantic;
+            default:          return Theme.tendrilFallback;
         }
-        if (edgeType === "explicit") return "#38bdf8"
-        if (edgeType === "temporal") return "#ca8a04"
-        if (edgeType === "semantic") return "#a855f7"
-        return "#c084fc"
     }
+
+    readonly property color filamentColor: edgeColor
 
     // =========================================================================
     // Core Synaptic Filament
@@ -326,17 +361,14 @@ Item {
         anchors.fill: parent
         asynchronous: true
         preferredRendererType: Shape.CurveRenderer
+        opacity: rootTendril.edgeType === "temporal" ? 0.38 : (rootTendril.edgeType === "explicit" || rootTendril.edgeType === "direct" || rootTendril.edgeType === "wikilink" ? 0.9 : 1.0)
 
         ShapePath {
             strokeColor: rootTendril.filamentColor
             strokeWidth: {
-                if (rootTendril.isHoverBloomed) return 1.8
-                if (rootTendril.isFirstDegree) {
-                    var w = rootTendril.edgeType === "semantic" ? Math.max(0.6, rootTendril.weight) : rootTendril.weight
-                    return Math.max(0.65, 0.50 + 1.15 * w)
-                }
-                if (rootTendril.edgeType === "explicit" || rootTendril.edgeType === "semantic") return 0.8
-                return 1.0 // temporal
+                if (rootTendril.isHoverBloomed) return Theme.tendrilStrokeHover;
+                if (rootTendril.isSibling) return Theme.tendrilStrokeSibling;
+                return rootTendril.edgeType === "explicit" || rootTendril.edgeType === "direct" || rootTendril.edgeType === "wikilink" ? Theme.tendrilStrokeExplicit : Theme.tendrilStrokeSemantic;
             }
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
@@ -365,7 +397,7 @@ Item {
 
         ShapePath {
             strokeColor: rootTendril.filamentColor
-            strokeWidth: Math.max(2.2, rootTendril.weight * 3.4)
+            strokeWidth: rootTendril.edgeType === "temporal" ? 3.0 : (rootTendril.edgeType === "explicit" || rootTendril.edgeType === "direct" || rootTendril.edgeType === "wikilink" ? 8.0 : Math.max(2.2, rootTendril.weight * 3.4))
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
 
@@ -393,12 +425,13 @@ Item {
         property bool isPreviewSlate: false
         property real edgeWeight: 1.0
         property real targetOpacity: 1.0
+        property string pEdgeType: "explicit"
 
         readonly property real baseSize: isFocalLens ? (14 + 10 * edgeWeight) : (8 + 6 * edgeWeight)
         readonly property real glowSize: isPreviewSlate ? baseSize * 0.65 : baseSize
         width: glowSize
         height: glowSize
-        opacity: targetOpacity
+        opacity: pEdgeType === "temporal" ? targetOpacity * 0.4 : targetOpacity
         visible: targetOpacity > 0.005
 
         Rectangle {
@@ -422,11 +455,11 @@ Item {
         Rectangle {
             visible: portRoot.edgeWeight >= 0.35
             anchors.centerIn: parent
-            width: portRoot.isFocalLens ? (2.5 + 2.0 * portRoot.edgeWeight) : 2.5
+            width: pEdgeType === "temporal" ? 2.5 : (portRoot.isFocalLens ? (2.5 + 2.0 * portRoot.edgeWeight) : 2.5)
             height: width
             radius: width / 2
             color: "#ffffff"
-            opacity: 0.85
+            opacity: pEdgeType === "temporal" ? 0.4 : 0.85
         }
     }
 
@@ -443,6 +476,7 @@ Item {
         isFocalLens: true
         edgeWeight: edgeType === "semantic" ? Math.max(0.5, weight) : weight
         targetOpacity: rootTendril.opacity
+        pEdgeType: rootTendril.edgeType
         z: 9500
     }
 
@@ -452,9 +486,58 @@ Item {
         y: outerPoint.y - height / 2
         glowColor: edgeType === "semantic" ? "#a78bfa" : filamentColor
         isFocalLens: false
-        isPreviewSlate: sourceIsSelected ? (targetNode && targetNode.showPreviewSlate) : (sourceNode && sourceNode.showPreviewSlate)
+        isPreviewSlate: sourceIsSelected ? (targetNode && targetNode.showPreviewSlate === true) : (sourceNode && sourceNode.showPreviewSlate === true)
         edgeWeight: edgeType === "semantic" ? Math.max(0.5, weight) : weight
         targetOpacity: (isFirstDegree || isHoverBloomed) ? rootTendril.opacity : 0.0
+        pEdgeType: rootTendril.edgeType
         z: 9500
+    }
+
+    // Terminal Bloom Socket at Node Dock Point (Start)
+    Rectangle {
+        x: startPt.x - width * 0.5
+        y: startPt.y - height * 0.5
+        width: 6
+        height: 6
+        radius: 3
+        color: edgeColor
+        opacity: rootTendril.opacity
+        z: 20
+
+        // Outer ambient glow ring
+        Rectangle {
+            anchors.centerIn: parent
+            width: 14
+            height: 14
+            radius: 7
+            color: "transparent"
+            border.color: edgeColor
+            border.width: 1
+            opacity: 0.4
+        }
+    }
+
+    // Terminal Bloom Socket at Node Dock Point (End)
+    Rectangle {
+        x: endPt.x - width * 0.5
+        y: endPt.y - height * 0.5
+        width: 6
+        height: 6
+        radius: 3
+        color: edgeColor
+        opacity: rootTendril.opacity
+        z: 20
+
+        // Outer ambient glow ring
+        Rectangle {
+            anchors.centerIn: parent
+            width: 14
+            height: 14
+            radius: 7
+            color: "transparent"
+            border.color: edgeColor
+            border.width: 1
+            opacity: 0.4
+        }
     }
 }
