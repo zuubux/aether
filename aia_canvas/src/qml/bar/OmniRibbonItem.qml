@@ -1,8 +1,11 @@
 import QtQuick
 import QtQuick.Controls
 import ".."
-import ".."
 
+/**
+ * OmniRibbonItem.qml
+ * Individual item delegate rendering result title, category badge, and snippet preview.
+ */
 Rectangle {
     id: root
 

@@ -471,8 +471,6 @@ class DatabaseManager:
             rows = await cursor.fetchall()
             return [r[0] for r in rows]
 
-        return created_edges    
-    
     async def get_stats(self) -> dict:
         if not self._conn:
             return {"status": "uninitialized"}

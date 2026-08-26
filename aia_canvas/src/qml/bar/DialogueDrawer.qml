@@ -2,6 +2,10 @@ import QtQuick
 import QtQuick.Controls
 import ".."
 
+/**
+ * DialogueDrawer.qml
+ * Renders the sliding drawer for conversational AI dialogue output and LLM responses.
+ */
 Item {
     id: root
 

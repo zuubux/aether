@@ -118,30 +118,13 @@ class Node(QObject):
         return ""
 
     @pyqtProperty(str, notify=thumbnailUrlChanged)
-    def thumbnail(self) -> str:
-        return self.thumbnailUrl
-
-    @pyqtProperty(str, notify=thumbnailUrlChanged)
     def preview_path(self) -> str:
         thumb = self.thumbnailUrl
         return thumb or (self._file_path if self._is_image else "")
 
-    @pyqtProperty(str, notify=thumbnailUrlChanged)
-    def previewUrl(self) -> str:
-        thumb = self.thumbnailUrl
-        return thumb or (self._file_path if self._is_image else "")
-
-    @pyqtProperty(str, notify=filePathChanged)
-    def path(self) -> str:
-        return self._file_path
-
-    @pyqtProperty(int, constant=True)
-    def sizeBytes(self) -> int:
-        return self._size_bytes
-
     def to_dict(self) -> dict:
         thumb = self.thumbnailUrl
-        prev = self.previewUrl
+        prev = self.preview_path
         title = self.display_title
         return {
             "id": self._id,
@@ -165,26 +148,6 @@ class Node(QObject):
             "y": self._y,
             "focus": self._focus,
             "clusterId": self._cluster_id,
-        }
-
-    def roleNames(self) -> dict:
-        return {
-            "id": b"id",
-            "filePath": b"filePath",
-            "file_path": b"file_path",
-            "fileName": b"fileName",
-            "displayTitle": b"displayTitle",
-            "display_title": b"display_title",
-            "extension": b"extension",
-            "archetype": b"archetype",
-            "snippet": b"snippet",
-            "thumbnail": b"thumbnail",
-            "thumbnailUrl": b"thumbnailUrl",
-            "sizeBytes": b"sizeBytes",
-            "x": b"x",
-            "y": b"y",
-            "focus": b"focus",
-            "clusterId": b"clusterId",
         }
 
     def __getitem__(self, item: str):

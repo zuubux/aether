@@ -150,53 +150,6 @@ def extract_docx(path: Path | str) -> tuple[str, str]:
         pass
     return "DOCX", ""
 
-def parse_slide_xml(xml_bytes: bytes) -> tuple[str, list[str]]:
-    """Parse slide XML and return (title_text, list_of_body_paragraphs)."""
-    root = ET.fromstring(xml_bytes)
-    _strip_namespaces(root)
-    
-    title_text = ""
-    body_paragraphs = []
-    
-    title_shape = None
-    for sp in root.findall('.//sp'):
-        ph = sp.find('.//ph')
-        if ph is not None:
-            ph_type = ph.get('type', '').lower()
-            if 'title' in ph_type:
-                title_shape = sp
-                break
-                
-    if title_shape is not None:
-        t_texts = []
-        for p in title_shape.findall('.//p'):
-            texts = [t.text for t in p.findall('.//t') if t.text]
-            p_str = "".join(texts).strip()
-            if p_str:
-                t_texts.append(p_str)
-        title_text = " ".join(t_texts).strip()
-        
-        for sp in root.findall('.//sp'):
-            if sp is title_shape:
-                continue
-            for p in sp.findall('.//p'):
-                texts = [t.text for t in p.findall('.//t') if t.text]
-                p_str = "".join(texts).strip()
-                if p_str:
-                    body_paragraphs.append(p_str)
-    else:
-        all_paragraphs = []
-        for sp in root.findall('.//sp'):
-            for p in sp.findall('.//p'):
-                texts = [t.text for t in p.findall('.//t') if t.text]
-                p_str = "".join(texts).strip()
-                if p_str:
-                    all_paragraphs.append(p_str)
-        if all_paragraphs:
-            title_text = all_paragraphs[0]
-            body_paragraphs = all_paragraphs[1:]
-            
-    return title_text, body_paragraphs
 
 def extract_pptx(path: Path | str, *args, **kwargs) -> tuple[str, str, str | None]:
     """Extract deck title, slide count, and embedded slide thumbnail from PPTX/ODP files."""
@@ -414,15 +367,3 @@ def extract_xlsx(path: Path | str) -> tuple[str, str, None]:
 
     snippet = format_tabular_preview(sheet_name, rows)
     return "DOCUMENT", snippet, None
-
-
-def extract_office_snippet(path: str | Path) -> str:
-    p = Path(path)
-    ext = p.suffix.lower()
-    if ext in ('.docx', '.doc'):
-        return extract_docx(p)[1]
-    elif ext in ('.pptx', '.ppt', '.odp'):
-        return extract_pptx(p)[1]
-    elif ext in ('.xlsx', '.ods'):
-        return extract_xlsx(p)[1]
-    return ""

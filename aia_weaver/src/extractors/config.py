@@ -4,6 +4,15 @@ from email.parser import BytesParser
 from email.utils import parseaddr, parsedate_to_datetime
 from pathlib import Path
 import re
+from typing import Any
+
+
+def _format_kv_value(key: str, val: Any) -> str:
+    """Format and mask sensitive key-value config strings."""
+    if any(term in key.lower() for term in ("pass", "secret", "key", "token")):
+        return "••••••"
+    v_str = " ".join(str(val).splitlines()).strip()
+    return v_str[:47] + "..." if len(v_str) > 50 else v_str
 
 
 def extract_config(path: Path | str) -> tuple[str, str, None]:
@@ -43,17 +52,7 @@ def extract_config(path: Path | str) -> tuple[str, str, None]:
             for k, val in items:
                 if kv_count >= 4:
                     break
-                k_lower = k.lower()
-                is_sensitive = any(term in k_lower for term in ("pass", "secret", "key", "token"))
-                if is_sensitive:
-                    display_val = "••••••"
-                else:
-                    v_str = " ".join(str(val).splitlines()).strip()
-                    if len(v_str) > 50:
-                        display_val = v_str[:47] + "..."
-                    else:
-                        display_val = v_str
-                lines.append(f"↳ {k} = {display_val}")
+                lines.append(f"↳ {k} = {_format_kv_value(k, val)}")
                 kv_count += 1
 
         formatted_snippet = "\n".join(lines).strip()
@@ -424,14 +423,7 @@ def extract_reg(path: Path | str) -> tuple[str, str, None]:
             for k, val in kvs:
                 if kv_count >= 3:
                     break
-                k_lower = k.lower()
-                is_sensitive = any(term in k_lower for term in ("pass", "secret", "key", "token"))
-                if is_sensitive:
-                    display_val = "••••••"
-                else:
-                    v_str = " ".join(str(val).splitlines()).strip()
-                    display_val = v_str[:47] + "..." if len(v_str) > 50 else v_str
-                lines.append(f"↳ <span class='key'>{k}:</span> <span class='val'>{display_val}</span>")
+                lines.append(f"↳ <span class='key'>{k}:</span> <span class='val'>{_format_kv_value(k, val)}</span>")
                 kv_count += 1
 
         formatted_snippet = "\n".join(lines).strip()

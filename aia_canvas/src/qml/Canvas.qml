@@ -13,8 +13,6 @@ Window {
     property bool showDiagnostics: false
     readonly property alias omniBar: omniBar
 
-    readonly property Item focalCardItem: (canvasBridge && canvasBridge.selectedNodeId > 0 && !isSearchActive) ? canvasViewport.getNode(canvasBridge.selectedNodeId) : null
-
     readonly property int nodeCount: (canvasBridge && canvasBridge.nodes) ? Math.max(1, canvasBridge.nodes.length) : 1
     readonly property real viewportArea: width * height
     readonly property real pixelBudgetPerNode: (viewportArea * Math.pow(canvasBridge ? canvasBridge.aperture : 1.0, 2)) / nodeCount
@@ -141,29 +139,6 @@ Window {
         }
     }
 
-    Shortcut {
-        sequence: "Ctrl+K"
-        context: Qt.ApplicationShortcut
-        onActivated: {
-            if (typeof omniBar !== "undefined" && omniBar) {
-                if (omniBar.active) {
-                    omniBar.dismiss();
-                } else {
-                    omniBar.open();
-                }
-            }
-        }
-    }
-
-    Shortcut {
-        sequence: "/"
-        context: Qt.ApplicationShortcut
-        onActivated: {
-            if (typeof omniBar !== "undefined" && omniBar && !omniBar.active) {
-                omniBar.open();
-            }
-        }
-    }
     Shortcut {
         sequence: "F3"
         onActivated: showDiagnostics = !showDiagnostics

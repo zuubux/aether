@@ -7,13 +7,14 @@ FocusScope {
     width: Math.round(320)
     height: Math.round(220)
 
-    property int nodeId: 0
-    property string archetype: "document"
-    property string snippet: ""
+    property var nodeData: null
+    property int nodeId: (nodeData && nodeData.id) ? nodeData.id : 0
+    property string archetype: (nodeData && nodeData.archetype) ? nodeData.archetype : "document"
+    property string snippet: (nodeData && nodeData.snippet) ? nodeData.snippet : ""
     property string initialText: ""
-    property string fileName: ""
-    property string displayTitle: ""
-    property string filePath: ""
+    property string fileName: (nodeData && (nodeData.fileName || nodeData.title)) ? (nodeData.fileName || nodeData.title) : ""
+    property string displayTitle: (nodeData && (nodeData.displayTitle || nodeData.display_title)) ? (nodeData.displayTitle || nodeData.display_title) : fileName
+    property string filePath: (nodeData && (nodeData.path || nodeData.filePath)) ? (nodeData.path || nodeData.filePath) : ""
     property string sizeFormatted: "0 KB"
     property string hashSnippet: "N/A"
     property int referenceCount: 0

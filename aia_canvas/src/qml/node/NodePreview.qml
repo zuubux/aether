@@ -47,9 +47,9 @@ Item {
     }
     readonly property bool hasThumbnail: (previewUrl && previewUrl.length > 0)
 
-    readonly property bool isAnimatedGif: (previewRoot.filePath && previewRoot.filePath.toLowerCase().endsWith(".gif"))
-    readonly property bool isStaticImage: (previewRoot.archetype && (previewRoot.archetype.toUpperCase() === "MEDIA" || previewRoot.archetype.toUpperCase() === "IMAGE" || previewRoot.archetype.toUpperCase() === "ASSET")) || (previewRoot.filePath && (previewRoot.filePath.toLowerCase().endsWith(".png") || previewRoot.filePath.toLowerCase().endsWith(".jpg") || previewRoot.filePath.toLowerCase().endsWith(".jpeg") || previewRoot.filePath.toLowerCase().endsWith(".webp")))
-    readonly property bool isPdf: (previewRoot.archetype && (previewRoot.archetype.toUpperCase() === "DOCUMENT" || previewRoot.archetype.toUpperCase() === "PDF")) && previewRoot.filePath && previewRoot.filePath.toLowerCase().endsWith(".pdf")
+    readonly property bool isAnimatedGif: (previewRoot.fileExt === ".gif")
+    readonly property bool isStaticImage: (previewRoot.archetype && (previewRoot.archetype.toUpperCase() === "MEDIA" || previewRoot.archetype.toUpperCase() === "IMAGE" || previewRoot.archetype.toUpperCase() === "ASSET")) || (previewRoot.fileExt === ".png" || previewRoot.fileExt === ".jpg" || previewRoot.fileExt === ".jpeg" || previewRoot.fileExt === ".webp")
+    readonly property bool isPdf: (previewRoot.archetype && (previewRoot.archetype.toUpperCase() === "DOCUMENT" || previewRoot.archetype.toUpperCase() === "PDF")) && previewRoot.fileExt === ".pdf"
 
     property bool isImage: isStaticImage || isAnimatedGif || fileExt === ".svg" || fileExt === ".ico" || mimeType.startsWith("image/") || mimeType === "image/x-icon" || mimeType === "image/vnd.microsoft.icon"
     property bool isHeavyImage: fileExt === ".png" || fileExt === ".jpg" || fileExt === ".jpeg" || fileExt === ".webp"
@@ -354,40 +354,6 @@ Item {
             elide: Text.ElideRight
             textFormat: previewRoot.isHtmlSnippet ? Text.RichText : (previewRoot.fileExt === ".md" ? Text.MarkdownText : Text.PlainText)
             z: 5
-        }
-    }
-
-    Rectangle {
-        id: debugHud
-        visible: (typeof canvasRoot !== "undefined" && canvasRoot && canvasRoot.showDiagnostics) || false
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        height: 36
-        color: "#CC111827"
-        border.color: "#38BDF8"
-        border.width: 1
-        z: 9999
-
-        Column {
-            anchors.fill: parent
-            anchors.margins: 4
-            spacing: 2
-
-            Text {
-                text: "Arch: " + previewRoot.archetype + " | isImg: " + isStaticImage + " | isPdf: " + isPdf + " | Status: " + (previewRoot.isAnimatedGif ? gifImg.status : previewImg.status)
-                color: "#38BDF8"
-                font.pixelSize: 9
-                font.family: "monospace"
-            }
-            Text {
-                text: "Src: " + (previewRoot.isAnimatedGif ? (gifImg.source || "NONE") : (previewImg.source || "NONE"))
-                color: (previewRoot.isAnimatedGif ? gifImg.status : previewImg.status) === Image.Error ? "#EF4444" : "#A7F3D0"
-                font.pixelSize: 8
-                font.family: "monospace"
-                elide: Text.ElideMiddle
-                width: parent.width
-            }
         }
     }
 }

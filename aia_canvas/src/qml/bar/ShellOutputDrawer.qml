@@ -1,8 +1,11 @@
 import QtQuick
 import QtQuick.Controls
 import ".."
-import ".."
 
+/**
+ * ShellOutputDrawer.qml
+ * Sliding terminal output drawer displaying rich text process output lines and system status.
+ */
 Item {
     id: root
     

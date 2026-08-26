@@ -2,6 +2,10 @@ import QtQuick
 import QtQuick.Controls
 import ".."
 
+/**
+ * SearchSuggestionRibbon.qml
+ * Progressive results container displaying horizontal carousel or expanded vertical grid.
+ */
 Item {
     id: root
     

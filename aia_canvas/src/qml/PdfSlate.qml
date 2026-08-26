@@ -68,15 +68,7 @@ FocusScope {
             }
             event.accepted = true
         } else if (event.key === Qt.Key_Z || event.key === Qt.Key_1) {
-            root.isFitted = !root.isFitted
-            root.zoomLevel = 1.0
-            if (root.isFitted) {
-                viewport.contentX = 0
-                viewport.contentY = 0
-            } else {
-                viewport.contentX = Math.max(0, (viewport.contentWidth - viewport.width) / 2)
-                viewport.contentY = Math.max(0, (viewport.contentHeight - viewport.height) / 2)
-            }
+            root.toggleZoomFit()
             event.accepted = true
         } else {
             event.accepted = false
@@ -143,13 +135,20 @@ FocusScope {
         applyAspectSizing()
     }
 
-    onCurrentPageIndexChanged: {
-        requestCurrentPage()
+    function toggleZoomFit() {
+        root.isFitted = !root.isFitted
+        root.zoomLevel = 1.0
+        if (root.isFitted) {
+            viewport.contentX = 0
+            viewport.contentY = 0
+        } else {
+            viewport.contentX = Math.max(0, (viewport.contentWidth - viewport.width) / 2)
+            viewport.contentY = Math.max(0, (viewport.contentHeight - viewport.height) / 2)
+        }
     }
 
-    onPageCountChanged: {
-        aspectSized = false
-        applyAspectSizing()
+    onCurrentPageIndexChanged: {
+        requestCurrentPage()
     }
 
     Component.onCompleted: {
@@ -301,15 +300,7 @@ FocusScope {
                         onEntered: fitBtn.color = Theme.surfaceButtonHover
                         onExited: fitBtn.color = Theme.surfaceButton
                         onClicked: {
-                            root.isFitted = !root.isFitted
-                            root.zoomLevel = 1.0
-                            if (root.isFitted) {
-                                viewport.contentX = 0
-                                viewport.contentY = 0
-                            } else {
-                                viewport.contentX = Math.max(0, (viewport.contentWidth - viewport.width) / 2)
-                                viewport.contentY = Math.max(0, (viewport.contentHeight - viewport.height) / 2)
-                            }
+                            root.toggleZoomFit()
                         }
                     }
                 }
@@ -552,16 +543,7 @@ FocusScope {
                 TapHandler {
                     acceptedButtons: Qt.LeftButton
                     onDoubleTapped: {
-                        root.isFitted = !root.isFitted
-                        if (root.isFitted) {
-                            root.zoomLevel = 1.0
-                            viewport.contentX = 0
-                            viewport.contentY = 0
-                        } else {
-                            root.zoomLevel = 1.0
-                            viewport.contentX = Math.max(0, (viewport.contentWidth - viewport.width) / 2)
-                            viewport.contentY = Math.max(0, (viewport.contentHeight - viewport.height) / 2)
-                        }
+                        root.toggleZoomFit()
                     }
                 }
 

@@ -1,6 +1,10 @@
 import QtQuick
 import ".."
 
+/**
+ * ProviderBadge.qml
+ * Header status badge displaying active LLM provider name, icon glyph, and streaming indicator dot.
+ */
 Rectangle {
     id: root
 

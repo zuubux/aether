@@ -7,6 +7,18 @@ FocusScope {
     width: Math.round(320)
     height: Math.round(220)
 
+    function toggleZoomFit() {
+        root.isFitted = !root.isFitted
+        root.zoomLevel = 1.0
+        if (root.isFitted) {
+            viewport.contentX = 0
+            viewport.contentY = 0
+        } else {
+            viewport.contentX = Math.max(0, (viewport.contentWidth - viewport.width) / 2)
+            viewport.contentY = Math.max(0, (viewport.contentHeight - viewport.height) / 2)
+        }
+    }
+
     Keys.onPressed: (event) => {
         if (event.modifiers & Qt.ControlModifier && event.key === Qt.Key_C) {
             var b = getBridge()
@@ -17,15 +29,7 @@ FocusScope {
             }
             event.accepted = true
         } else if (event.key === Qt.Key_Z || event.key === Qt.Key_1) {
-            root.isFitted = !root.isFitted
-            root.zoomLevel = 1.0
-            if (root.isFitted) {
-                viewport.contentX = 0
-                viewport.contentY = 0
-            } else {
-                viewport.contentX = Math.max(0, (viewport.contentWidth - viewport.width) / 2)
-                viewport.contentY = Math.max(0, (viewport.contentHeight - viewport.height) / 2)
-            }
+            root.toggleZoomFit()
             event.accepted = true
         } else {
             event.accepted = false
@@ -415,16 +419,7 @@ FocusScope {
                 TapHandler {
                     acceptedButtons: Qt.LeftButton
                     onDoubleTapped: {
-                        root.isFitted = !root.isFitted
-                        if (root.isFitted) {
-                            root.zoomLevel = 1.0
-                            viewport.contentX = 0
-                            viewport.contentY = 0
-                        } else {
-                            root.zoomLevel = 1.0
-                            viewport.contentX = Math.max(0, (viewport.contentWidth - viewport.width) / 2)
-                            viewport.contentY = Math.max(0, (viewport.contentHeight - viewport.height) / 2)
-                        }
+                        root.toggleZoomFit()
                     }
                 }
 

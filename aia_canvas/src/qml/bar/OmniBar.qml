@@ -2,6 +2,10 @@ import QtQuick
 import QtQuick.Controls
 import ".."
 
+/**
+ * OmniBar.qml
+ * Central neural HUD combining low-latency fuzzy search, shell execution, and conversational AI.
+ */
 Item {
     id: root
 
@@ -128,7 +132,6 @@ Item {
     readonly property real outputDrawerHeight: root.isShellMode ? shellDrawerHeight : (root.isConversationalMode ? dialogueDrawerHeight : 0)
 
     signal querySubmitted(string text)
-    signal resultSelected(var resultItem)
     signal dismissed()
     signal cancelQuery()
 
@@ -270,7 +273,6 @@ Item {
         var len = getListLength(root.resultsList);
         if (root.currentRibbonIndex >= 0 && len > root.currentRibbonIndex) {
             var item = root.resultsList[root.currentRibbonIndex];
-            root.resultSelected(item);
             var rawId = item.node_id !== undefined ? item.node_id : item.id;
             var nId = parseInt(rawId);
             if (!isNaN(nId) && nId > 0) {
@@ -406,7 +408,6 @@ Item {
                     width: parent.width
                     height: 48
                     
-                    isSpecialMode: root.modePrefix.length > 0
                     modePrefix: root.modePrefix
                     effectiveProvider: root.effectiveProvider
                     borderColor: barShell.borderColor

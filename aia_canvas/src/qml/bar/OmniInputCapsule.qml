@@ -2,10 +2,14 @@ import QtQuick
 import QtQuick.Controls
 import ".."
 
+/**
+ * OmniInputCapsule.qml
+ * Input capsule displaying active mode badges, prefix sigils, and text entry field.
+ */
 Item {
     id: root
 
-    property bool isSpecialMode: false
+    readonly property bool isSpecialMode: modePrefix.length > 0
     property string modePrefix: ""
     property string effectiveProvider: ""
     property color borderColor: Theme.borderSubtle

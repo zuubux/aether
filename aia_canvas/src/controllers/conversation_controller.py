@@ -6,9 +6,9 @@ Manages streaming dialogue execution, token signals, and provider state.
 import asyncio
 import logging
 import threading
-from typing import Any, Optional
+from typing import Any, List, Optional
 
-from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import pyqtProperty, pyqtSignal, pyqtSlot
 
 from omni.engines.conversation import ConversationEngine
 from .base_controller import BaseController
@@ -17,29 +17,38 @@ logger = logging.getLogger("aia_canvas.conversation_controller")
 
 
 class ConversationController(BaseController):
+    """Controller managing streaming dialogue execution, token emissions, and LLM provider state."""
+
     tokenReceived = pyqtSignal(str)
     responseFinished = pyqtSignal(str)
     engineStateChanged = pyqtSignal(str)
     providerMetadataChanged = pyqtSignal()
 
-    def __init__(self, bridge):
+    def __init__(self, bridge: Any):
+        """Initialize ConversationController and connect underlying ConversationEngine.
+
+        Args:
+            bridge: CanvasBridge instance owning search and conversation state.
+        """
         super().__init__(bridge)
-        self._engine_state = "IDLE"
+        self._engine_state: str = "IDLE"
         if hasattr(bridge, "search_ctrl") and hasattr(bridge.search_ctrl, "router"):
             self.engine = bridge.search_ctrl.router.conversation_engine
         else:
             self.engine = ConversationEngine()
         self.engine.set_bridge(bridge)
-        self._active_thread = None
-        self._active_loop = None
-        self._active_task = None
+        self._active_thread: Optional[threading.Thread] = None
+        self._active_loop: Optional[asyncio.AbstractEventLoop] = None
+        self._active_task: Optional[asyncio.Task] = None
 
     @pyqtProperty(str, notify=engineStateChanged)
     def engineState(self) -> str:
+        """str: Current conversation execution state ('IDLE', 'STREAMING', 'ERROR')."""
         return self._engine_state
 
     @pyqtProperty("QVariantMap", notify=providerMetadataChanged)
     def providerMetadata(self) -> dict:
+        """dict: Metadata dictionary describing active LLM provider display attributes."""
         if hasattr(self.engine, "provider_metadata"):
             meta = self.engine.provider_metadata
             return meta.to_dict() if hasattr(meta, "to_dict") else dict(meta)
@@ -52,13 +61,18 @@ class ConversationController(BaseController):
 
     @pyqtSlot(str)
     def setEngineState(self, state: str) -> None:
+        """Set conversation engine state and emit notification if changed.
+
+        Args:
+            state: Target engine state string.
+        """
         if self._engine_state != state:
             self._engine_state = state
             self.engineStateChanged.emit(state)
 
     @pyqtSlot()
     def stop(self) -> None:
-        """Cancel active stream and cleanly teardown background thread."""
+        """Cancel active dialogue stream and cleanly teardown background worker thread."""
         loop = self._active_loop
         task = self._active_task
         if loop and loop.is_running() and task and not task.done():
@@ -66,12 +80,12 @@ class ConversationController(BaseController):
                 loop.call_soon_threadsafe(task.cancel)
             except Exception as e:
                 logger.error(f"Error cancelling conversation task: {e}")
-        
+
         thread = self._active_thread
         if thread and thread.is_alive():
             if threading.current_thread() != thread:
                 thread.join(timeout=0.5)
-        
+
         self._active_thread = None
         self._active_loop = None
         self._active_task = None
@@ -80,8 +94,13 @@ class ConversationController(BaseController):
 
     @pyqtSlot(str)
     @pyqtSlot(str, str)
-    def stream_prompt(self, prompt: str, context: Optional[Any] = None):
-        """Invoke conversational streaming for prompt."""
+    def stream_prompt(self, prompt: str, context: Optional[Any] = None) -> None:
+        """Invoke non-blocking conversational streaming for input prompt.
+
+        Args:
+            prompt: Raw prompt text.
+            context: Optional contextual node or message payload.
+        """
         if not prompt or not prompt.strip():
             return
 
@@ -130,15 +149,23 @@ class ConversationController(BaseController):
         self._active_thread = threading.Thread(target=_run_stream, daemon=True)
         self._active_thread.start()
 
-    def get_history(self):
-        """Return snapshot of active dialogue history."""
+    def get_history(self) -> List[dict]:
+        """Return snapshot list of active dialogue turn history.
+
+        Returns:
+            List[dict]: Historical dialogue turn records.
+        """
         return self.engine.get_history()
 
-    def clear_history(self):
-        """Clear active session history."""
+    def clear_history(self) -> None:
+        """Clear active session dialogue turn history."""
         self.engine.clear_history()
 
-    def set_provider(self, provider):
-        """Switch the active LLM provider."""
+    def set_provider(self, provider: Any) -> None:
+        """Switch active LLM provider and notify metadata updates.
+
+        Args:
+            provider: Provider handle or provider name identifier.
+        """
         self.engine.set_provider(provider)
         self.providerMetadataChanged.emit()

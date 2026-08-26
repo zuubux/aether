@@ -36,10 +36,12 @@ class NodeController(BaseController):
 
     @pyqtProperty(int, notify=selectedNodeChanged)
     def selectedNodeId(self) -> int:
+        """int: ID of currently selected or focused node (0 if none)."""
         return getattr(self.bridge, "_selected_node_id", 0)
 
     @pyqtProperty(int, notify=hoveredNodeChanged)
     def hoveredNodeId(self) -> int:
+        """int: ID of currently hovered node (0 if none)."""
         return getattr(self.bridge, "_hovered_node_id", 0)
 
     @pyqtSlot(int)
@@ -441,10 +443,6 @@ class NodeController(BaseController):
                 node.y = y
 
     @pyqtSlot(int, float, float)
-    def updateNodePosition(self, node_id: int, x: float, y: float):
-        self.update_drag_pos(node_id, x, y)
-
-    @pyqtSlot(int, float, float)
     def update_node_position(self, node_id: int, x: float, y: float):
         self.update_drag_pos(node_id, x, y)
 
@@ -459,57 +457,6 @@ class NodeController(BaseController):
     def set_custom_anchor(self, node_id: int, x: float, y: float):
         if hasattr(self.bridge, "physics") and self.bridge.physics:
             self.bridge.physics_engine.set_custom_anchor(node_id, x, y)
-
-    @pyqtSlot(str, int, result='QVariantMap')
-    @pyqtSlot(str, result='QVariantMap')
-    def get_csv_preview(self, file_path: str, max_rows: int = 5) -> dict:
-        if not file_path:
-            return {"headers": [], "rows": [], "total_rows": 0, "total_cols": 0}
-        try:
-            clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
-            if not os.path.exists(clean_path):
-                return {"headers": [], "rows": [], "total_rows": 0, "total_cols": 0}
-
-            import csv
-            delimiter = ","
-            try:
-                with open(clean_path, "r", encoding="utf-8", errors="ignore") as f:
-                    sample = f.read(4096)
-                    if sample:
-                        sniffer = csv.Sniffer()
-                        dialect = sniffer.sniff(sample, delimiters=[',', '\t', ';'])
-                        delimiter = dialect.delimiter
-            except csv.Error:
-                if clean_path.endswith(".tsv"):
-                    delimiter = "\t"
-
-            headers = []
-            rows = []
-            total_rows = 0
-            
-            with open(clean_path, "r", encoding="utf-8", errors="ignore") as f:
-                reader = csv.reader(f, delimiter=delimiter)
-                try:
-                    first_row = next(reader)
-                    if first_row is not None:
-                        headers = [str(cell).strip() for cell in first_row]
-                except StopIteration:
-                    return {"headers": [], "rows": [], "total_rows": 0, "total_cols": 0}
-                
-                for row_data in reader:
-                    total_rows += 1
-                    if len(rows) < max_rows:
-                        rows.append([str(cell).strip() for cell in row_data])
-                        
-            return {
-                "headers": headers,
-                "rows": rows,
-                "total_rows": total_rows,
-                "total_cols": len(headers)
-            }
-        except Exception as e:
-            self.log_error(f"Error in get_csv_preview: {e}")
-            return {"headers": [], "rows": [], "total_rows": 0, "total_cols": 0}
 
     @pyqtSlot(str, result=bool)
     def copy_csv_data(self, file_path: str) -> bool:
@@ -564,10 +511,6 @@ class NodeController(BaseController):
         self._waveform_cache[clean_path] = default_wf
         return default_wf
 
-    @pyqtSlot(str, result='QVariantList')
-    def get_waveform(self, file_path: str) -> list:
-        return self.get_audio_waveform(file_path)
-
     @pyqtSlot(str, result=str)
     def get_video_poster(self, file_path: str) -> str:
         if not file_path:
@@ -590,7 +533,3 @@ class NodeController(BaseController):
 
         self._poster_cache[clean_path] = ""
         return ""
-
-    @pyqtSlot(str, result=str)
-    def get_poster(self, file_path: str) -> str:
-        return self.get_video_poster(file_path)

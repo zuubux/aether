@@ -37,6 +37,7 @@ FocusScope {
 
     // Table Data State
     property var tableData: ({ "headers": [], "rows": [], "total_rows": 0, "total_cols": 0 })
+    readonly property var tableHeaders: (tableData && tableData.headers) ? tableData.headers : []
     property bool isLoading: false
 
     Connections {
@@ -335,7 +336,7 @@ FocusScope {
                         spacing: 0
 
                         Repeater {
-                            model: (root.tableData && root.tableData.headers) ? root.tableData.headers : []
+                            model: root.tableHeaders
 
                             delegate: Rectangle {
                                 width: 150
@@ -457,7 +458,7 @@ FocusScope {
                                                              updatedRows[rootObj.editingRowIndex][rootObj.editingColIndex] = rootObj.editingValue;
                                                              // Trigger binding updates by re-assigning or making a shallow copy
                                                              rootObj.tableData = {
-                                                                 "headers": rootObj.tableData.headers,
+                                                                 "headers": rootObj.tableHeaders,
                                                                  "rows": updatedRows,
                                                                  "total_rows": rootObj.tableData.total_rows,
                                                                  "total_cols": rootObj.tableData.total_cols

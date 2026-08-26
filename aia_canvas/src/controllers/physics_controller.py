@@ -81,29 +81,3 @@ class PhysicsController(BaseController):
     @pyqtProperty(bool, notify=connectionStatusChanged)
     def isConnected(self) -> bool:
         return getattr(self.bridge, "_is_connected", False)
-
-    @pyqtSlot(int, result=int)
-    def get_downstream_count(self, node_id: int) -> int:
-        selected_node_id = getattr(self.bridge, "_selected_node_id", 0)
-        focal_edges = getattr(self.bridge, "_focal_edges", [])
-        ambient_edges = getattr(self.bridge, "_ambient_edges", [])
-        
-        edges = focal_edges if selected_node_id > 0 else ambient_edges
-        count = 0
-        for e in edges:
-            if e.sourceId == node_id and e.targetId != selected_node_id or e.targetId == node_id and e.sourceId != selected_node_id:
-                count += 1
-        return count
-
-    @pyqtSlot(int, result=str)
-    def get_relation_type(self, node_id: int) -> str:
-        selected_node_id = getattr(self.bridge, "_selected_node_id", 0)
-        focal_edges = getattr(self.bridge, "_focal_edges", [])
-        
-        if selected_node_id <= 0 or node_id == selected_node_id:
-            return ""
-        for e in focal_edges:
-            if (e.sourceId == selected_node_id and e.targetId == node_id) or \
-               (e.targetId == selected_node_id and e.sourceId == node_id):
-                return e.edgeType
-        return ""

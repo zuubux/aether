@@ -309,45 +309,52 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(QObject, constant=True)
     def searchController(self) -> QObject:
+        """QObject: SearchController route instance."""
         return self.search_ctrl
 
     @pyqtProperty(bool, notify=searchActiveChanged)
     def searchActive(self) -> bool:
+        """bool: Indicates whether search filter/query mode is currently active."""
         return self._search_active
 
     @pyqtProperty(list, notify=nodesChanged)
     def nodes(self) -> list[Node]:
+        """list[Node]: List of active graph nodes in physics space."""
         return self.physics_ctrl.nodes
 
     @pyqtProperty(list, notify=edgesChanged)
     def edges(self) -> list[Edge]:
+        """list[Edge]: List of active renderable edges."""
         if hasattr(self.physics_ctrl, "edges"):
             return self.physics_ctrl.edges
         return getattr(self, "_ambient_edges", [])
 
     @pyqtProperty(list, notify=ambientEdgesChanged)
     def ambientEdges(self) -> list[Edge]:
+        """list[Edge]: List of ambient background connections."""
         return getattr(self, "_ambient_edges", [])
 
     @pyqtProperty(list, notify=edgesChanged)
     def focalEdges(self) -> list[Edge]:
+        """list[Edge]: List of focal connections tied to the selected node."""
         return getattr(self, "_focal_edges", [])
 
     @pyqtProperty(int, notify=selectedNodeChanged)
     def selectedNodeId(self) -> int:
+        """int: Currently selected node ID (0 if none)."""
         node_ctrl = getattr(self, "node_ctrl", None)
         return getattr(node_ctrl, "selectedNodeId", 0) if node_ctrl else getattr(self, "_selected_node_id", 0)
 
-    @pyqtSlot(result=str)
-    def get_focused_node_id(self) -> str:
-        """Return string representation of selected/focused node ID or empty string."""
+    @pyqtProperty(str, notify=selectedNodeChanged)
+    def focusedNodeId(self) -> str:
+        """str: String ID representation of focused node."""
         node_ctrl = getattr(self, "node_ctrl", None)
         nid = getattr(node_ctrl, "selectedNodeId", 0) if node_ctrl else getattr(self, "_selected_node_id", 0)
         return str(nid) if nid else ""
 
-    @pyqtSlot(result=str)
-    def get_focused_node_path(self) -> str:
-        """Return file path of currently selected/focused node or empty string."""
+    @pyqtProperty(str, notify=selectedNodeChanged)
+    def focusedNodePath(self) -> str:
+        """str: Disk path string of focused node."""
         node_ctrl = getattr(self, "node_ctrl", None)
         nid = getattr(node_ctrl, "selectedNodeId", 0) if node_ctrl else getattr(self, "_selected_node_id", 0)
         if nid and hasattr(self, "store") and self.store:
@@ -356,92 +363,78 @@ class CanvasBridge(QObject):
                 return getattr(node, "filePath", "") or getattr(node, "path", "") or ""
         return ""
 
-    @pyqtProperty(str, notify=selectedNodeChanged)
-    def focusedNodeId(self) -> str:
-        return self.get_focused_node_id()
-
-    @pyqtProperty(str, notify=selectedNodeChanged)
-    def focusedNodePath(self) -> str:
-        return self.get_focused_node_path()
-
-
     @pyqtProperty(QObject, constant=True)
     def node(self) -> QObject:
+        """QObject: NodeController instance route for QML."""
         return getattr(self, "node_ctrl", None)
 
     @pyqtProperty(QObject, constant=True)
     def search(self) -> QObject:
+        """QObject: SearchController instance route for QML."""
         return getattr(self, "search_ctrl", None)
 
     @pyqtProperty(QObject, constant=True)
     def conversation(self) -> QObject:
+        """QObject: ConversationController instance route for QML."""
         return getattr(self, "conversation_ctrl", None)
 
     @pyqtProperty(QObject, constant=True)
     def canvas(self) -> QObject:
+        """QObject: CanvasController instance route for QML."""
         return getattr(self, "canvas_ctrl", None)
 
     @pyqtProperty(QObject, constant=True)
     def physics(self) -> QObject:
+        """QObject: PhysicsController instance route for QML."""
         return getattr(self, "physics_ctrl", None)
 
     @pyqtProperty(str, notify=engineStateChanged)
     def engineState(self) -> str:
+        """str: Active conversation engine execution state."""
         return self.conversation_ctrl.engineState
 
     @pyqtProperty("QVariantMap", notify=providerMetadataChanged)
     def providerMetadata(self) -> dict:
+        """dict: LLM provider metadata description dictionary."""
         return self.conversation_ctrl.providerMetadata
 
     @pyqtProperty(int, notify=hoveredNodeChanged)
     def hoveredNodeId(self) -> int:
+        """int: ID of currently hovered node (0 if none)."""
         return self.node_ctrl.hoveredNodeId
 
     @pyqtProperty(bool, notify=connectionStatusChanged)
     def isConnected(self) -> bool:
+        """bool: Weaver IPC connection state status."""
         return self.physics_ctrl.isConnected
 
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def workbenchWidth(self) -> float:
+        """float: Central workbench width in canvas units."""
         return self.canvas_ctrl.workbenchWidth
 
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def workbenchHeight(self) -> float:
+        """float: Central workbench height in canvas units."""
         return self.canvas_ctrl.workbenchHeight
 
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def wingWidth(self) -> float:
+        """float: Viewport margin wing width in canvas units."""
         return self.canvas_ctrl.wingWidth
 
     @pyqtProperty(float, notify=apertureChanged)
     def aperture(self) -> float:
+        """float: Viewport aperture zoom ratio."""
         return self.canvas_ctrl.aperture
 
     @pyqtProperty(float, notify=focalCardDimensionsChanged)
     def focalCardWidth(self) -> float:
         return getattr(self, "_focal_card_width", 880.0)
 
-    @focalCardWidth.setter
-    def focalCardWidth(self, val: float):
-        if getattr(self, "_focal_card_width", 880.0) != val:
-            self._focal_card_width = val
-            if hasattr(self, "physics"):
-                self.physics_engine.set_focal_card_dimensions(self._focal_card_width, getattr(self, "_focal_card_height", 600.0))
-            self.focalCardDimensionsChanged.emit()
-            self._wake_physics()
-
     @pyqtProperty(float, notify=focalCardDimensionsChanged)
     def focalCardHeight(self) -> float:
         return getattr(self, "_focal_card_height", 600.0)
-
-    @focalCardHeight.setter
-    def focalCardHeight(self, val: float):
-        if getattr(self, "_focal_card_height", 600.0) != val:
-            self._focal_card_height = val
-            if hasattr(self, "physics"):
-                self.physics_engine.set_focal_card_dimensions(getattr(self, "_focal_card_width", 880.0), self._focal_card_height)
-            self.focalCardDimensionsChanged.emit()
-            self._wake_physics()
 
     @pyqtProperty(list, notify=clusterHalosChanged)
     def clusterHalos(self) -> list:
@@ -515,22 +508,6 @@ class CanvasBridge(QObject):
     @pyqtSlot(bool)
     def set_search_active(self, active: bool):
         self.search_ctrl.set_search_active(active)
-
-    @pyqtSlot(int)
-    @pyqtSlot(str)
-    def focus_node(self, node_id):
-        if isinstance(node_id, str):
-            try:
-                node_id = int(node_id)
-            except ValueError:
-                return
-        self.node_ctrl.select_node(node_id)
-
-    @pyqtSlot(int, result=QObject)
-    def get_node(self, node_id: int):
-        if hasattr(self, "store") and self.store:
-            return self.store.get_node(node_id)
-        return None
 
     @pyqtSlot(int, result="QVariantMap")
     def get_node_data(self, node_id: int) -> dict:
@@ -784,42 +761,9 @@ class CanvasBridge(QObject):
                 self.nodeRemoved.emit(node_id)
 
     def _get_deduplicated_edges(self, raw_edges: list) -> list:
-        topo_edges = {}
-        temporal_edges = {}
-
-        for e in raw_edges:
-            # Handle both Edge objects and dicts
-            is_obj = isinstance(e, Edge)
-            src = e.sourceId if is_obj else (e.get("source") or e.get("sourceId") or e.get("source_id"))
-            tgt = e.targetId if is_obj else (e.get("target") or e.get("targetId") or e.get("target_id"))
-            etype = e.edgeType if is_obj else (e.get("edgeType") or e.get("edge_type", "semantic"))
-            weight = e.weight if is_obj else float(e.get("weight", 1.0))
-            
-            pair_key = tuple(sorted([int(src), int(tgt)]))
-
-            if etype == "temporal":
-                if pair_key not in temporal_edges:
-                    temporal_edges[pair_key] = Edge(
-                        source_id=int(src), target_id=int(tgt), edge_type=etype, weight=weight,
-                        category="temporal"
-                    )
-            else:
-                if pair_key not in topo_edges:
-                    topo_edges[pair_key] = Edge(
-                        source_id=int(src), target_id=int(tgt), edge_type=etype, weight=weight,
-                        category="topological"
-                    )
-                else:
-                    curr_type = topo_edges[pair_key].edgeType
-                    if self.TOPOLOGICAL_PRIORITY.get(etype, 0) > self.TOPOLOGICAL_PRIORITY.get(curr_type, 0):
-                        topo_edges[pair_key] = Edge(
-                            source_id=int(src), target_id=int(tgt), edge_type=etype, weight=weight,
-                            category="topological"
-                        )
-
-        deduped_edges = list(topo_edges.values()) + list(temporal_edges.values())
-        # print(f"[Bridge] Edges before dedup: {len(raw_edges)} | After dedup: {len(deduped_edges)} (Topo + Temporal)")
-        return deduped_edges
+        if hasattr(self, "store") and self.store:
+            return self.store.deduplicate_edges(raw_edges, self.TOPOLOGICAL_PRIORITY)
+        return GraphStore.deduplicate_edges(raw_edges, self.TOPOLOGICAL_PRIORITY)
 
     def deduplicate_undirected_focal_edges(self, focal_id: int, edges: list) -> list:
         seen_pairs = set()

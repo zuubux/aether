@@ -45,3 +45,41 @@ class GraphStore:
     def clear(self):
         self._nodes.clear()
         self._edges.clear()
+
+    @staticmethod
+    def deduplicate_edges(raw_edges: list, topological_priority: dict | None = None) -> list[Edge]:
+        topological_priority = topological_priority or {
+            "explicit": 100, "wikilink": 90, "direct": 80, "knn": 50, "semantic": 40, "semantic_link": 30
+        }
+        topo_edges = {}
+        temporal_edges = {}
+
+        for e in raw_edges:
+            is_obj = isinstance(e, Edge) or hasattr(e, "sourceId")
+            src = e.sourceId if is_obj else (e.get("source") or e.get("sourceId") or e.get("source_id"))
+            tgt = e.targetId if is_obj else (e.get("target") or e.get("targetId") or e.get("target_id"))
+            etype = e.edgeType if is_obj else (e.get("edgeType") or e.get("edge_type", "semantic"))
+            weight = e.weight if is_obj else float(e.get("weight", 1.0))
+            if src is None or tgt is None:
+                continue
+
+            pair_key = tuple(sorted([int(src), int(tgt)]))
+
+            if etype == "temporal":
+                if pair_key not in temporal_edges:
+                    temporal_edges[pair_key] = e if isinstance(e, Edge) else Edge(
+                        source_id=int(src), target_id=int(tgt), edge_type=etype, weight=weight, category="temporal"
+                    )
+            else:
+                if pair_key not in topo_edges:
+                    topo_edges[pair_key] = e if isinstance(e, Edge) else Edge(
+                        source_id=int(src), target_id=int(tgt), edge_type=etype, weight=weight, category="topological"
+                    )
+                else:
+                    curr_type = getattr(topo_edges[pair_key], "edgeType", "semantic")
+                    if topological_priority.get(etype, 0) > topological_priority.get(curr_type, 0):
+                        topo_edges[pair_key] = e if isinstance(e, Edge) else Edge(
+                            source_id=int(src), target_id=int(tgt), edge_type=etype, weight=weight, category="topological"
+                        )
+
+        return list(topo_edges.values()) + list(temporal_edges.values())

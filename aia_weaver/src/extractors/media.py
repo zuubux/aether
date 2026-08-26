@@ -21,6 +21,18 @@ def _get_file_hash(path: Path) -> str:
         return hashlib.sha256(str(path).encode("utf-8")).hexdigest()
 
 
+def _run_ffprobe(path: Path) -> dict | None:
+    """Run ffprobe on a file path with safe subprocess handling and JSON decoding."""
+    try:
+        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(path)]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, shell=False)
+        if proc.returncode == 0 and proc.stdout.strip():
+            return json.loads(proc.stdout)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, json.JSONDecodeError, OSError, ValueError, KeyError):
+        pass
+    return None
+
+
 def _generate_audio_waveform(path: Path) -> list[float]:
     """Generates a normalized 64-point amplitude array (floats 0.0 to 1.0)."""
     try:
@@ -70,76 +82,73 @@ def extract_audio(path: Path | str, file_hash: str | None = None) -> tuple[str, 
     channels_str = None
     codec_name = ""
 
-    try:
-        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(p)]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, shell=False)
-        if proc.returncode == 0 and proc.stdout.strip():
-            info = json.loads(proc.stdout)
-            fmt = info.get("format", {})
-            streams = info.get("streams", [])
+    info = _run_ffprobe(p)
+    if info:
+        fmt = info.get("format", {})
+        streams = info.get("streams", [])
 
-            if "duration" in fmt:
-                duration_sec = float(fmt["duration"])
-            elif streams and "duration" in streams[0]:
-                duration_sec = float(streams[0]["duration"])
+        if "duration" in fmt:
+            duration_sec = float(fmt["duration"])
+        elif streams and "duration" in streams[0]:
+            duration_sec = float(streams[0]["duration"])
 
-            raw_br = fmt.get("bit_rate") or (streams[0].get("bit_rate") if streams else None)
-            if raw_br:
+        raw_br = fmt.get("bit_rate") or (streams[0].get("bit_rate") if streams else None)
+        if raw_br:
+            try:
+                bitrate_str = f"{int(raw_br) // 1000} kbps"
+            except (ValueError, TypeError):
+                pass
+
+        tags = fmt.get("tags", {})
+        if not tags and streams:
+            tags = streams[0].get("tags", {})
+        tags_lower = {k.lower(): v for k, v in tags.items()} if tags else {}
+
+        if "title" in tags_lower and tags_lower["title"]:
+            title = str(tags_lower["title"])
+        if "artist" in tags_lower and tags_lower["artist"]:
+            artist = str(tags_lower["artist"])
+
+        if streams:
+            astream = streams[0]
+            codec_name = (astream.get("codec_name") or "").lower()
+            sr = astream.get("sample_rate")
+            if sr:
                 try:
-                    bitrate_str = f"{int(raw_br) // 1000} kbps"
+                    sr_khz = float(sr) / 1000.0
+                    sample_rate_str = f"{int(sr_khz)} kHz" if sr_khz.is_integer() else f"{sr_khz:.1f} kHz"
                 except (ValueError, TypeError):
                     pass
 
-            tags = fmt.get("tags", {})
-            if not tags and streams:
-                tags = streams[0].get("tags", {})
-            tags_lower = {k.lower(): v for k, v in tags.items()} if tags else {}
+            ch = astream.get("channels")
+            if ch:
+                try:
+                    ch_num = int(ch)
+                    channels_str = "Mono" if ch_num == 1 else ("Stereo" if ch_num == 2 else f"{ch_num} ch")
+                except (ValueError, TypeError):
+                    pass
 
-            if "title" in tags_lower and tags_lower["title"]:
-                title = str(tags_lower["title"])
-            if "artist" in tags_lower and tags_lower["artist"]:
-                artist = str(tags_lower["artist"])
+            bits = astream.get("bits_per_raw_sample") or astream.get("bits_per_sample")
+            sample_fmt = str(astream.get("sample_fmt") or "")
+            if not bits:
+                if "16" in sample_fmt:
+                    bits = "16"
+                elif "24" in sample_fmt:
+                    bits = "24"
+                elif "32" in sample_fmt:
+                    bits = "32"
 
-            if streams:
-                astream = streams[0]
-                codec_name = (astream.get("codec_name") or "").lower()
-                sr = astream.get("sample_rate")
-                if sr:
-                    try:
-                        sr_khz = float(sr) / 1000.0
-                        sample_rate_str = f"{int(sr_khz)} kHz" if sr_khz.is_integer() else f"{sr_khz:.1f} kHz"
-                    except (ValueError, TypeError):
-                        pass
+            if codec_name.startswith("pcm_"):
+                pcm_spec_str = f"{bits}-bit PCM" if bits and str(bits) != "0" else "PCM"
+            elif codec_name == "flac":
+                pcm_spec_str = f"{bits}-bit FLAC" if bits and str(bits) != "0" else "FLAC"
+            elif codec_name == "alac":
+                pcm_spec_str = f"{bits}-bit ALAC" if bits and str(bits) != "0" else "ALAC"
+            elif bits and str(bits) != "0":
+                pcm_spec_str = f"{bits}-bit"
 
-                ch = astream.get("channels")
-                if ch:
-                    try:
-                        ch_num = int(ch)
-                        channels_str = "Mono" if ch_num == 1 else ("Stereo" if ch_num == 2 else f"{ch_num} ch")
-                    except (ValueError, TypeError):
-                        pass
-
-                bits = astream.get("bits_per_raw_sample") or astream.get("bits_per_sample")
-                sample_fmt = str(astream.get("sample_fmt") or "")
-                if not bits:
-                    if "16" in sample_fmt:
-                        bits = "16"
-                    elif "24" in sample_fmt:
-                        bits = "24"
-                    elif "32" in sample_fmt:
-                        bits = "32"
-
-                if codec_name.startswith("pcm_"):
-                    pcm_spec_str = f"{bits}-bit PCM" if bits and str(bits) != "0" else "PCM"
-                elif codec_name == "flac":
-                    pcm_spec_str = f"{bits}-bit FLAC" if bits and str(bits) != "0" else "FLAC"
-                elif codec_name == "alac":
-                    pcm_spec_str = f"{bits}-bit ALAC" if bits and str(bits) != "0" else "ALAC"
-                elif bits and str(bits) != "0":
-                    pcm_spec_str = f"{bits}-bit"
-
-            ffprobe_success = True
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, json.JSONDecodeError, OSError, ValueError, KeyError):
+        ffprobe_success = True
+    else:
         ffprobe_success = False
 
     if not ffprobe_success:
@@ -228,53 +237,48 @@ def extract_video(path: Path | str, file_hash: str | None = None) -> tuple[str, 
     codec = ""
     fps_str = ""
 
-    try:
-        cmd = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", str(p)]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=5, shell=False)
-        if proc.returncode == 0 and proc.stdout.strip():
-            info = json.loads(proc.stdout)
-            fmt = info.get("format", {})
-            streams = info.get("streams", [])
+    info = _run_ffprobe(p)
+    if info:
+        fmt = info.get("format", {})
+        streams = info.get("streams", [])
 
-            if "duration" in fmt:
-                duration_sec = float(fmt["duration"])
-            elif streams and "duration" in streams[0]:
-                duration_sec = float(streams[0]["duration"])
+        if "duration" in fmt:
+            duration_sec = float(fmt["duration"])
+        elif streams and "duration" in streams[0]:
+            duration_sec = float(streams[0]["duration"])
 
-            video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
-            if video_stream:
-                codec = video_stream.get("codec_name", "")
-                width = int(video_stream.get("width", 0))
-                height = int(video_stream.get("height", 0))
+        video_stream = next((s for s in streams if s.get("codec_type") == "video"), None)
+        if video_stream:
+            codec = video_stream.get("codec_name", "")
+            width = int(video_stream.get("width", 0))
+            height = int(video_stream.get("height", 0))
 
-                if height == 2160 or width >= 3840:
-                    res_str = "4K"
-                elif height == 1080:
-                    res_str = "1080p"
-                elif height == 720:
-                    res_str = "720p"
-                elif height == 480:
-                    res_str = "480p"
-                elif height > 0:
-                    res_str = f"{height}p"
+            if height == 2160 or width >= 3840:
+                res_str = "4K"
+            elif height == 1080:
+                res_str = "1080p"
+            elif height == 720:
+                res_str = "720p"
+            elif height == 480:
+                res_str = "480p"
+            elif height > 0:
+                res_str = f"{height}p"
 
-                r_fps = video_stream.get("r_frame_rate") or video_stream.get("avg_frame_rate", "")
-                if "/" in r_fps:
-                    try:
-                        num, den = map(float, r_fps.split("/"))
-                        if den != 0:
-                            fps_val = round(num / den, 2)
-                            fps_str = f"{int(fps_val)} fps" if fps_val.is_integer() else f"{fps_val:.2f} fps"
-                    except (ValueError, ZeroDivisionError):
-                        pass
-                elif r_fps:
-                    try:
-                        fps_val = float(r_fps)
+            r_fps = video_stream.get("r_frame_rate") or video_stream.get("avg_frame_rate", "")
+            if "/" in r_fps:
+                try:
+                    num, den = map(float, r_fps.split("/"))
+                    if den != 0:
+                        fps_val = round(num / den, 2)
                         fps_str = f"{int(fps_val)} fps" if fps_val.is_integer() else f"{fps_val:.2f} fps"
-                    except ValueError:
-                        pass
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, json.JSONDecodeError, OSError, ValueError, KeyError):
-        pass
+                except (ValueError, ZeroDivisionError):
+                    pass
+            elif r_fps:
+                try:
+                    fps_val = float(r_fps)
+                    fps_str = f"{int(fps_val)} fps" if fps_val.is_integer() else f"{fps_val:.2f} fps"
+                except ValueError:
+                    pass
 
     poster_cache_path = None
     try:

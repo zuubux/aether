@@ -40,9 +40,6 @@ COLOR_MAP = {
 }
 
 
-def strip_ansi(text: str) -> str:
-    """Removes unprintable ANSI terminal control escapes from text."""
-    return ANSI_ESCAPE_PATTERN.sub('', text)
 
 
 def ansi_to_html(text: str) -> str:

@@ -28,14 +28,8 @@ def test_bridge_media_rpcs(mock_bridge):
     assert isinstance(wf, list)
     assert len(wf) == 64
 
-    wf_alias = mock_bridge.node.get_waveform(local_path)
-    assert wf_alias == wf
-
     poster = mock_bridge.node.get_video_poster("/tmp/test_video.mp4")
     assert isinstance(poster, str)
-
-    poster_alias = mock_bridge.node.get_poster("/tmp/test_video.mp4")
-    assert poster_alias == poster
 
 
 @pytest.mark.anyio

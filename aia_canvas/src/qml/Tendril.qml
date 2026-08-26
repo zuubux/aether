@@ -152,25 +152,13 @@ Item {
         if (!sourceNode || !targetNode) return Qt.point(0, 0);
         if (sourceIsBead) return Qt.point(sCx, sCy);
         
-        var focalX = (targetId === selectedNodeId && targetNode) ? targetNode.x : ((sourceId === selectedNodeId && sourceNode) ? sourceNode.x : targetNode.x);
-        
-        if (sourceId === selectedNodeId && sourceNode) {
-            var isLeft = targetNode.x < sourceNode.x;
-            if (sourceNode && typeof sourceNode.getFlankSocket === "function") {
-                return sourceNode.getFlankSocket(isLeft, organicPortRatio);
-            }
-            return isLeft ? sourceNode.leftDock : sourceNode.rightDock;
+        var isLeft = targetNode.x < sourceNode.x;
+        if (sourceId === selectedNodeId && typeof sourceNode.getFlankSocket === "function") {
+            return sourceNode.getFlankSocket(isLeft, organicPortRatio);
         }
-        
-        var dockRight = sourceNode.x < (focalX - 30);
-        var dockLeft = sourceNode.x > (focalX + 30);
-        var useRight = sourceNode.x < focalX;
-        if (dockRight) useRight = true;
-        else if (dockLeft) useRight = false;
-        
-        var baseDock = useRight ? sourceNode.rightDock : sourceNode.leftDock;
-        if (!baseDock) return Qt.point(sCx, sCy);
-        return baseDock;
+        var dock = isLeft ? sourceNode.leftDock : sourceNode.rightDock;
+        if (!dock) return Qt.point(sCx, sCy);
+        return dock;
     }
 
     readonly property point rawStartPt: debugStartPt()
@@ -179,25 +167,13 @@ Item {
         if (!sourceNode || !targetNode) return Qt.point(0, 0);
         if (targetIsBead) return Qt.point(tCx, tCy);
         
-        var focalX = (sourceId === selectedNodeId && sourceNode) ? sourceNode.x : ((targetId === selectedNodeId && targetNode) ? targetNode.x : sourceNode.x);
-        
-        if (targetId === selectedNodeId && targetNode) {
-            var isLeft = sourceNode.x < targetNode.x;
-            if (targetNode && typeof targetNode.getFlankSocket === "function") {
-                return targetNode.getFlankSocket(isLeft, organicPortRatio);
-            }
-            return isLeft ? targetNode.leftDock : targetNode.rightDock;
+        var isLeft = sourceNode.x < targetNode.x;
+        if (targetId === selectedNodeId && typeof targetNode.getFlankSocket === "function") {
+            return targetNode.getFlankSocket(isLeft, organicPortRatio);
         }
-        
-        var dockRight = targetNode.x < (focalX - 30);
-        var dockLeft = targetNode.x > (focalX + 30);
-        var useRight = targetNode.x < focalX;
-        if (dockRight) useRight = true;
-        else if (dockLeft) useRight = false;
-        
-        var baseDock = useRight ? targetNode.rightDock : targetNode.leftDock;
-        if (!baseDock) return Qt.point(tCx, tCy);
-        return baseDock;
+        var dock = isLeft ? targetNode.leftDock : targetNode.rightDock;
+        if (!dock) return Qt.point(tCx, tCy);
+        return dock;
     }
 
     readonly property point rawEndPt: debugEndPt()
