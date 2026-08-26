@@ -7,6 +7,7 @@ Item {
 
     // Public Interface Contract
     property string fileName: ""
+    property string displayTitle: ""
     property string extensionStr: ""
     property string archetype: ""
     property color accentColor: "#00E5FF"
@@ -16,6 +17,7 @@ Item {
     property bool isBead: (typeof rootItem !== "undefined" && rootItem.currentAperture < 0.40) && !(typeof rootItem !== "undefined" && rootItem.showPreviewSlate) && !(typeof rootItem !== "undefined" && rootItem.isHovered)
 
     readonly property string cleanTitle: {
+        if (pillRoot.displayTitle && pillRoot.displayTitle.length > 0) return pillRoot.displayTitle;
         var name = pillRoot.fileName || "";
         return name.lastIndexOf(".") > 0 ? name.substring(0, name.lastIndexOf(".")) : name;
     }
@@ -50,7 +52,7 @@ Item {
     // File Name
     Text {
         id: label
-        text: pillRoot.cleanTitle
+        text: pillRoot.displayTitle || pillRoot.cleanTitle || pillRoot.fileName
         font.pixelSize: 10
         font.family: Theme.fontSans
         font.weight: Font.Normal

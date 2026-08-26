@@ -12,6 +12,7 @@ FocusScope {
     property string snippet: ""
     property string initialText: ""
     property string fileName: ""
+    property string displayTitle: ""
     property string filePath: ""
     property string sizeFormatted: "0 KB"
     property string hashSnippet: "N/A"
@@ -91,7 +92,7 @@ FocusScope {
             isDirty = false
             saveTimer.stop()
             isSaving = true
-            bridge.save_node_content(root.nodeId, editor.text)
+            bridge.node.save_node_content(root.nodeId, editor.text)
             
             isSaving = false
             justSaved = true
@@ -105,7 +106,7 @@ FocusScope {
             saveTimer.stop()
             isSaving = true
             if (typeof bridge !== "undefined" && bridge) {
-                bridge.save_node_content(root.nodeId, editor.text)
+                bridge.node.save_node_content(root.nodeId, editor.text)
             }
             isSaving = false
             justSaved = true
@@ -146,7 +147,7 @@ FocusScope {
             editor.focus = false
             root.parent.forceActiveFocus()
             if (typeof bridge !== "undefined") {
-                bridge.select_node(0)
+                bridge.node.select_node(0)
             }
         }
         event.accepted = true
@@ -211,7 +212,7 @@ FocusScope {
                         onExited: revealBtn.color = Theme.surfaceButton
                         onClicked: {
                             if (typeof bridge !== "undefined" && bridge) {
-                                bridge.open_in_file_manager(root.filePath)
+                                bridge.node.open_in_file_manager(root.filePath)
                             } else {
                                 Qt.openUrlExternally("file://" + root.filePath)
                             }
@@ -247,7 +248,7 @@ FocusScope {
                         onExited: openBtn.color = Theme.surfaceButton
                         onClicked: {
                             if (typeof bridge !== "undefined" && bridge) {
-                                bridge.open_in_external_editor(root.filePath)
+                                bridge.node.open_in_external_editor(root.filePath)
                             } else {
                                 Qt.openUrlExternally("file://" + root.filePath)
                             }
@@ -403,7 +404,7 @@ FocusScope {
                             if (link.startsWith("wikilink:")) {
                                 var targetName = link.replace("wikilink:", "");
                                 if (typeof bridge !== "undefined" && bridge) {
-                                    bridge.navigate_to_link(targetName);
+                                    bridge.node.navigate_to_link(targetName);
                                 }
                             } else {
                                 Qt.openUrlExternally(link);
@@ -515,7 +516,7 @@ FocusScope {
                                 } else {
                                     editor.focus = false
                                     if (typeof bridge !== "undefined") {
-                                        bridge.select_node(0)
+                                        bridge.node.select_node(0)
                                     } else {
                                         root.parent.forceActiveFocus()
                                     }
@@ -613,7 +614,7 @@ FocusScope {
                                 spacing: 4
 
                                 Text {
-                                    text: root.fileName
+                                    text: root.displayTitle || root.fileName
                                     color: Theme.textPrimary
                                     font.family: Theme.fontCode
                                     font.pixelSize: 12
@@ -666,7 +667,7 @@ FocusScope {
                                 onExited: externalOpenBtn.color = Theme.surfaceButton
                                 onClicked: {
                                     if (typeof bridge !== "undefined" && bridge) {
-                                        bridge.open_in_external_editor(root.filePath)
+                                        bridge.node.open_in_external_editor(root.filePath)
                                     } else {
                                         Qt.openUrlExternally("file://" + root.filePath)
                                     }

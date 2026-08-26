@@ -70,57 +70,55 @@
 
 ## 3. Subsystem Breakdown
 
-### 3.1 Domain Controller Hierarchy (`bridge.py` & `controllers/`)
-The frontend logic is managed via a Composite Root pattern originating in `bridge.py`, which instantiates a set of highly focused Domain Controllers inheriting from `BaseController`. This strict separation of concerns prevents god-object antipatterns and ensures distinct execution lifecycles:
-* **CanvasController**: Orchestrates macro UI states, zoom apeture (`cognitive_aperture`), theme toggles, and omnibar focus bindings.
-* **NodeController**: Manages node/edge reactive lifecycle (CRUD), selection states, drag-and-drop spatial relocation, and system file operations.
-* **PhysicsController**: Wraps the Stokes fluid dynamics engine (`engine.py`) and drives the 120Hz high-precision QTimer, handling metric exposition for SRE HUDs.
-* **SearchController**: Interfaces with `aia_weaver` IPC for semantic vector queries and exact-match title filters, maintaining the ephemeral search result buffer.
+### 3.1 Domain Controller Hierarchy & Lean Composite Root (`bridge.py` & `controllers/`)
+The frontend architecture is orchestrated via a lean Composite Root pattern in `bridge.py`, which instantiates strongly-typed Domain Controllers inheriting from `BaseController`. Rather than defining monolithic passthrough slots on `bridge.py`, controllers are exposed directly to QML as read-only QProperties (`@pyqtProperty(QObject, constant=True)`):
+* **`canvas` (`CanvasController`)**: Orchestrates macro UI states, zoom aperture (`cognitive_aperture`), theme toggles, workbench sizing, and omnibar focus bindings.
+* **`node` (`NodeController`)**: Manages node/edge reactive lifecycle (CRUD), selection states, drag-and-drop spatial relocation, and media offloading.
+* **`physics` (`PhysicsController`)**: Wraps the Stokes fluid dynamics engine (`engine.py`) and drives the 120Hz high-precision QTimer, handling metric exposition for SRE HUDs.
+* **`search` (`SearchController`)**: Interfaces with `aia_weaver` IPC for semantic vector queries and exact-match title filters, maintaining the search candidate buffer.
+* **`conversation` (`ConversationController`)**: Manages local/remote LLM conversation state, prompt dispatching, engine streaming, and provider metadata.
 
 ### 3.2 Asynchronous IPC Client (`ipc/client.py`)
-* Executes inside a dedicated background worker thread hosting an independent `asyncio` event loop[cite: 10].
-* Connects to `$XDG_RUNTIME_DIR/aia_weaver/aia_weaver.sock` via a non-blocking UNIX domain socket[cite: 1, 10].
-* Enforces a strict 64 KB per-frame buffer cap (`MAX_PAYLOAD_BYTES`) matching daemon specifications to prevent memory exhaustion[cite: 1, 10].
-* Handles dropped connections with non-blocking reconnection backoff[cite: 10].
+* Executes inside a dedicated background worker thread hosting an independent `asyncio` event loop.
+* Connects to `$XDG_RUNTIME_DIR/aia_weaver/aia_weaver.sock` via a non-blocking UNIX domain socket.
+* Enforces a strict 64 KB per-frame buffer cap (`MAX_PAYLOAD_BYTES`) matching daemon specifications to prevent memory exhaustion.
+* Handles dropped connections with non-blocking reconnection backoff.
 
-### 3.2 Reactive Store & Graph Model (`store.py`, `models.py`)
-* `models.py`: Wraps nodes and edges into `QObject` subclasses with native Qt signals (`pyqtProperty`, `pyqtSignal`)[cite: 3].
-* `store.py`: Serves as the primary in-memory graph ledger, maintaining local neighborhood adjacency lists and managing node lifetimes without coupling to rendering views[cite: 4].
+### 3.3 Reactive Store & Graph Model (`store.py`, `models.py`)
+* `models.py`: Wraps nodes and edges into `QObject` subclasses with native Qt signals (`pyqtProperty`, `pyqtSignal`).
+* `store.py`: Serves as the primary in-memory graph ledger, maintaining local neighborhood adjacency lists and managing node lifetimes without coupling to rendering views.
 
-### 3.3 Physics & Spatial Layout Engine (`physics/engine.py`)
-* Integrates at 120Hz ($dt = 8\text{ms}$) on a dedicated high-precision timer[cite: 2].
-* Implements quadratic Stokes fluid drag for biological, viscous movement[cite: 5].
-* Dynamically derives non-penetration box bounds around the active focal card to prevent orbital card collisions[cite: 5].
-* Evaluates multi-harmonic biological respiration to keep inactive nodes alive in the peripheral void[cite: 5].
+### 3.4 Physics & Spatial Layout Engine (`physics/engine.py`)
+* Integrates at 120Hz ($dt = 8\text{ms}$) on a dedicated high-precision timer.
+* Implements quadratic Stokes fluid drag for biological, viscous movement.
+* Dynamically derives non-penetration box bounds around the active focal card to prevent orbital card collisions.
+* Evaluates multi-harmonic biological respiration to keep inactive nodes alive in the peripheral void.
 
-### 3.4 Spatial Proximity Clustering & Shield Membranes (`qml/ClusterHalo.qml`)
-* Resolves dense connected components using Breadth-First Search (BFS) bounded by a spatial proximity threshold ($300\text{px} \times \text{Aperture}^{0.7}$)[cite: 5].
-* Rejects distant outliers from cluster bounding radii, keeping shield bubbles compact[cite: 5].
-* Filters centroid coordinates and radii through an exponential low-pass filter ($\alpha = 0.14$) to ensure jitter-free spatial transitions[cite: 5].
-* Renders lightweight, multi-layer GPU vector rings with uniform interior glass washes[cite: 7].
+### 3.5 Spatial Proximity Clustering & Shield Membranes (`qml/ClusterHalo.qml`)
+* Resolves dense connected components using Breadth-First Search (BFS) bounded by a spatial proximity threshold ($300\text{px} \times \text{Aperture}^{0.7}$).
+* Rejects distant outliers from cluster bounding radii, keeping shield bubbles compact.
+* Filters centroid coordinates and radii through an exponential low-pass filter ($\alpha = 0.14$) to ensure jitter-free spatial transitions.
+* Renders lightweight, multi-layer GPU vector rings with uniform interior glass washes.
 
-### 3.5 Modular QML Component Hierarchy & 4-Tier Semantic Zoom Matrix (`qml/Node.qml`)
+### 3.6 Deconstructed OmniBar & Modular QML Subcomponents (`src/qml/bar/`)
+The primary interaction and intent dispatch bar (`OmniBar.qml`) is deconstructed into 5 focused sub-components to isolate rendering and event logic:
+* **`OmniInputCapsule.qml`**: Renders the central obsidian pill input field with dynamic border glow and cursor handling.
+* **`SearchSuggestionRibbon.qml`**: Displays horizontal prefix completion suggestions and auto-fill tokens (`/`, `@`, `?`).
+* **`DialogueDrawer.qml`**: Collapsible slate presenting live-streamed LLM responses and conversational turn histories.
+* **`ShellOutputDrawer.qml`**: Terminal execution drawer showing command output, exit codes, and ANSI color formatting.
+* **`ProviderBadge.qml`**: Displays active model/provider status badges (e.g. `Ollama / Qwen2.5`, `OpenAI`).
 
-`Node.qml` acts strictly as an interactive coordinator / state-machine container, delegating all actual visual rendering of leaf delegates to dedicated components:
-* **Leaf Delegate Subdirectory (`aia_canvas/src/qml/node/`):**
-  * **`NodePill.qml`:** Renders Tier 3 (compact capsules) and Tier 4 (badges/bead-bloom capsules).
-  * **`NodePreview.qml`:** Renders Tier 1.5 hover-dwell and search preview cards ($320 \times 220\text{px}$).
-  * **`NodeAura.qml`:** Renders the GPU-native semantic glow, selection halo, and active search highlight shaders.
-  * **`tokenView` (Inline in `Node.qml`):** Renders Tier 2 ambient inspection slates ($220 \times 64\text{px}$).
-* **Zoom Matrix Tiers:**
-  * **Tier 1 (Focal Workbench, $W=1400\text{px}, H=900\text{px}$):** Expanded active surface with interactive file actions and live viewport integration[cite: 2, 8].
-  * **Tier 2 (Orbital Horizon Token, $W=220\text{px}, H=64\text{px}$):** High-salience inspection slates display file properties, badges, and downstream counters[cite: 8].
-  * **Tier 3 (Compact Capsule, $H=32\text{px}$, natural width):** Streamlined symmetrical pills showing type badge and title, active at mid-range apertures or for secondary/unrelated nodes[cite: 8].
-  * **Tier 4 (Macro Star Bead, $14 \times 14\text{px}$):** Luminous chromatic pips with centered light cores, blooming into preview capsules on hover[cite: 8].
+### 3.7 Desktop Integration & Subprocess Isolation (`utils/desktop.py`, `utils/security.py`)
+* Desktop/OS subprocess operations are extracted from node controllers into `aia_canvas/src/utils/desktop.py`.
+* Functions `open_in_file_manager(file_path)` and `open_in_external_editor(file_path)` use `utils.security.canonicalize_safe_path` to verify workspace containment.
+* Spawns system handlers (`xdg-open`) via tokenized `subprocess.Popen` with `shell=False`, `start_new_session=True`, and redirected `stdout/stderr` streams.
 
-### 3.6 Security & Subprocess Sandbox (`utils/security.py`)
-* `canonicalize_safe_path`: Enforces strict path canonicalization to verify all target paths reside within `$HOME` or `$XDG_RUNTIME_DIR`.
-* Eliminates shell-string evaluation by invoking `xdg-open` via tokenized `subprocess.Popen` within isolated process sessions (`start_new_session=True`).
-
-### 3.7 SRE Observability & Telemetry (`main.py`, `bridge.py`, `qml/Canvas.qml`)
-* Outputs structured logs (`%(asctime)s [%(levelname)s] %(name)s: %(message)s`) directly to `stdout` for ingestion by `systemd-journald`.
-* Instruments `physics.step()` execution time; emits warnings if computation exceeds the 6.5ms threshold of the 8.0ms frame budget.
-* Features a toggleable `F3` Diagnostic HUD rendering live node/edge counts, physics frame latency, and backend socket health.
+### 3.8 Performance Telemetry & F3 Diagnostics Roadmap (`telemetry/metrics.py`, `DiagnosticsOverlay.qml`)
+Telemetry collection is isolated in `TelemetryCollector` using fixed-size rolling ring buffers (`collections.deque(maxlen=120)`) to maintain bounded zero-allocation memory footprints:
+* **Physics Tick Budget:** Measures 120Hz integration loop execution time ($8.0\text{ms}$ budget). Emits a red visual warning on `DiagnosticsOverlay.qml` if execution exceeds $6.5\text{ms}$.
+* **SQLite Query Latency:** Measures query execution and KNN vector search latency from `aia_weaver` IPC responses.
+* **IPC Ingestion Queue Depth & Latency:** Monitors non-blocking socket queue depths and payload frame decoding latencies.
+* **LLM Streaming Throughput:** Tracks token delivery frequency and response chunk latencies during conversation streaming.
 
 ---
 
@@ -285,11 +283,18 @@ The Spotlight search experience provides rapid query completion and orbital navi
 
 ## 9. Modular HUD & Viewport Components
 
-The UI shell separates global telemetry, status indicators, and search components into modular QML units:
+The UI shell separates global telemetry, status indicators, intent input, and search components into modular QML units:
 
 ```text
 aia_canvas/src/qml/
 ├── Canvas.qml                  # Root window & viewport camera coordinator
+├── bar/                        # Modular OmniBar & intent subcomponents
+│   ├── OmniBar.qml             # Parent coordinator for input & drawers
+│   ├── OmniInputCapsule.qml    # Central obsidian pill input capsule
+│   ├── SearchSuggestionRibbon.qml # Real-time auto-completion suggestion ribbon
+│   ├── DialogueDrawer.qml      # Streaming LLM response & dialogue slate
+│   ├── ShellOutputDrawer.qml   # Terminal output execution drawer
+│   └── ProviderBadge.qml       # Provider & LLM status badge
 ├── hud/
 │   ├── DiagnosticsOverlay.qml  # F3 SRE telemetry HUD overlay
 │   └── CanvasHud.qml           # Bottom-left IPC connection & Aperture pill
@@ -299,11 +304,12 @@ aia_canvas/src/qml/
 │   ├── NodeAura.qml            # GPU shaders for selection and glow
 │   ├── NodePill.qml            # Compact capsule and badge delegate
 │   └── NodePreview.qml         # Tier 1.5 rich preview card
+├── slates/                     # Media & rich document content slates
 ├── SurfaceShell.qml            # Single-perimeter border and background shell
 └── NodeContent.qml             # Adaptive content loader for active tier
 ```
 
-* **`DiagnosticsOverlay.qml`:** Anchored to the top-right (`z: 9000`), toggled via `F3`. Displays live node counts, rendered edge counts, physics frametimes (with red alert highlighting above $6.5\text{ms}$), and socket connection status.
+* **`DiagnosticsOverlay.qml`:** Anchored to the top-right (`z: 9000`), toggled via `F3`. Displays live node counts, rendered edge counts, physics frametimes (with red alert highlighting above $6.5\text{ms}$), SQLite query latency, IPC ingestion metrics, and socket connection status.
 * **`CanvasHud.qml`:** Anchored to the bottom-left (`z: 10`). Houses the IPC status indicator (pulsing green indicator when connected) and live cognitive aperture percentage gauge.
 * **`SearchShelf.qml`:** Anchored above the OmniBar (`z: 10000`). Manages search carousel layout, active item previewing, and keyboard navigation.
 

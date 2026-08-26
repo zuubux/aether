@@ -2,8 +2,8 @@ from typing import Any
 
 def _get_node_name(node: Any) -> str:
     if isinstance(node, dict):
-        return node.get("fileName") or node.get("label") or node.get("file_name") or ""
-    return getattr(node, "fileName", "") or getattr(node, "label", "") or getattr(node, "file_name", "")
+        return node.get("displayTitle") or node.get("display_title") or node.get("fileName") or node.get("label") or node.get("file_name") or ""
+    return getattr(node, "displayTitle", "") or getattr(node, "display_title", "") or getattr(node, "fileName", "") or getattr(node, "label", "") or getattr(node, "file_name", "")
 
 class CompletionEngine:
     STATIC_COMMANDS = ["/link", "/tag", "/re-embed", "/cluster", "/isolate", "/export"]
@@ -11,18 +11,25 @@ class CompletionEngine:
 
     def __init__(self, bridge):
         self.bridge = bridge
+        import os
+        from omni.engines.shell import ShellEngine
+        store = getattr(bridge, "store", None)
+        workspace_root = getattr(bridge, "workspace_root", None) or os.getcwd()
+        self.shell_engine = ShellEngine(workspace_root=workspace_root, store=store)
 
     def _extract_name(self, node: Any) -> str:
         if isinstance(node, dict):
             return (
-                node.get("fileName")
+                node.get("displayTitle")
+                or node.get("display_title")
+                or node.get("fileName")
                 or node.get("file_name")
                 or node.get("label")
                 or node.get("title")
                 or (node.get("path", "").split("/")[-1] if node.get("path") else "")
                 or ""
             )
-        for attr in ["fileName", "file_name", "label", "title", "name", "path"]:
+        for attr in ["displayTitle", "display_title", "fileName", "file_name", "label", "title", "name", "path"]:
             val = getattr(node, attr, None)
             if val:
                 val_str = str(val)
@@ -39,9 +46,15 @@ class CompletionEngine:
     def get_completions(self, text: str, cursor_pos: int) -> list:
         if not text:
             return []
-        
-        prefix = text[:cursor_pos]
+
+        prefix = text[:cursor_pos] if (cursor_pos >= 0 and cursor_pos <= len(text)) else text
         print(f"[CompletionEngine] Query: '{text}', Prefix: '{prefix}'")
+
+        if prefix.strip().startswith(">"):
+            from omni.context import OmniContext
+            focused_id = str(getattr(self.bridge, "selectedNodeId", 0) or 0)
+            ctx = OmniContext(raw_query=text, focused_node_id=focused_id)
+            return self.shell_engine.complete(text, cursor_pos, ctx)
 
         # Static commands
         if prefix.startswith("/") and " " not in prefix:

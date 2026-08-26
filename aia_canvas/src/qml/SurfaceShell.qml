@@ -12,7 +12,7 @@ Item {
     
     // Extensible dimensions for overrides
     property real targetWidth: {
-        if (isSelected) return Theme.tier1_5Width;
+        if (tierState === "TIER_1") return Theme.tier1_5Width;
         if (tierState === "TIER_4") return Theme.tier4Width;
         if (tierState === "TIER_3") return Theme.tier3Width;
         if (tierState === "TIER_2") return Theme.tier2Width;
@@ -21,7 +21,7 @@ Item {
     }
     
     property real targetHeight: {
-        if (isSelected) return Theme.tier1_5Height;
+        if (tierState === "TIER_1") return Theme.tier1_5Height;
         if (tierState === "TIER_4") return Theme.tier4Height;
         if (tierState === "TIER_3") return Theme.tier3Height;
         if (tierState === "TIER_2") return Theme.tier2Height;
@@ -65,8 +65,8 @@ Item {
         anchors.fill: parent
         z: 0
         color: Theme.surfaceBackground
-        border.color: (root.isDragging || root.isSettling) ? Theme.accentCyan : (root.isHovered ? Theme.borderHover : Theme.surfaceBorder)
-        border.width: (root.isDragging || root.isSettling) ? 2 : 1
+        border.color: (root.isSelected || root.isDragging || root.isSettling) ? Theme.accentCyan : (root.isHovered ? Theme.borderHover : Theme.surfaceBorder)
+        border.width: (root.isSelected || root.isDragging || root.isSettling) ? 2 : 1
         radius: parent.radius
 
         Behavior on border.color {

@@ -84,6 +84,7 @@ def main():
     app._bridge = bridge
 
     engine.rootContext().setContextProperty("canvasBridge", bridge)
+    engine.rootContext().setContextProperty("bridge", bridge)
     engine.rootContext().setContextProperty("canvasController", bridge.canvas_ctrl)
     engine.rootContext().setContextProperty("nodeController", bridge.node_ctrl)
     engine.rootContext().setContextProperty("physicsController", bridge.physics_ctrl)
@@ -91,7 +92,7 @@ def main():
 
     intent_engine = IntentEngine(bridge)
     # Forward the nodesSummoned signal from intent_engine to the physics engine
-    intent_engine.nodesSummoned.connect(bridge.physics.summon_nodes)
+    intent_engine.nodesSummoned.connect(bridge.physics_engine.summon_nodes)
     engine.rootContext().setContextProperty("intentEngine", intent_engine)
 
     screens = app.screens()

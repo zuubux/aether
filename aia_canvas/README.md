@@ -14,6 +14,9 @@ Designed to eliminate traditional window chrome, `aia_canvas` projects files dir
 
 ## ⚡ Features
 
+* **Lean Composite Root & Domain Controllers:** `bridge.py` acts as a lean Composite Root exposing strongly-typed domain controllers (`node`, `search`, `conversation`, `canvas`, `physics`) directly as read-only QProperties to QML, removing legacy passthrough slots.
+* **Deconstructed Modular OmniBar:** Modularized into 5 focused sub-components (`ProviderBadge`, `DialogueDrawer`, `ShellOutputDrawer`, `SearchSuggestionRibbon`, `OmniInputCapsule`) in `src/qml/bar/`.
+* **Isolated OS Desktop Operations:** All desktop file manager and external editor integrations (`xdg-open`) are extracted into `src/utils/desktop.py` with strict path canonicalization guards.
 * **120Hz Stokes Fluid Dynamics:** Viscous, biological movement using quadratic drag, aspect-conformal orbital docking, and non-penetration potential barriers.
 * **4-Tier Semantic Aperture:** Seamless LOD scaling ranging from live resizable Workbenches ($1400 \times 900\text{px}$) down to $14\text{px}$ luminous Star Beads with fish-eye hover blooms.
 * **Drag Transit & Settle Dynamics:**
@@ -24,13 +27,13 @@ Designed to eliminate traditional window chrome, `aia_canvas` projects files dir
   * **Top 7 Ranked Carousel:** Smooth horizontal card shelf showing top vector/title matches above the OmniBar.
   * **Live Tier 1.5 Preview:** Displays an expanded markdown/media preview card for the currently focused match.
   * **Keyboard-Driven Traversal:** Seamless `Left` / `Right` / `Tab` index navigation and `Enter` selection with smooth camera focal transition (zero physics displacement).
-* **Modular HUD & Diagnostic Overlays:**
-  * **`DiagnosticsOverlay.qml`:** Toggleable `F3` SRE telemetry HUD showing frametimes, node/edge counts, and socket latency.
+* **F3 Diagnostics HUD & Performance Telemetry:**
+  * **`DiagnosticsOverlay.qml`:** Toggleable `F3` SRE telemetry HUD overlaying real-time physics tick budget ($8\text{ms}$ budget / $6.5\text{ms}$ threshold alert), SQLite query latency, IPC ingestion queue depth, and LLM streaming throughput.
   * **`CanvasHud.qml`:** Bottom-left ambient status pill showing IPC daemon connectivity and cognitive aperture percentage.
 * **Tendril Pacing & Distance Damping:** Temporal and semantic edges breathe organically with slow pulse phases, dimming progressively based on span distance.
 * **Enterprise Shield Membranes:** GPU-native containment bubbles that organically envelop active clusters while rejecting distant outliers.
 * **Decoupled JSON-RPC 2.0 Architecture:** Asynchronous UNIX domain socket client connecting to `aia_weaver` with a 64 KB framing limit and auto-reconnect backoff.
-* **Hardened Path Security:** Strict path canonicalization guaranteeing all file actions are verified within safe workspace boundaries.
+* **Hardened Path Security:** Strict path canonicalization (`utils/security.py`) guaranteeing all file actions are verified within safe workspace boundaries.
 
 ---
 
@@ -42,6 +45,7 @@ aia_canvas/
 │   ├── controllers/         # Domain Controller Hierarchy
 │   │   ├── base_controller.py
 │   │   ├── canvas_controller.py
+│   │   ├── conversation_controller.py
 │   │   ├── node_controller.py
 │   │   ├── physics_controller.py
 │   │   └── search_controller.py
@@ -51,9 +55,19 @@ aia_canvas/
 │   │   └── intent_grammar.py
 │   ├── ipc/
 │   │   └── client.py        # Asynchronous UNIX domain socket JSON-RPC 2.0 client
+│   ├── omni/                # Omni router, LLM, shell, and search engines
+│   │   ├── engines/         # Specialized engines (llm.py, shell.py, search.py)
+│   │   └── router.py        # Dispatcher and prefix routing
 │   ├── physics/
 │   │   └── engine.py        # 120Hz Stokes physics, clustering, and horizon anchors
 │   ├── qml/
+│   │   ├── bar/             # Deconstructed OmniBar Subcomponents
+│   │   │   ├── DialogueDrawer.qml
+│   │   │   ├── OmniBar.qml
+│   │   │   ├── OmniInputCapsule.qml
+│   │   │   ├── ProviderBadge.qml
+│   │   │   ├── SearchSuggestionRibbon.qml
+│   │   │   └── ShellOutputDrawer.qml
 │   │   ├── hud/             # Modular HUD Overlays
 │   │   │   ├── CanvasHud.qml           # Bottom-left IPC & Aperture status
 │   │   │   └── DiagnosticsOverlay.qml  # F3 Telemetry & Frametime overlay
@@ -63,24 +77,21 @@ aia_canvas/
 │   │   │   └── NodePreview.qml # Tier 1.5 hover-dwell preview cards
 │   │   ├── search/          # Spotlight Search Subsystem
 │   │   │   └── SearchShelf.qml         # Ranked result carousel & preview card
-│   │   ├── slates/          # Specialized Media Slates
-│   │   │   ├── ImageSlate.qml
-│   │   │   ├── PdfSlate.qml
-│   │   │   └── TableSlate.qml
+│   │   ├── slates/          # Specialized Media Slates (Image, PDF, Video, Audio, Table)
 │   │   ├── Canvas.qml       # Root window and viewport orchestrator
 │   │   ├── ClusterHalo.qml  # GPU-accelerated shield membrane component
 │   │   ├── Node.qml         # Interactive coordinator & state-machine container
-│   │   ├── NodeContent.qml  # Slate/pill content loader delegate
-│   │   ├── OmniBar.qml      # Spotlight search and intent command bar
 │   │   ├── SurfaceShell.qml # Single-stroke perimeter and background shell
 │   │   ├── Tendril.qml      # Synaptic cubic Bezier connection lines
-│   │   ├── Theme.qml        # Global visual tokens, palettes, and easing
-│   │   └── qmldir           # QML module declarations
+│   │   └── Theme.qml        # Global visual tokens, palettes, and easing
+│   ├── telemetry/           # Performance Telemetry Ring Buffers
+│   │   └── metrics.py       # TelemetryCollector with fixed-size rolling windows
 │   ├── utils/
+│   │   ├── desktop.py       # Extracted xdg-open subprocess desktop integrations
 │   │   └── security.py      # Path canonicalization & boundary traversal guards
 │   ├── workers/             # Asynchronous QThreadPool Pipelines
 │   │   └── media_worker.py  # Non-blocking PDF, CSV, Image offloading tasks
-│   ├── bridge.py            # Composite Root Coordinator & Python/QML adapter
+│   ├── bridge.py            # Composite Root Coordinator & Python/QML property adapter
 │   ├── models.py            # Reactive QObject data models (Node, Edge)
 │   ├── store.py             # In-memory graph ledger and neighborhood store
 │   └── main.py              # Application entrypoint & systemd logger bootstrap

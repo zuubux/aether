@@ -90,17 +90,24 @@ The Aether spatial interaction model operates on an anti-WIMP (Windows, Icons, M
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.1 Non-Modal Orbital Carousel
-* Search queries dispatched via the OmniBar (`Ctrl+Space`) execute vector KNN and graph searches in `aia_weaver`.
-* Results are returned via `searchResultsReceived(results)` signal.
+### 4.1 Deconstructed OmniBar Interaction Subsystem (`src/qml/bar/`)
+* **`OmniBar.qml`**: Central interaction coordinator for search, natural language intent, and shell execution.
+* **`OmniInputCapsule.qml`**: Obsidian pill input field capturing key events (`Ctrl+Space`, `Escape`, `Enter`).
+* **`SearchSuggestionRibbon.qml`**: Auto-completion suggestion ribbon displaying prefix tokens (`/`, `@`, `?`).
+* **`DialogueDrawer.qml`**: Collapsible slate presenting live-streamed LLM responses driven by `ConversationController`.
+* **`ShellOutputDrawer.qml`**: Terminal execution drawer showing live stdout/stderr streams and exit statuses.
+* **`ProviderBadge.qml`**: Provider metadata indicator (e.g., `Ollama / Qwen2.5`, `OpenAI`).
+
+### 4.2 Non-Modal Orbital Carousel & Spotlight Search (`src/qml/search/SearchShelf.qml`)
+* Search queries dispatched via `SearchController` execute vector KNN and graph searches in `aia_weaver`.
 * `SearchShelf.qml` clamps the results to the **Top 7 matches** (`searchResultIds.slice(0, 7)`) and displays them in a centered, floating horizontal carousel.
 * Each card renders as a Tier 2 inspection slate displaying file title, snippet, archetype color badge, and extension icon.
 
-### 4.2 Real-Time Tier 1.5 Preview Card
+### 4.3 Real-Time Tier 1.5 Preview Card
 * Positioned directly above the horizontal carousel is an active Tier 1.5 preview card (`NodePreview.qml`).
 * As the active index changes, the preview card reactively queries `getNodeData(focusedNodeId)` to stream snippets, file metadata, and connection counts.
 
-### 4.3 Keyboard-Driven Traversal & Focus Flow
+### 4.4 Keyboard-Driven Traversal & Focus Flow
 * **`Left Arrow` / `Right Arrow` / `Tab`:** Cycles through carousel items with wraparound support and automatic list view positioning (`positionViewAtIndex`).
 * **`Enter` / `Return`:** Invokes `canvasBridge.focus_node(nodeId)` and dismisses the search interface.
 * **Camera Centering (Zero Physics Displacement):** Selecting a result smoothly centers the viewport camera on the target node without altering cluster equilibrium or physics coordinates.
@@ -108,13 +115,13 @@ The Aether spatial interaction model operates on an anti-WIMP (Windows, Icons, M
 
 ---
 
-## 5. Modular HUD Architecture
+## 5. Modular HUD Architecture & SRE Telemetry
 
 Canvas HUD components are fully decoupled from root `Canvas.qml`:
 
 1. **`aia_canvas/src/qml/hud/DiagnosticsOverlay.qml`**:
    - Toggled via `F3`.
-   - Displays live active node and edge counters, physics loop step latency (ms), and socket connection status.
+   - Displays live active node and edge counters, physics step latency ($8.0\text{ms}$ budget / $6.5\text{ms}$ alert threshold in red), SQLite query latency, IPC ingestion metrics, and socket connection status.
    - Includes tendril color key legend for explicit, semantic, temporal, and active bloom links.
 
 2. **`aia_canvas/src/qml/hud/CanvasHud.qml`**:
@@ -124,3 +131,12 @@ Canvas HUD components are fully decoupled from root `Canvas.qml`:
 3. **`aia_canvas/src/qml/search/SearchShelf.qml`**:
    - Anchored above the OmniBar.
    - Hosts the ranked result carousel, Tier 1.5 active card preview, and keyboard traversal engine.
+
+---
+
+## 6. Desktop OS Subprocess Integration
+
+External desktop file interactions are handled by `aia_canvas/src/utils/desktop.py`:
+* **`open_in_file_manager(file_path)`**: Opens the containing folder using `xdg-open`.
+* **`open_in_external_editor(file_path)`**: Launches the system default editor for the target file.
+* **Path Security:** All operations enforce canonical path verification (`utils.security.canonicalize_safe_path`) and execute tokenized `subprocess.Popen` with `shell=False` and `start_new_session=True`.

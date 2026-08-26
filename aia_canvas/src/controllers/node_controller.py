@@ -1,13 +1,19 @@
 import os
+import sys
 import subprocess
 import urllib.parse
+from pathlib import Path
 from typing import Any
 
-from PyQt6.QtCore import QThreadPool, pyqtProperty, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QThreadPool, QUrl, pyqtProperty, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QGuiApplication
 from workers.media_worker import CsvWorker, ImageWorker, PdfWorker
 
 from .base_controller import BaseController
+
+weaver_src = str(Path(__file__).resolve().parents[3] / "aia_weaver" / "src")
+if weaver_src not in sys.path and os.path.exists(weaver_src):
+    sys.path.insert(0, weaver_src)
 
 
 class NodeController(BaseController):
@@ -47,12 +53,12 @@ class NodeController(BaseController):
             
             if node_id > 0:
                 if hasattr(self.bridge, "physics") and self.bridge.physics:
-                    if node_id in self.bridge.physics.recent_node_ids:
-                        self.bridge.physics.recent_node_ids.remove(node_id)
-                    self.bridge.physics.recent_node_ids.insert(0, node_id)
-                    self.bridge.physics.recent_node_ids = self.bridge.physics.recent_node_ids[:8]
+                    if node_id in self.bridge.physics_engine.recent_node_ids:
+                        self.bridge.physics_engine.recent_node_ids.remove(node_id)
+                    self.bridge.physics_engine.recent_node_ids.insert(0, node_id)
+                    self.bridge.physics_engine.recent_node_ids = self.bridge.physics_engine.recent_node_ids[:8]
 
-            if hasattr(self.bridge, "_recalculate_focal_weights"):
+            if not getattr(self.bridge, "_search_active", False) and hasattr(self.bridge, "_recalculate_focal_weights"):
                 self.bridge._recalculate_focal_weights(node_id)
             self.selectedNodeChanged.emit(node_id)
 
@@ -118,44 +124,15 @@ class NodeController(BaseController):
 
     @pyqtSlot(str)
     def open_in_file_manager(self, file_path: str):
-        from utils.security import canonicalize_safe_path
-        safe_path = canonicalize_safe_path(file_path)
-        if not safe_path:
-            self.log_error(f"Invalid path provided: {file_path}")
-            return
-
-        target_dir = safe_path if safe_path.is_dir() else safe_path.parent
-        if target_dir.exists():
-            target_path_str = os.path.realpath(str(target_dir))
-            subprocess.Popen(
-                ["xdg-open", target_path_str],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-                shell=False,
-            )
-        else:
-            self.log_error(f"Target directory does not exist: {target_dir}")
+        from utils.desktop import open_in_file_manager as desktop_open_file_manager
+        if not desktop_open_file_manager(file_path):
+            self.log_error(f"Failed to open {file_path} in file manager.")
 
     @pyqtSlot(str)
     def open_in_external_editor(self, file_path: str):
-        from utils.security import canonicalize_safe_path
-        safe_path = canonicalize_safe_path(file_path)
-        if not safe_path:
-            self.log_error(f"Invalid path provided: {file_path}")
-            return
-
-        if safe_path.exists():
-            target_path_str = os.path.realpath(str(safe_path))
-            subprocess.Popen(
-                ["xdg-open", target_path_str],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-                shell=False,
-            )
-        else:
-            self.log_error(f"Target file does not exist: {safe_path}")
+        from utils.desktop import open_in_external_editor as desktop_open_editor
+        if not desktop_open_editor(file_path):
+            self.log_error(f"Failed to open {file_path} in external editor.")
 
     @pyqtSlot(int, str)
     def save_node_content(self, node_id: int, new_content: str):
@@ -446,7 +423,7 @@ class NodeController(BaseController):
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
         if hasattr(self.bridge, "physics") and self.bridge.physics:
-            self.bridge.physics.pin_node(node_id)
+            self.bridge.physics_engine.pin_node(node_id)
         if hasattr(self.bridge, "store") and self.bridge.store:
             node = self.bridge.store.get_node(node_id)
             if node:
@@ -476,12 +453,12 @@ class NodeController(BaseController):
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
         if hasattr(self.bridge, "physics") and self.bridge.physics:
-            self.bridge.physics.unpin_node()
+            self.bridge.physics_engine.unpin_node()
 
     @pyqtSlot(int, float, float)
     def set_custom_anchor(self, node_id: int, x: float, y: float):
         if hasattr(self.bridge, "physics") and self.bridge.physics:
-            self.bridge.physics.set_custom_anchor(node_id, x, y)
+            self.bridge.physics_engine.set_custom_anchor(node_id, x, y)
 
     @pyqtSlot(str, int, result='QVariantMap')
     @pyqtSlot(str, result='QVariantMap')
@@ -550,3 +527,70 @@ class NodeController(BaseController):
         except Exception as e:
             self.log_error(f"Error in copy_csv_data: {e}")
             return False
+
+    @pyqtSlot(str, result=str)
+    def resolve_media_url(self, file_path: str) -> str:
+        if not file_path:
+            return ""
+        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+        abs_path = os.path.abspath(clean_path)
+        if os.path.exists(abs_path):
+            return QUrl.fromLocalFile(abs_path).toString()
+        if file_path.startswith("file://") or file_path.startswith("http://") or file_path.startswith("https://") or file_path.startswith("qrc:/"):
+            return file_path
+        return "file://" + abs_path
+
+    @pyqtSlot(str, result='QVariantList')
+    def get_audio_waveform(self, file_path: str) -> list:
+        if not file_path:
+            return [0.0] * 64
+        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+        if not hasattr(self, "_waveform_cache"):
+            self._waveform_cache = {}
+        if clean_path in self._waveform_cache:
+            return self._waveform_cache[clean_path]
+
+        try:
+            from extractors.media import extract_audio
+            _, _, payload = extract_audio(clean_path)
+            if payload and "waveform" in payload and payload["waveform"]:
+                wf = payload["waveform"]
+                self._waveform_cache[clean_path] = wf
+                return wf
+        except Exception as e:
+            self.log_error(f"Error generating waveform for {file_path}: {e}")
+
+        default_wf = [0.0] * 64
+        self._waveform_cache[clean_path] = default_wf
+        return default_wf
+
+    @pyqtSlot(str, result='QVariantList')
+    def get_waveform(self, file_path: str) -> list:
+        return self.get_audio_waveform(file_path)
+
+    @pyqtSlot(str, result=str)
+    def get_video_poster(self, file_path: str) -> str:
+        if not file_path:
+            return ""
+        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+        if not hasattr(self, "_poster_cache"):
+            self._poster_cache = {}
+        if clean_path in self._poster_cache:
+            return self._poster_cache[clean_path]
+
+        try:
+            from extractors.media import extract_video
+            _, _, poster_path = extract_video(clean_path)
+            if poster_path and os.path.exists(poster_path):
+                url_str = QUrl.fromLocalFile(os.path.abspath(poster_path)).toString()
+                self._poster_cache[clean_path] = url_str
+                return url_str
+        except Exception as e:
+            self.log_error(f"Error getting video poster for {file_path}: {e}")
+
+        self._poster_cache[clean_path] = ""
+        return ""
+
+    @pyqtSlot(str, result=str)
+    def get_poster(self, file_path: str) -> str:
+        return self.get_video_poster(file_path)

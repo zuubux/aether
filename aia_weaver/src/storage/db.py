@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     archetype TEXT NOT NULL DEFAULT 'document',
     snippet TEXT DEFAULT '',
     thumbnail_url TEXT DEFAULT '',
+    extractor_version INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -89,11 +90,16 @@ class DatabaseManager:
             except Exception:
                 pass
 
+            try:
+                await cursor.execute("ALTER TABLE nodes ADD COLUMN extractor_version INTEGER DEFAULT 1;")
+            except Exception:
+                pass
+
         await self._conn.commit()
         logger.info("Database schema and sqlite-vec vector table initialized.")
 
     async def upsert_node(
-        self, file_path: str, file_hash: str, extension: str, size_bytes: int, archetype: str = 'document', snippet: str = '', embedding: list[float] | None = None, thumbnail_url: str = ''
+        self, file_path: str, file_hash: str, extension: str, size_bytes: int, archetype: str = 'document', snippet: str = '', embedding: list[float] | None = None, thumbnail_url: str = '', extractor_version: int = 1
     ) -> int:
         """Inserts or updates a file node and its vector embedding."""
         if not self._conn:
@@ -102,18 +108,19 @@ class DatabaseManager:
         async with self._conn.cursor() as cursor:
             await cursor.execute(
                 """
-                INSERT INTO nodes (file_path, file_hash, extension, size_bytes, archetype, snippet, thumbnail_url, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO nodes (file_path, file_hash, extension, size_bytes, archetype, snippet, thumbnail_url, extractor_version, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(file_path) DO UPDATE SET
                     file_hash=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.file_hash ELSE excluded.file_hash END,
                     size_bytes=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.size_bytes ELSE excluded.size_bytes END,
                     archetype=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.archetype ELSE excluded.archetype END,
                     snippet=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.snippet ELSE excluded.snippet END,
                     thumbnail_url=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.thumbnail_url ELSE excluded.thumbnail_url END,
+                    extractor_version=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.extractor_version ELSE excluded.extractor_version END,
                     updated_at=CASE WHEN excluded.file_hash = 'pending' AND nodes.file_hash != 'pending' THEN nodes.updated_at ELSE CURRENT_TIMESTAMP END
                 RETURNING id;
                 """,
-                (file_path, file_hash, extension, size_bytes, archetype, snippet, thumbnail_url),
+                (file_path, file_hash, extension, size_bytes, archetype, snippet, thumbnail_url, extractor_version),
             )
             row = await cursor.fetchone()
             node_id = row[0]

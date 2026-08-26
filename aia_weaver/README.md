@@ -25,22 +25,28 @@ State and relationship traversals are served over a secure, hardened UNIX domain
 
 ```text
 aia_weaver/
-├── indexer/
-│   ├── embedder.py      # Vector generation & process pool
-│   └── parser.py        # WikiLink extraction regex
-├── ipc/
-│   └── server.py        # UNIX domain socket JSON-RPC server
-├── storage/
-│   └── db.py            # SQLite schema, sqlite-vec, and graph logic
-├── utils/
-│   └── security.py      # Path canonicalization & traversal guards
-├── watcher/
-│   └── fs_events.py     # inotify sentinel with noise/security filtering
+├── src/
+│   ├── extractors/      # Multi-format extractors (markdown, office, devops, media, data, archive)
+│   ├── indexer/
+│   │   ├── embedder.py  # Vector generation & process pool (BAAI/bge-small-en-v1.5)
+│   │   ├── parser.py    # WikiLink extraction regex & reconciliation
+│   │   ├── service.py   # Asynchronous indexing pipeline orchestrator
+│   │   └── thumbnail.py # Thumbnail extraction pipeline
+│   ├── ipc/
+│   │   └── server.py    # Hardened UNIX domain socket JSON-RPC 2.0 server (0600, 64 KB limit)
+│   ├── storage/
+│   │   └── db.py        # SQLite ledger, sqlite-vec (vec0 vtab), and graph logic
+│   ├── utils/
+│   │   └── security.py  # Path canonicalization & traversal guards
+│   ├── watcher/
+│   │   ├── fs_events.py # inotify sentinel with noise & secret security filtering
+│   │   └── service.py   # Asynchronous file watcher service
+│   └── main.py          # Daemon orchestrator & signal lifecycle
 ├── scripts/
-│   └── probe.py         # Standalone CLI socket diagnostic probe
+│   ├── probe.py         # Standalone CLI socket diagnostic probe
+│   └── seed.sandbox.py  # Seed generator for sandbox testing
 ├── sandbox/             # Development test workspace
 ├── ARCHITECTURE.md      # Detailed system design specification
-├── main.py              # Daemon orchestrator & signal lifecycle
 └── requirements.txt
 ```
 
@@ -122,7 +128,10 @@ Use `scripts/probe.py` to interact directly with the running daemon over the UNI
 ### Methods
 * `ping`: Health check (`pong`).
 * `get_neighbors(node_id)`: Returns node metadata and all connected edges.
-* `search_graph(query, limit)`: Returns nearest neighbors sorted by cosine distance.
+* `search_graph(query, limit)`: Returns nearest neighbors sorted by cosine distance over `sqlite-vec`.
+* `touch_node(node_id, file_path)`: Records a temporal usage access log.
+* `save_node(node_id, text_content)`: Writes updated document content back to disk.
+* `create_edge(source_id, target_id, edge_type)`: Dynamically inserts a graph linkage.
 
 ### Broadcast Events (Sent to all connected clients)
 * `node_updated`: Emitted on file creation or modification.

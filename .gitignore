@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+sandbox/
 *.sock
 *.db
 *.sqlite
@@ -14,3 +15,18 @@ venv/
 *.swp
 *.tmp
 .env
+*.pcap
+*.iso
+
+
+# Private Architecture Scratchpad & Brainstorming
+.aether_ideas.md
+docs/scratchpad/
+*.local.md
+
+aia_weaver/sandbox/
+*.mkv
+*.MOV
+*.mp4
+*.iso
+*.tar.gz

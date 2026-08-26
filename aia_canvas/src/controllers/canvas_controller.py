@@ -29,7 +29,7 @@ class CanvasController(BaseController):
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def wingWidth(self) -> float:
         if hasattr(self.bridge, 'physics') and self.bridge.physics:
-            return (self.bridge.physics.viewport_w - self._workbench_width) / 2.0
+            return (self.bridge.physics_engine.viewport_w - self._workbench_width) / 2.0
         return 0.0
 
     @pyqtProperty(float, notify=apertureChanged)
@@ -48,7 +48,7 @@ class CanvasController(BaseController):
             self._workbench_width = clamped_w
             self._workbench_height = clamped_h
             if hasattr(self.bridge, 'physics') and self.bridge.physics:
-                self.bridge.physics.set_focal_card_dimensions(clamped_w, clamped_h)
+                self.bridge.physics_engine.set_focal_card_dimensions(clamped_w, clamped_h)
             self.workbenchDimensionsChanged.emit()
 
     @pyqtSlot(float, float)
@@ -56,7 +56,7 @@ class CanvasController(BaseController):
         if hasattr(self.bridge, '_wake_physics'):
             self.bridge._wake_physics()
         if hasattr(self.bridge, 'physics') and self.bridge.physics:
-            self.bridge.physics.set_viewport_dimensions(width, height)
+            self.bridge.physics_engine.set_viewport_dimensions(width, height)
         self.workbenchDimensionsChanged.emit()
 
     @pyqtSlot(float)
@@ -65,7 +65,7 @@ class CanvasController(BaseController):
         if abs(new_val - self._aperture) > 0.005:
             self._aperture = new_val
             if hasattr(self.bridge, 'physics') and self.bridge.physics:
-                self.bridge.physics.set_aperture(new_val)
+                self.bridge.physics_engine.set_aperture(new_val)
             self.apertureChanged.emit(new_val)
             if hasattr(self.bridge, '_wake_physics'):
                 self.bridge._wake_physics()
@@ -76,7 +76,7 @@ class CanvasController(BaseController):
         if abs(new_val - self._aperture) > 0.005:
             self._aperture = new_val
             if hasattr(self.bridge, 'physics') and self.bridge.physics:
-                self.bridge.physics.set_aperture(new_val)
+                self.bridge.physics_engine.set_aperture(new_val)
             self.apertureChanged.emit(new_val)
             if hasattr(self.bridge, '_wake_physics'):
                 self.bridge._wake_physics()

@@ -5,8 +5,8 @@ from core.intent_grammar import Intent, IntentOperator, parse_intent
 
 def _get_node_name(node: Any) -> str:
     if isinstance(node, dict):
-        return node.get("fileName") or node.get("label") or node.get("file_name") or ""
-    return getattr(node, "fileName", "") or getattr(node, "label", "") or getattr(node, "file_name", "")
+        return node.get("displayTitle") or node.get("display_title") or node.get("fileName") or node.get("label") or node.get("file_name") or ""
+    return getattr(node, "displayTitle", "") or getattr(node, "display_title", "") or getattr(node, "fileName", "") or getattr(node, "label", "") or getattr(node, "file_name", "")
 
 logger = logging.getLogger("aia_canvas.intent_dispatcher")
 
@@ -102,6 +102,12 @@ class IntentDispatcher:
         query = intent.raw_query
         if query:
             logger.info(f"Executing search query: {query}")
-            self.bridge.submit_query(query)
+            if hasattr(self.bridge, "submit_query"):
+                self.bridge.submit_query(query)
+            elif hasattr(self.bridge, "search_ctrl"):
+                self.bridge.search_ctrl.submit_query(query)
         else:
-            self.bridge.clear_search()
+            if hasattr(self.bridge, "clear_search"):
+                self.bridge.clear_search()
+            elif hasattr(self.bridge, "search_ctrl"):
+                self.bridge.search_ctrl.clear_search()

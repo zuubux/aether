@@ -4,6 +4,7 @@ Reactive QObject wrapper classes for nodes and relational edges.
 """
 
 from pathlib import Path
+import os
 
 from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal
 
@@ -15,6 +16,9 @@ class Node(QObject):
     clusterIdChanged = pyqtSignal(int)
     depthZChanged = pyqtSignal()
     isDeletedChanged = pyqtSignal()
+    archetypeChanged = pyqtSignal()
+    snippetChanged = pyqtSignal()
+    thumbnailUrlChanged = pyqtSignal()
 
     def __init__(
         self,
@@ -68,32 +72,64 @@ class Node(QObject):
         return Path(self._file_path).name if self._file_path else ""
 
     @pyqtProperty(str, notify=filePathChanged)
+    def display_title(self) -> str:
+        name = self.fileName
+        if not name:
+            return ""
+        # Preserve single-dot dotfiles like .gitignore, .bashrc
+        if name.startswith(".") and name.count(".") == 1:
+            return name
+
+        # Strip common compound archive suffixes
+        compound_suffixes = ('.tar.gz', '.tar.bz2', '.tar.xz', '.tar.zst')
+        for suffix in compound_suffixes:
+            if name.lower().endswith(suffix):
+                return name[:-len(suffix)]
+
+        from pathlib import Path
+        return Path(name).stem
+
+    @pyqtProperty(str, notify=filePathChanged)
+    def displayTitle(self) -> str:
+        return self.display_title
+
+    @pyqtProperty(str, notify=filePathChanged)
     def extension(self) -> str:
         return self._extension or (Path(self._file_path).suffix if self._file_path else "")
 
-    @pyqtProperty(str, constant=True)
+    @pyqtProperty(str, notify=archetypeChanged)
     def archetype(self) -> str:
         return self._archetype
 
-    @pyqtProperty(str, constant=True)
+    @pyqtProperty(str, notify=snippetChanged)
     def snippet(self) -> str:
         return self._snippet
 
-    @pyqtProperty(str, constant=True)
+    @property
+    def _is_image(self) -> bool:
+        ext = (self._extension or (Path(self._file_path).suffix if self._file_path else "")).lower()
+        arch = (self._archetype or "").upper()
+        return arch in ("IMAGE", "MEDIA", "ASSET") or ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico")
+
+    @pyqtProperty(str, notify=thumbnailUrlChanged)
     def thumbnailUrl(self) -> str:
-        return self._thumbnail_url
+        if self._thumbnail_url and os.path.exists(self._thumbnail_url):
+            return self._thumbnail_url
+        return ""
 
-    @pyqtProperty(str, constant=True)
+    @pyqtProperty(str, notify=thumbnailUrlChanged)
     def thumbnail(self) -> str:
-        return self._thumbnail_url
+        return self.thumbnailUrl
 
-    @pyqtProperty(str, constant=True)
+    @pyqtProperty(str, notify=thumbnailUrlChanged)
     def preview_path(self) -> str:
-        return self._thumbnail_url or self._file_path
+        thumb = self.thumbnailUrl
+        return thumb or (self._file_path if self._is_image else "")
 
-    @pyqtProperty(str, constant=True)
+    @pyqtProperty(str, notify=thumbnailUrlChanged)
     def previewUrl(self) -> str:
-        return self._thumbnail_url or self._file_path
+        thumb = self.thumbnailUrl
+        return thumb or (self._file_path if self._is_image else "")
 
     @pyqtProperty(str, notify=filePathChanged)
     def path(self) -> str:
@@ -104,26 +140,51 @@ class Node(QObject):
         return self._size_bytes
 
     def to_dict(self) -> dict:
+        thumb = self.thumbnailUrl
+        prev = self.previewUrl
+        title = self.display_title
         return {
             "id": self._id,
             "filePath": self._file_path,
             "file_path": self._file_path,
             "path": self._file_path,
             "fileName": Path(self._file_path).name if self._file_path else "",
+            "displayTitle": title,
+            "display_title": title,
             "extension": self.extension,
             "archetype": self._archetype,
             "snippet": self._snippet,
-            "thumbnail": self._thumbnail_url,
-            "thumbnailUrl": self._thumbnail_url,
-            "thumbnail_url": self._thumbnail_url,
-            "preview_path": self._thumbnail_url or self._file_path,
-            "previewUrl": self._thumbnail_url or self._file_path,
+            "thumbnail": thumb,
+            "thumbnailUrl": thumb,
+            "thumbnail_url": thumb,
+            "preview_path": prev,
+            "previewUrl": prev,
             "sizeBytes": self._size_bytes,
             "size_bytes": self._size_bytes,
             "x": self._x,
             "y": self._y,
             "focus": self._focus,
             "clusterId": self._cluster_id,
+        }
+
+    def roleNames(self) -> dict:
+        return {
+            "id": b"id",
+            "filePath": b"filePath",
+            "file_path": b"file_path",
+            "fileName": b"fileName",
+            "displayTitle": b"displayTitle",
+            "display_title": b"display_title",
+            "extension": b"extension",
+            "archetype": b"archetype",
+            "snippet": b"snippet",
+            "thumbnail": b"thumbnail",
+            "thumbnailUrl": b"thumbnailUrl",
+            "sizeBytes": b"sizeBytes",
+            "x": b"x",
+            "y": b"y",
+            "focus": b"focus",
+            "clusterId": b"clusterId",
         }
 
     def __getitem__(self, item: str):
@@ -137,6 +198,8 @@ class Node(QObject):
             return self._size_bytes
         if item in ("file_name", "fileName"):
             return self.fileName
+        if item in ("display_title", "displayTitle"):
+            return self.display_title
         if hasattr(self, item):
             val = getattr(self, item)
             return val

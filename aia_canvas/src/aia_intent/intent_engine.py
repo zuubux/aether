@@ -47,8 +47,8 @@ class IntentEngine(QObject):
                     node_ids.append(str(n_id))
             
             if node_ids:
-                target_x = self.bridge.physics.center_x
-                target_y = self.bridge.physics.center_y
+                target_x = self.bridge.physics_engine.center_x
+                target_y = self.bridge.physics_engine.center_y
                 self.nodesSummoned.emit(node_ids, target_x, target_y)
                 # Wake physics up so the summoning can take effect
                 self.bridge._wake_physics()

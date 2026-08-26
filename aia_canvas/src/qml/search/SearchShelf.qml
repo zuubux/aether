@@ -11,17 +11,58 @@ Item {
     property Item omniBar: null
 
     property var searchResultIds: []
-    property bool searchActive: false
+    property bool isSearchActiveExplicit: false
+    readonly property bool isShellMode: omniBar && omniBar.isShellMode
+    readonly property bool isConversationalMode: omniBar && omniBar.isConversationalMode
+    readonly property bool searchActive: (omniBar && omniBar.active && omniBar.resultsList && omniBar.resultsList.length > 0 && omniBar.currentRibbonIndex >= 0) || (searchResultIds && searchResultIds.length > 0) || isSearchActiveExplicit
     property int focusedIndex: 0
 
-    readonly property var topMatches: searchResultIds ? searchResultIds.slice(0, 7) : []
+    readonly property var activeRibbonItem: {
+        if (omniBar && omniBar.active && omniBar.resultsList && omniBar.resultsList.length > 0) {
+            var idx = omniBar.currentRibbonIndex;
+            if (idx >= 0 && idx < omniBar.resultsList.length) {
+                return omniBar.resultsList[idx];
+            }
+        }
+        return null;
+    }
+
+    readonly property var topMatches: {
+        if (searchResultIds && searchResultIds.length > 0) return searchResultIds.slice(0, 7);
+        if (omniBar && omniBar.resultsList && omniBar.resultsList.length > 0) {
+            var list = [];
+            for (var i = 0; i < omniBar.resultsList.length; i++) {
+                var item = omniBar.resultsList[i];
+                var rawId = item.node_id !== undefined ? item.node_id : item.id;
+                var nId = parseInt(rawId);
+                if (!isNaN(nId) && list.indexOf(nId) < 0) list.push(nId);
+            }
+            return list.slice(0, 7);
+        }
+        return [];
+    }
+
     readonly property int focusedNodeId: {
+        if (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.selectedNodeId > 0) {
+            return canvasBridge.selectedNodeId;
+        }
+        if (activeRibbonItem) {
+            var rawRibbonId = activeRibbonItem.node_id !== undefined ? activeRibbonItem.node_id : activeRibbonItem.id;
+            if (rawRibbonId !== undefined && rawRibbonId !== null) {
+                return typeof rawRibbonId === "number" ? rawRibbonId : parseInt(rawRibbonId);
+            }
+        }
         if (!topMatches || topMatches.length === 0) return 0;
         if (focusedIndex < 0 || focusedIndex >= topMatches.length) return 0;
         var raw = topMatches[focusedIndex];
         return typeof raw === "number" ? raw : parseInt(raw);
     }
-    readonly property var activeNodeData: getNodeData(focusedNodeId)
+    readonly property var activeNodeData: {
+        var nodeFromBridge = getNodeData(focusedNodeId);
+        if (nodeFromBridge) return nodeFromBridge;
+        if (activeRibbonItem) return activeRibbonItem;
+        return null;
+    }
 
     function getNodeData(nodeId) {
         if (!nodeId) return null;
@@ -52,44 +93,73 @@ Item {
     }
 
     function navigateLeft() {
+        if (omniBar && omniBar.active && omniBar.resultsList && omniBar.resultsList.length > 0) {
+            if (omniBar.currentRibbonIndex > 0) {
+                omniBar.currentRibbonIndex--;
+            }
+            return;
+        }
         if (!topMatches || topMatches.length === 0) return;
         focusedIndex = (focusedIndex - 1 + topMatches.length) % topMatches.length;
     }
 
     function navigateRight() {
+        if (omniBar && omniBar.active && omniBar.resultsList && omniBar.resultsList.length > 0) {
+            var maxIdx = Math.min(16, omniBar.resultsList.length) - 1;
+            if (omniBar.currentRibbonIndex < maxIdx) {
+                omniBar.currentRibbonIndex++;
+            }
+            return;
+        }
         if (!topMatches || topMatches.length === 0) return;
         focusedIndex = (focusedIndex + 1) % topMatches.length;
     }
 
     function selectFocusedNode() {
         if (focusedNodeId > 0) {
-            if (typeof canvasBridge !== "undefined" && canvasBridge) {
-                canvasBridge.focus_node(focusedNodeId);
-                canvasBridge.clear_search();
+            if (viewport) {
+                viewport.isCameraCached = false;
+                if (typeof viewport.steerCameraToNode === "function") {
+                    viewport.steerCameraToNode(focusedNodeId, true);
+                }
             }
-            if (omniBar && typeof omniBar.dismiss === "function") {
+            if (canvasBridge) {
+                canvasBridge.node.select_node(focusedNodeId);
+                canvasBridge.search.clear_search();
+            }
+            isSearchActiveExplicit = false;
+            if (omniBar) {
                 omniBar.dismiss();
             }
         }
     }
 
-    // Positioning anchored above OmniBar
-    anchors.bottom: omniBar ? omniBar.top : parent.bottom
-    anchors.bottomMargin: 28
-    anchors.horizontalCenter: omniBar ? omniBar.horizontalCenter : parent.horizontalCenter
-    width: Math.max(Theme.tier1_5Width, carouselContainer.width)
+    // Positioning decoupled from omniBar.active offscreen sliding
+    anchors.bottom: (omniBar && omniBar.active) ? omniBar.top : (parent ? parent.bottom : undefined)
+    anchors.bottomMargin: (omniBar && omniBar.active) ? ((omniBar.resultsList && omniBar.resultsList.length > 0) ? 84 : 16) : 36
+    anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
+    width: Theme.tier1_5Width
     height: mainLayout.implicitHeight
 
     visible: opacity > 0.001
-    opacity: (searchActive && topMatches.length > 0) ? 1.0 : 0.0
+    opacity: (!isShellMode && !isConversationalMode && searchActive && (activeNodeData !== null || topMatches.length > 0)) ? 1.0 : 0.0
 
     Behavior on opacity {
+        NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing }
+    }
+    Behavior on anchors.bottomMargin {
         NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing }
     }
 
     onFocusedIndexChanged: {
         if (focusedIndex >= 0 && focusedIndex < topMatches.length) {
             carouselList.positionViewAtIndex(focusedIndex, ListView.Contain);
+        }
+    }
+
+    onFocusedNodeIdChanged: {
+        if (searchActive && focusedNodeId > 0 && viewport && typeof viewport.steerCameraToNode === "function") {
+            viewport.steerCameraToNode(focusedNodeId);
         }
     }
 
@@ -111,8 +181,9 @@ Item {
             selectFocusedNode();
             event.accepted = true;
         } else if (event.key === Qt.Key_Escape) {
+            searchShelfRoot.isSearchActiveExplicit = false;
             if (canvasBridge) {
-                canvasBridge.clear_search();
+                canvasBridge.search.clear_search();
             }
             if (omniBar) {
                 omniBar.dismiss();
@@ -153,127 +224,6 @@ Item {
             }
         }
 
-        // =====================================================================
-        // Bottom Section: Horizontal Ranked Carousel of Tier 2 Tokens (240x68px)
-        // =====================================================================
-        Item {
-            id: carouselContainer
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: {
-                var totalW = searchShelfRoot.topMatches.length * (Theme.tier2Width + 16) - 16;
-                var maxW = searchShelfRoot.parent ? (searchShelfRoot.parent.width - 64) : 900;
-                return Math.min(maxW, Math.max(Theme.tier1_5Width, totalW));
-            }
-            height: Theme.tier2Height
-
-            ListView {
-                id: carouselList
-                anchors.fill: parent
-                orientation: ListView.Horizontal
-                spacing: 16
-                model: searchShelfRoot.topMatches
-                currentIndex: searchShelfRoot.focusedIndex
-                clip: true
-                interactive: true
-                flickableDirection: Flickable.HorizontalFlick
-                boundsBehavior: Flickable.StopAtBounds
-                preferredHighlightBegin: 0
-                preferredHighlightEnd: width
-                highlightRangeMode: ListView.ApplyRange
-
-                delegate: Item {
-                    id: tokenDelegate
-                    readonly property int itemIndex: index
-                    readonly property var rawId: modelData
-                    readonly property int tokenNodeId: typeof rawId === "number" ? rawId : parseInt(rawId)
-                    readonly property var tokenNodeData: searchShelfRoot.getNodeData(tokenNodeId)
-                    readonly property bool isCurrent: itemIndex === searchShelfRoot.focusedIndex
-
-                    width: Theme.tier2Width
-                    height: Theme.tier2Height
-
-                    Rectangle {
-                        id: tokenCard
-                        anchors.fill: parent
-                        radius: Theme.tier2Radius
-                        color: isCurrent ? Theme.surfaceHovered : Theme.surfaceBackground
-                        border.color: isCurrent ? Theme.accentFocus : (tokenMouseArea.containsMouse ? Theme.borderHover : Theme.surfaceBorder)
-                        border.width: isCurrent ? 1.5 : 1
-
-                        Behavior on color { ColorAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing } }
-                        Behavior on border.color { ColorAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing } }
-
-                        // File extension badge
-                        Rectangle {
-                            id: iconBadge
-                            width: Math.max(20, iconBadgeText.implicitWidth + 8)
-                            height: 16
-                            radius: 3
-                            color: Theme.getBadgeColor(tokenNodeData ? tokenNodeData.extension : "", tokenNodeData ? tokenNodeData.archetype : "")
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 8
-
-                            Text {
-                                id: iconBadgeText
-                                anchors.centerIn: parent
-                                text: Theme.normalizeExt(tokenNodeData ? tokenNodeData.extension : "")
-                                font.pixelSize: 9
-                                font.family: Theme.fontCode
-                                font.bold: true
-                                color: "#0D1117"
-                            }
-                        }
-
-                        // Text column
-                        Column {
-                            anchors.left: iconBadge.right
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 10
-                            spacing: 3
-
-                            Text {
-                                width: parent.width
-                                text: tokenNodeData ? (tokenNodeData.fileName || ("Node " + tokenNodeId)) : ("Node " + tokenNodeId)
-                                font.pixelSize: 11
-                                font.family: Theme.fontSans
-                                font.weight: isCurrent ? Font.DemiBold : Font.Normal
-                                color: isCurrent ? Theme.textPrimary : Theme.textSecondary
-                                elide: Text.ElideRight
-                            }
-
-                            Text {
-                                width: parent.width
-                                text: tokenNodeData ? (tokenNodeData.snippet || tokenNodeData.filePath || "") : ""
-                                font.pixelSize: 9
-                                font.family: Theme.fontCode
-                                color: Theme.textMuted
-                                elide: Text.ElideRight
-                                maximumLineCount: 1
-                            }
-                        }
-
-                        MouseArea {
-                            id: tokenMouseArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-
-                            onEntered: {
-                                searchShelfRoot.focusedIndex = itemIndex;
-                            }
-
-                            onClicked: {
-                                searchShelfRoot.focusedIndex = itemIndex;
-                                searchShelfRoot.selectFocusedNode();
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     Connections {
@@ -282,11 +232,10 @@ Item {
         function onSearchResultsReceived(results) {
             searchShelfRoot.searchResultIds = results || [];
             searchShelfRoot.focusedIndex = 0;
-            searchShelfRoot.searchActive = (results && results.length > 0);
         }
 
         function onSearchCleared() {
-            searchShelfRoot.searchActive = false;
+            searchShelfRoot.isSearchActiveExplicit = false;
             searchShelfRoot.searchResultIds = [];
             searchShelfRoot.focusedIndex = 0;
         }

@@ -441,8 +441,7 @@ class PhysicsEngine:
 
             if has_active_focus:
                 if node.id == focused_node_id:
-                    forces[node.id][0] += (self.center_x - node.x) * 18.0
-                    forces[node.id][1] += (self.center_y - node.y) * 18.0
+                    pass
 
                 elif node.id in first_degree_set or node.id in second_degree_parent:
                     viewport_center_x = self.viewport_w / 2.0
@@ -643,8 +642,6 @@ class PhysicsEngine:
             if has_active_focus and node.id == focused_node_id:
                 node.vx = 0.0
                 node.vy = 0.0
-                node.x = self.center_x
-                node.y = self.center_y
                 continue
 
 

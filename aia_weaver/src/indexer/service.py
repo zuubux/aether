@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from indexer.embedder import LocalEmbedder
-from indexer.parser import extract_archetype_and_snippet, extract_explicit_links
+from indexer.parser import extract_archetype_and_snippet, extract_explicit_links, EXTRACTOR_VERSION
 from indexer.thumbnail import ThumbnailManager
 from extractors.archive import is_archive_file
 
@@ -70,20 +70,32 @@ class IndexingService:
                         existing_node = await self.db.get_node_by_path(file_path_str)
                     
                     needs_reparse = False
-                    if existing_node and is_archive_file(path) and (existing_node.get("archetype") != "ARCHIVE" or "Header:" in existing_node.get("snippet", "")):
-                        needs_reparse = True
+                    if existing_node:
+                        current_ver = existing_node.get("extractor_version") or 0
+                        if current_ver < EXTRACTOR_VERSION:
+                            needs_reparse = True
 
                     if existing_node and existing_node["file_hash"] == file_hash and not needs_reparse:
                         source_id = existing_node["id"]
                         embedding = None
                     else:
                         embedding = await self.embedder.embed_file(file_path_str)
-                        archetype, snippet = extract_archetype_and_snippet(path, file_bytes)
+                        res = extract_archetype_and_snippet(path, file_bytes, file_hash=file_hash)
+                        if len(res) == 3:
+                            archetype, snippet, extracted_thumb = res
+                        else:
+                            archetype, snippet = res
+                            extracted_thumb = ""
+
+                        if extracted_thumb and isinstance(extracted_thumb, str) and not os.path.exists(extracted_thumb):
+                            extracted_thumb = ""
+                        elif not isinstance(extracted_thumb, str):
+                            extracted_thumb = ""
                         
                         source_id = await self.db.upsert_node(
                             file_path=file_path_str, file_hash=file_hash, extension=path.suffix,
                             size_bytes=path.stat().st_size, archetype=archetype, snippet=snippet,
-                            embedding=embedding, thumbnail_url="",
+                            embedding=embedding, thumbnail_url=extracted_thumb or "", extractor_version=EXTRACTOR_VERSION
                         )
 
                         if path.suffix.lower() in ('.pdf', '.png', '.jpg', '.jpeg', '.webp'):
@@ -100,7 +112,7 @@ class IndexingService:
                                                 (url, sid)
                                             )
                                         await self.db._conn.commit()
-                                        await self.ipc.broadcast_event("node_updated", {"node_id": sid, "file_path": str(p)})
+                                        await self.ipc.broadcast_event("node_updated", {"node_id": sid, "file_path": str(p), "thumbnail_url": url})
                                 except Exception as e:
                                     pass
                             asyncio.create_task(background_thumb(path, source_id))
@@ -127,7 +139,15 @@ class IndexingService:
                         except Exception:
                             pass
 
-                    await self.ipc.broadcast_event("node_updated", {"node_id": source_id, "file_path": file_path_str})
+                    await self.ipc.broadcast_event("node_updated", {
+                        "node_id": source_id,
+                        "file_path": file_path_str,
+                        "archetype": archetype if 'archetype' in locals() else "document",
+                        "snippet": snippet if 'snippet' in locals() else "",
+                        "size_bytes": path.stat().st_size if path.exists() else 0,
+                        "extension": path.suffix,
+                        "thumbnail_url": extracted_thumb if 'extracted_thumb' in locals() else "",
+                    })
 
                 elif action == "deleted":
                     deleted_node_id = await self.db.delete_node_by_path(file_path_str)

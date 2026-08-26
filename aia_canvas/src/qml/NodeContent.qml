@@ -15,6 +15,7 @@ Item {
     property var bridge: null
     property var viewportContainer: null
     property bool isSelected: false
+    property bool isSearchActive: false
     property bool isHovered: false
     property bool isSearchResult: false
     property string ext: ""
@@ -34,6 +35,9 @@ Item {
     readonly property bool isCapsuleMode: tierState === "TIER_3"
     readonly property bool isBeadMode: tierState === "TIER_4"
 
+    readonly property string archetype: root.nodeData ? (root.nodeData.archetype || "") : ""
+    readonly property bool isAudioFile: root.archetype.toUpperCase() === "AUDIO" || [".mp3", ".wav", ".flac", ".ogg", ".m4a", ".aac"].indexOf(ext.toLowerCase()) !== -1
+    readonly property bool isVideoFile: root.archetype.toUpperCase() === "VIDEO" || [".mp4", ".mkv", ".webm", ".mov", ".avi"].indexOf(ext.toLowerCase()) !== -1
     readonly property bool isImageFile: (filePath && typeof bridge !== "undefined" && bridge) ? bridge.is_image_file(filePath.toString()) : false
     readonly property bool isPdfFile: ext === ".pdf"
     readonly property bool isTableFile: ext === ".csv" || ext === ".tsv"
@@ -61,6 +65,7 @@ Item {
         id: nodePill
         anchors.fill: parent
         fileName: root.nodeData ? root.nodeData.fileName : ""
+        displayTitle: root.nodeData ? (root.nodeData.displayTitle || root.nodeData.display_title || "") : ""
         extensionStr: root.nodeData && root.nodeData.extension ? root.nodeData.extension : root.ext
         archetype: root.nodeData ? root.nodeData.archetype : ""
         accentColor: root.accentColor
@@ -106,7 +111,7 @@ Item {
             anchors.left: iconBadge.right
             anchors.right: parent.right
             anchors.margins: 10
-            text: root.nodeData ? root.nodeData.fileName : ""
+            text: root.nodeData ? (root.nodeData.fileName || root.nodeData.displayTitle) : ""
             font.pixelSize: 12
             font.family: Theme.fontSans
             font.weight: Font.DemiBold
@@ -155,71 +160,20 @@ Item {
     }
 
     // =====================================================================
-    // TIER 1: Editor / Preview Slate
+    // TIER 1: Editor / Preview Slate (Legacy focal card - suppressed)
     // =====================================================================
     Loader {
         id: focalSlateLoader
-        focus: root.isSelected
+        objectName: "focalSlateLoader"
+        focus: false
         anchors.centerIn: parent
-        width: root.isSelected ? (parent.width - 24) : 230
-        height: root.isSelected ? (parent.height - 24) : 170
-        active: root.isSelected
+        width: 230
+        height: 170
+        active: false
         asynchronous: true
-        visible: opacity > 0.01
-        opacity: root.isSelected ? 1.0 : 0.0
-        source: root.isImageFile ? "ImageSlate.qml" : (root.isPdfFile ? "PdfSlate.qml" : (root.isTableFile ? "TableSlate.qml" : "PreviewSlate.qml"))
+        visible: false
+        opacity: 0.0
+        source: ""
         z: 10
-        
-        Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutQuad } }
-
-        onLoaded: {
-            if (item) {
-                if (item.hasOwnProperty("width")) item.width = Qt.binding(function() { return focalSlateLoader.width });
-                if (item.hasOwnProperty("height")) item.height = Qt.binding(function() { return focalSlateLoader.height });
-            }
-        }
-
-        Binding { target: focalSlateLoader.item; property: "nodeId"; value: root.nodeId; restoreMode: Binding.RestoreBinding }
-        Binding { target: focalSlateLoader.item; property: "isSelected"; value: root.isSelected; restoreMode: Binding.RestoreBinding }
-        Binding {
-            target: focalSlateLoader.item
-            property: "viewportContainer"
-            value: root.viewportContainer
-            when: focalSlateLoader.item !== null && typeof focalSlateLoader.item.viewportContainer !== "undefined"
-            restoreMode: Binding.RestoreBinding
-        }
-        Binding { target: focalSlateLoader.item; property: "archetype"; value: root.nodeData ? root.nodeData.archetype : "document"; restoreMode: Binding.RestoreBinding }
-        Binding {
-            target: focalSlateLoader.item
-            property: "snippet"
-            value: root.snippet
-            when: !root.isImageFile && !root.isPdfFile && !root.isTableFile && focalSlateLoader.item !== null
-            restoreMode: Binding.RestoreBinding
-        }
-        Binding {
-            target: focalSlateLoader.item
-            property: "initialText"
-            value: root.initialText
-            when: !root.isImageFile && !root.isPdfFile && !root.isTableFile && focalSlateLoader.item !== null
-            restoreMode: Binding.RestoreBinding
-        }
-        Binding { target: focalSlateLoader.item; property: "fileName"; value: root.nodeData ? root.nodeData.fileName : ""; restoreMode: Binding.RestoreBinding }
-        Binding { target: focalSlateLoader.item; property: "filePath"; value: root.nodeData ? root.nodeData.filePath : ""; restoreMode: Binding.RestoreBinding }
-        Binding { target: focalSlateLoader.item; property: "sizeFormatted"; value: root.nodeData ? (root.nodeData.sizeBytes / 1024).toFixed(1) + " KB" : "0 KB"; restoreMode: Binding.RestoreBinding }
-        Binding {
-            target: focalSlateLoader.item
-            property: "referenceCount"
-            value: root.referenceCount
-            when: !root.isImageFile && !root.isPdfFile && !root.isTableFile && focalSlateLoader.item !== null
-            restoreMode: Binding.RestoreBinding
-        }
-        Binding { target: focalSlateLoader.item; property: "accentColor"; value: root.nodeAccentColor; restoreMode: Binding.RestoreBinding }
-        Binding {
-            target: focalSlateLoader.item
-            property: "bridge"
-            value: root.bridge
-            when: focalSlateLoader.item !== null && ("bridge" in focalSlateLoader.item || typeof focalSlateLoader.item.bridge !== "undefined")
-            restoreMode: Binding.RestoreBinding
-        }
     }
 }

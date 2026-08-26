@@ -5,6 +5,7 @@ Live temporal co-attention ingestion, priority edge sorting, and telemetry.
 
 import logging
 import math
+import os
 import time
 from typing import Any
 
@@ -30,8 +31,13 @@ class CanvasBridge(QObject):
     clusterHalosChanged = pyqtSignal()
     telemetryChanged = pyqtSignal()
     searchResultsReceived = pyqtSignal(list)
+    omniResultsReceived = pyqtSignal(list)
+    shellOutputReceived = pyqtSignal(list)
     searchCleared = pyqtSignal()
     searchActiveChanged = pyqtSignal(bool)
+    engineStateChanged = pyqtSignal(str)
+    conversationEngineChanged = pyqtSignal()
+    providerMetadataChanged = pyqtSignal()
     nodeRemoved = pyqtSignal(int)
     focalCardDimensionsChanged = pyqtSignal()
 
@@ -48,9 +54,10 @@ class CanvasBridge(QObject):
         self._t0 = time.perf_counter()
         self._qml_ready_time = 0.0
         self.store = GraphStore()
-        self.physics = PhysicsEngine()
+        self.physics_engine = PhysicsEngine()
 
         from controllers.canvas_controller import CanvasController
+        from controllers.conversation_controller import ConversationController
         from controllers.node_controller import NodeController
         from controllers.physics_controller import PhysicsController
         from controllers.search_controller import SearchController
@@ -60,6 +67,7 @@ class CanvasBridge(QObject):
         self.canvas_ctrl = CanvasController(self)
         self.intent_dispatcher = IntentDispatcher(self)
         self.search_ctrl = SearchController(self)
+        self.conversation_ctrl = ConversationController(self)
         self.node_ctrl = NodeController(self)
         self.physics_ctrl = PhysicsController(self)
         self.completion_engine = CompletionEngine(self)
@@ -69,6 +77,8 @@ class CanvasBridge(QObject):
         self.canvas_ctrl.apertureChanged.connect(self.apertureChanged)
         
         self.search_ctrl.searchResultsReceived.connect(self._handle_search_results)
+        self.search_ctrl.omniResultsReceived.connect(self.omniResultsReceived)
+        self.search_ctrl.shellOutputReceived.connect(self.shellOutputReceived)
         self.search_ctrl.searchCleared.connect(self._handle_search_cleared)
         
         self.node_ctrl.selectedNodeChanged.connect(self.selectedNodeChanged)
@@ -87,6 +97,8 @@ class CanvasBridge(QObject):
         self.physics_ctrl.clusterHalosChanged.connect(self.clusterHalosChanged)
         self.physics_ctrl.telemetryChanged.connect(self.telemetryChanged)
         self.physics_ctrl.connectionStatusChanged.connect(self.connectionStatusChanged)
+        self.conversation_ctrl.engineStateChanged.connect(self.engineStateChanged)
+        self.conversation_ctrl.providerMetadataChanged.connect(self.providerMetadataChanged)
 
         self._SUPPORTED_IMAGE_EXTS = {
             "bmp", "gif", "ico", "jpeg", "jpg", "png", "pbm", "pgm", "ppm", "xbm", "xpm",
@@ -111,8 +123,8 @@ class CanvasBridge(QObject):
         self._focal_card_width: float = 880.0
         self._focal_card_height: float = 600.0
 
-        self.physics.set_focal_card_dimensions(self._workbench_width, self._workbench_height)
-        self.physics.set_aperture(self._aperture)
+        self.physics_engine.set_focal_card_dimensions(self._workbench_width, self._workbench_height)
+        self.physics_engine.set_aperture(self._aperture)
 
         self._cluster_halos: list = []
         self._last_frametime_ms: float = 0.0
@@ -151,7 +163,7 @@ class CanvasBridge(QObject):
         self._cached_second_degree_parent.clear()
         self._cached_focal_weights.clear()
 
-        if primary_id <= 0:
+        if primary_id <= 0 or getattr(self, "_search_active", False):
             for node in self.store.get_all_nodes():
                 node.focus = 0.35
             return
@@ -231,18 +243,22 @@ class CanvasBridge(QObject):
                     active_physics_edges.append(e)
         
         # Pass hovered node ID into step
-        is_active = self.physics.step(
-            nodes, active_physics_edges, self._selected_node_id, self._hovered_node_id, dt=0.008,
-            first_degree_set=self._cached_first_degree,
-            second_degree_set=self._cached_second_degree,
-            second_degree_parent=self._cached_second_degree_parent,
-            focal_weights=self._cached_focal_weights
-        )
+        try:
+            focused_id = 0 if getattr(self, "_search_active", False) else self._selected_node_id
+            is_active = self.physics_engine.step(
+                nodes, active_physics_edges, focused_id, self._hovered_node_id, dt=0.008,
+                first_degree_set=self._cached_first_degree if not getattr(self, "_search_active", False) else set(),
+                second_degree_set=self._cached_second_degree if not getattr(self, "_search_active", False) else set(),
+                second_degree_parent=self._cached_second_degree_parent if not getattr(self, "_search_active", False) else {},
+                focal_weights=self._cached_focal_weights if not getattr(self, "_search_active", False) else {}
+            )
+        except RuntimeError:
+            return
         
         if not is_active and self._physics_timer.isActive():
             self._physics_timer.stop()
             # Still update halos one last time when stopping
-            self._cluster_halos = self.physics.get_cluster_halos(
+            self._cluster_halos = self.physics_engine.get_cluster_halos(
                 nodes, active_physics_edges, self._selected_node_id,
                 first_degree_set=self._cached_first_degree,
                 second_degree_set=self._cached_second_degree
@@ -250,7 +266,7 @@ class CanvasBridge(QObject):
             self.clusterHalosChanged.emit()
             return
             
-        self._cluster_halos = self.physics.get_cluster_halos(
+        self._cluster_halos = self.physics_engine.get_cluster_halos(
             nodes, active_physics_edges, self._selected_node_id,
             first_degree_set=self._cached_first_degree,
             second_degree_set=self._cached_second_degree
@@ -291,6 +307,10 @@ class CanvasBridge(QObject):
 
     # --- Properties Exposed to QML ---
 
+    @pyqtProperty(QObject, constant=True)
+    def searchController(self) -> QObject:
+        return self.search_ctrl
+
     @pyqtProperty(bool, notify=searchActiveChanged)
     def searchActive(self) -> bool:
         return self._search_active
@@ -315,7 +335,63 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(int, notify=selectedNodeChanged)
     def selectedNodeId(self) -> int:
-        return self.node_ctrl.selectedNodeId
+        node_ctrl = getattr(self, "node_ctrl", None)
+        return getattr(node_ctrl, "selectedNodeId", 0) if node_ctrl else getattr(self, "_selected_node_id", 0)
+
+    @pyqtSlot(result=str)
+    def get_focused_node_id(self) -> str:
+        """Return string representation of selected/focused node ID or empty string."""
+        node_ctrl = getattr(self, "node_ctrl", None)
+        nid = getattr(node_ctrl, "selectedNodeId", 0) if node_ctrl else getattr(self, "_selected_node_id", 0)
+        return str(nid) if nid else ""
+
+    @pyqtSlot(result=str)
+    def get_focused_node_path(self) -> str:
+        """Return file path of currently selected/focused node or empty string."""
+        node_ctrl = getattr(self, "node_ctrl", None)
+        nid = getattr(node_ctrl, "selectedNodeId", 0) if node_ctrl else getattr(self, "_selected_node_id", 0)
+        if nid and hasattr(self, "store") and self.store:
+            node = self.store.get_node(nid)
+            if node:
+                return getattr(node, "filePath", "") or getattr(node, "path", "") or ""
+        return ""
+
+    @pyqtProperty(str, notify=selectedNodeChanged)
+    def focusedNodeId(self) -> str:
+        return self.get_focused_node_id()
+
+    @pyqtProperty(str, notify=selectedNodeChanged)
+    def focusedNodePath(self) -> str:
+        return self.get_focused_node_path()
+
+
+    @pyqtProperty(QObject, constant=True)
+    def node(self) -> QObject:
+        return getattr(self, "node_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def search(self) -> QObject:
+        return getattr(self, "search_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def conversation(self) -> QObject:
+        return getattr(self, "conversation_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def canvas(self) -> QObject:
+        return getattr(self, "canvas_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def physics(self) -> QObject:
+        return getattr(self, "physics_ctrl", None)
+
+    @pyqtProperty(str, notify=engineStateChanged)
+    def engineState(self) -> str:
+        return self.conversation_ctrl.engineState
+
+    @pyqtProperty("QVariantMap", notify=providerMetadataChanged)
+    def providerMetadata(self) -> dict:
+        return self.conversation_ctrl.providerMetadata
 
     @pyqtProperty(int, notify=hoveredNodeChanged)
     def hoveredNodeId(self) -> int:
@@ -343,25 +419,27 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(float, notify=focalCardDimensionsChanged)
     def focalCardWidth(self) -> float:
-        return self._focal_card_width
+        return getattr(self, "_focal_card_width", 880.0)
 
     @focalCardWidth.setter
     def focalCardWidth(self, val: float):
-        if self._focal_card_width != val:
+        if getattr(self, "_focal_card_width", 880.0) != val:
             self._focal_card_width = val
-            self.physics.set_focal_card_dimensions(self._focal_card_width, self._focal_card_height)
+            if hasattr(self, "physics"):
+                self.physics_engine.set_focal_card_dimensions(self._focal_card_width, getattr(self, "_focal_card_height", 600.0))
             self.focalCardDimensionsChanged.emit()
             self._wake_physics()
 
     @pyqtProperty(float, notify=focalCardDimensionsChanged)
     def focalCardHeight(self) -> float:
-        return self._focal_card_height
+        return getattr(self, "_focal_card_height", 600.0)
 
     @focalCardHeight.setter
     def focalCardHeight(self, val: float):
-        if self._focal_card_height != val:
+        if getattr(self, "_focal_card_height", 600.0) != val:
             self._focal_card_height = val
-            self.physics.set_focal_card_dimensions(self._focal_card_width, self._focal_card_height)
+            if hasattr(self, "physics"):
+                self.physics_engine.set_focal_card_dimensions(getattr(self, "_focal_card_width", 880.0), self._focal_card_height)
             self.focalCardDimensionsChanged.emit()
             self._wake_physics()
 
@@ -402,47 +480,6 @@ class CanvasBridge(QObject):
     def record_frame(self, delta_ms: float):
         self.telemetry.record_frame(delta_ms)
 
-    @pyqtSlot(str, int, result='QVariantMap')
-    @pyqtSlot(str, result='QVariantMap')
-    def get_csv_preview(self, file_path: str, max_rows: int = 5) -> dict:
-        return self.node_ctrl.get_csv_preview(file_path, max_rows)
-
-    @pyqtSlot(str, int)
-    @pyqtSlot(str)
-    def request_csv_data(self, file_path: str, max_rows: int = 1000):
-        self.node_ctrl.request_csv_data(file_path, max_rows)
-
-    @pyqtSlot(str, int, int, str, result=bool)
-    def update_csv_cell(self, file_path: str, row_idx: int, col_idx: int, new_value: str) -> bool:
-        return self.node_ctrl.update_csv_cell(file_path, row_idx, col_idx, new_value)
-
-    @pyqtSlot(str, result=bool)
-    def copy_csv_data(self, file_path: str) -> bool:
-        return self.node_ctrl.copy_csv_data(file_path)
-
-    @pyqtSlot(str, result=bool)
-    def copy_image_to_clipboard(self, file_path: str) -> bool:
-        return self.node_ctrl.copy_image_to_clipboard(file_path)
-
-    @pyqtSlot(str, result=int)
-    def get_pdf_page_count(self, file_path: str) -> int:
-        return self.node_ctrl.get_pdf_page_count(file_path)
-
-    @pyqtSlot(str)
-    def request_pdf_page_count(self, file_path: str):
-        self.node_ctrl.request_pdf_page_count(file_path)
-
-    @pyqtSlot(str, int, int)
-    @pyqtSlot(str, int)
-    @pyqtSlot(str)
-    def request_pdf_page(self, file_path: str, page_index: int = 0, target_width: int = 1800):
-        self.node_ctrl.request_pdf_page(file_path, page_index, target_width)
-
-    @pyqtSlot(str, int, result=bool)
-    @pyqtSlot(str, result=bool)
-    def copy_pdf_page_to_clipboard(self, file_path: str, page_index: int = 0) -> bool:
-        return self.node_ctrl.copy_pdf_page_to_clipboard(file_path, page_index)
-
     @pyqtSlot(str, result=bool)
     def is_image_file(self, file_path: str) -> bool:
         return self.node_ctrl.is_image_file(file_path)
@@ -450,6 +487,10 @@ class CanvasBridge(QObject):
     @pyqtSlot(str)
     def request_image_source(self, file_path: str):
         self.node_ctrl.request_image_source(file_path)
+
+    @pyqtSlot(str, result=str)
+    def resolve_file_url(self, file_path: str) -> str:
+        return self.node_ctrl.resolve_media_url(file_path)
 
     def _handle_search_results(self, results):
         self._search_active = True
@@ -462,10 +503,6 @@ class CanvasBridge(QObject):
         self.searchCleared.emit()
 
     @pyqtSlot(str)
-    def submit_query(self, query: str):
-        self.search_ctrl.submit_query(query)
-
-    @pyqtSlot(str)
     @pyqtSlot(str, int)
     def execute_intent(self, raw_text: str, context_override: int = 0):
         ctx = context_override if context_override > 0 else None
@@ -474,10 +511,6 @@ class CanvasBridge(QObject):
     @pyqtSlot(str, int, result=list)
     def get_completions(self, text: str, cursor_pos: int) -> list:
         return self.completion_engine.get_completions(text, cursor_pos)
-
-    @pyqtSlot()
-    def clear_search(self):
-        self.search_ctrl.clear_search()
 
     @pyqtSlot(bool)
     def set_search_active(self, active: bool):
@@ -506,77 +539,6 @@ class CanvasBridge(QObject):
             if node:
                 return node.to_dict()
         return {}
-
-    @pyqtSlot(int)
-    def set_hovered_node(self, node_id: int):
-        self._hovered_node_id = node_id
-        self.node_ctrl.set_hovered_node(node_id)
-
-    @pyqtSlot(int, result=int)
-    def get_downstream_count(self, node_id: int) -> int:
-        return self.physics_ctrl.get_downstream_count(node_id)
-
-    @pyqtSlot(float)
-    def adjust_aperture(self, delta: float):
-        self.canvas_ctrl.adjust_aperture(delta)
-
-    @pyqtSlot(float, float)
-    def set_workbench_dimensions(self, width: float, height: float):
-        self.canvas_ctrl.set_workbench_dimensions(width, height)
-
-    @pyqtSlot(float, float)
-    def update_viewport_dimensions(self, width: float, height: float):
-        self.canvas_ctrl.update_viewport_dimensions(width, height)
-
-    @pyqtSlot(str)
-    def navigate_to_link(self, target_name: str):
-        self.node_ctrl.navigate_to_link(target_name)
-
-    @pyqtSlot(int)
-    def select_node(self, node_id: int):
-        self.node_ctrl.select_node(node_id)
-
-    @pyqtSlot(int, float, float)
-    def pin_node(self, node_id: int, x: float, y: float):
-        self.node_ctrl.pin_node(node_id, x, y)
-
-    @pyqtSlot(int, float, float)
-    def update_drag_pos(self, node_id: int, x: float, y: float):
-        self.node_ctrl.update_drag_pos(node_id, x, y)
-
-    @pyqtSlot(int, float, float)
-    def updateNodePosition(self, node_id: int, x: float, y: float):
-        self.node_ctrl.update_drag_pos(node_id, x, y)
-
-    @pyqtSlot(int, float, float)
-    def update_node_position(self, node_id: int, x: float, y: float):
-        self.node_ctrl.update_drag_pos(node_id, x, y)
-
-    @pyqtSlot(int, result=str)
-    def get_relation_type(self, node_id: int) -> str:
-        return self.physics_ctrl.get_relation_type(node_id)
-
-    @pyqtSlot(int)
-    def release_node(self, node_id: int):
-        self.node_ctrl.release_node(node_id)
-
-    @pyqtSlot(int, float, float)
-    def set_custom_anchor(self, node_id: int, x: float, y: float):
-        self.node_ctrl.set_custom_anchor(node_id, x, y)
-
-    @pyqtSlot(int, str)
-    def save_node_content(self, node_id: int, new_content: str):
-        self.node_ctrl.save_node_content(node_id, new_content)
-
-    @pyqtSlot(str)
-    def open_in_file_manager(self, file_path: str):
-        self.node_ctrl.open_in_file_manager(file_path)
-
-    @pyqtSlot(str)
-    def open_in_external_editor(self, file_path: str):
-        self.node_ctrl.open_in_external_editor(file_path)
-
-    # --- IPC Callbacks ---
 
     def _on_ipc_connected(self):
         import time
@@ -741,20 +703,21 @@ class CanvasBridge(QObject):
         archetype = data.get("archetype", "document")
         snippet = data.get("snippet", "")
         size_bytes = data.get("size_bytes", 0)
-        thumbnail_url = data.get("thumbnail_url", "") or data.get("thumbnail", "") or data.get("preview_path", "")
+        raw_thumb = data.get("thumbnail_url") or data.get("thumbnail") or ""
+        thumbnail_url = raw_thumb if (raw_thumb and os.path.exists(raw_thumb)) else ""
 
         node = self.store.get_node(node_id)
         if not node:
             angle = node_id * 2.399963
             # Limit the radius to within the current viewport bounds
-            max_r_x = self.physics.viewport_w * 0.4
-            max_r_y = self.physics.viewport_h * 0.4
+            max_r_x = self.physics_engine.viewport_w * 0.4
+            max_r_y = self.physics_engine.viewport_h * 0.4
             # Keep within the screen boundaries safely
             base_r = min(max_r_x, max_r_y)
             radius = min(350.0 + (math.sqrt(node_id) * 85.0), max(50.0, base_r - 150.0))
             
-            spawn_x = self.physics.center_x + math.cos(angle) * radius
-            spawn_y = self.physics.center_y + math.sin(angle) * radius
+            spawn_x = self.physics_engine.center_x + math.cos(angle) * radius
+            spawn_y = self.physics_engine.center_y + math.sin(angle) * radius
             
             new_node = Node(
                 id=node_id, 
@@ -774,11 +737,19 @@ class CanvasBridge(QObject):
             self.store.upsert_node(new_node)
             self.nodesChanged.emit()
         else:
-            node.filePath = file_path
-            node._archetype = archetype
-            node._snippet = snippet
-            node._size_bytes = size_bytes
-            node._thumbnail_url = thumbnail_url
+            if file_path and node.filePath != file_path:
+                node.filePath = file_path
+            if "archetype" in data and data["archetype"] and node._archetype != data["archetype"]:
+                node._archetype = data["archetype"]
+                node.archetypeChanged.emit()
+            if "snippet" in data and data["snippet"] and node._snippet != data["snippet"]:
+                node._snippet = data["snippet"]
+                node.snippetChanged.emit()
+            if "size_bytes" in data and data["size_bytes"] is not None:
+                node._size_bytes = data["size_bytes"]
+            if thumbnail_url and node._thumbnail_url != thumbnail_url:
+                node._thumbnail_url = thumbnail_url
+                node.thumbnailUrlChanged.emit()
 
         self._recalculate_focal_weights(self._selected_node_id)
 
