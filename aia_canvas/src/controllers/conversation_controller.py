@@ -6,6 +6,7 @@ Manages streaming dialogue execution, token signals, and provider state.
 import asyncio
 import logging
 import threading
+import time
 from typing import Any, List, Optional
 
 from PyQt6.QtCore import pyqtProperty, pyqtSignal, pyqtSlot

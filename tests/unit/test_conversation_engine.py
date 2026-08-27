@@ -417,3 +417,40 @@ def test_conversation_engine_bridge_context_resolution(tmp_path):
         assert "What is x?" in mock_provider.last_prompt
 
     asyncio.run(_test())
+
+
+def test_conversation_controller_stream_prompt(qapp):
+    """Verify ConversationController.stream_prompt executes async streaming without NameError on time."""
+    import time
+    from controllers.conversation_controller import ConversationController
+
+    class MockBridge:
+        pass
+
+    bridge = MockBridge()
+    controller = ConversationController(bridge)
+    mock_provider = MockLLMProvider(["Tokyo ", "time ", "response"])
+    controller.engine.set_provider(mock_provider)
+
+    tokens = []
+    finished = []
+
+    controller.tokenReceived.connect(lambda t: tokens.append(t))
+    controller.responseFinished.connect(lambda r: finished.append(r))
+
+    controller.stream_prompt("What time is it in Tokyo?")
+
+    # Wait for background thread to complete
+    start_time = time.time()
+    while controller._active_thread and controller._active_thread.is_alive():
+        qapp.processEvents()
+        time.sleep(0.01)
+        if time.time() - start_time > 3.0:
+            break
+
+    qapp.processEvents()
+
+    assert tokens == ["Tokyo ", "time ", "response"]
+    assert finished == ["Tokyo time response"]
+    assert controller.engineState == "IDLE"
+
