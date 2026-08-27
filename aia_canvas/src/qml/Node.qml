@@ -72,7 +72,7 @@ Item {
     property real currentLuminosity: 0.2
     readonly property bool isFocusedTarget: bridge ? ((nodeId === bridge.focusedNodeId || nodeId === bridge.selectedNodeId || String(nodeId) === String(bridge.focusedNodeId) || String(nodeId) === String(bridge.selectedNodeId)) && nodeId > 0) : false
     property bool isSelected: isFocusedTarget
-    property bool isHovered: nodeMouseArea.containsMouse && !isDragging && !isSettling && !nodeMouseArea.pressed
+    property bool isHovered: false
     property bool isSearchActive: false
     property bool isSearchMatchOrConnected: false
 
@@ -116,12 +116,18 @@ Item {
 
     Timer {
         id: hoverDwellTimer
-        interval: typeof Theme !== "undefined" ? Theme.dwellRichMs : 2000
+        interval: 140
         repeat: false
         onTriggered: {
-            console.log("[PIPE-1 Node] Escalated to TIER_1_5 for node:", nodeModel.id || nodeModel.title);
-            rootItem.isDwelling = true
-            rootItem.currentLuminosity = 1.0
+            rootItem.isHovered = true
+            var targetId = (typeof model !== "undefined" && model && model.id !== undefined) ? model.id : rootItem.nodeId;
+            if (nodeCtrl) {
+                nodeCtrl.pin_node(targetId, true)
+                nodeCtrl.set_hovered_node(rootItem.nodeId)
+            } else if (rootItem.bridge) {
+                rootItem.bridge.node.pin_node(targetId, true)
+                rootItem.bridge.node.set_hovered_node(rootItem.nodeId)
+            }
         }
     }
 
@@ -157,6 +163,7 @@ Item {
 
     MouseArea {
         id: nodeMouseArea
+        objectName: "nodeMouseArea"
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
@@ -172,6 +179,14 @@ Item {
                 intentTimer.stop()
                 hoverDwellTimer.stop()
                 settleTimer.stop()
+                if (rootItem.isHovered) {
+                    rootItem.isHovered = false
+                    if (nodeCtrl) {
+                        nodeCtrl.set_hovered_node(0)
+                    } else if (rootItem.bridge) {
+                        rootItem.bridge.node.set_hovered_node(0)
+                    }
+                }
             }
         }
 
@@ -186,14 +201,6 @@ Item {
                 intentTimer.restart()
                 hoverDwellTimer.restart()
             }
-            var targetId = (typeof model !== "undefined" && model && model.id !== undefined) ? model.id : rootItem.nodeId;
-            if (nodeCtrl) {
-                nodeCtrl.pin_node(targetId, true)
-                nodeCtrl.set_hovered_node(rootItem.nodeId)
-            } else if (rootItem.bridge) {
-                rootItem.bridge.node.pin_node(targetId, true)
-                rootItem.bridge.node.set_hovered_node(rootItem.nodeId)
-            }
         }
         
         onExited: {
@@ -202,18 +209,21 @@ Item {
             rootItem.isIntentHovered = false
             rootItem.isDwelling = false
             rootItem.currentLuminosity = 0.2
-            var targetId = (typeof model !== "undefined" && model && model.id !== undefined) ? model.id : rootItem.nodeId;
-            var isPinned = (typeof model !== "undefined" && model && (model.isPinned || model.pinned)) || (rootItem.nodeModel && (rootItem.nodeModel.isPinned || rootItem.nodeModel.pinned));
-            if (nodeCtrl) {
-                if (!rootItem.isSelected && !isPinned) {
-                    nodeCtrl.pin_node(targetId, false)
+            if (rootItem.isHovered) {
+                rootItem.isHovered = false
+                var targetId = (typeof model !== "undefined" && model && model.id !== undefined) ? model.id : rootItem.nodeId;
+                var isPinned = (typeof model !== "undefined" && model && (model.isPinned || model.pinned)) || (rootItem.nodeModel && (rootItem.nodeModel.isPinned || rootItem.nodeModel.pinned));
+                if (nodeCtrl) {
+                    if (!rootItem.isSelected && !isPinned) {
+                        nodeCtrl.pin_node(targetId, false)
+                    }
+                    nodeCtrl.set_hovered_node(0)
+                } else if (rootItem.bridge) {
+                    if (!rootItem.isSelected && !isPinned) {
+                        rootItem.bridge.node.pin_node(targetId, false)
+                    }
+                    rootItem.bridge.node.set_hovered_node(0)
                 }
-                nodeCtrl.set_hovered_node(0)
-            } else if (rootItem.bridge) {
-                if (!rootItem.isSelected && !isPinned) {
-                    rootItem.bridge.node.pin_node(targetId, false)
-                }
-                rootItem.bridge.node.set_hovered_node(0)
             }
         }
 

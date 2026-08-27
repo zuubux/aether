@@ -84,6 +84,7 @@ class NodeController(BaseController):
 
     @pyqtSlot(int)
     def set_hovered_node(self, node_id: int):
+        """Sets the currently hovered node ID after hover-dwell debounce (0 to clear)."""
         hovered_id = getattr(self.bridge, "_hovered_node_id", 0)
         if hovered_id != node_id:
             self.bridge._hovered_node_id = node_id
@@ -418,6 +419,7 @@ class NodeController(BaseController):
     @pyqtSlot(int, bool)
     @pyqtSlot(int, float, float)
     def pin_node(self, node_id: int, arg2: Any = True, y: float = 0.0):
+        """Pins or unpins a node's physical coordinates, or sets custom pinned coordinates."""
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
         if isinstance(arg2, bool):
