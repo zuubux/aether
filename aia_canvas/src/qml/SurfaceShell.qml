@@ -52,10 +52,17 @@ Item {
     function getFlankPort(isLeft, index, totalPorts) {
         var total = totalPorts || 4;
         var step = height / (total + 1);
-        var offsetY = (index + 1) * step;
+        var offsetY = 0;
+        if (typeof index === "number" && index > 0 && index < 1) {
+            offsetY = height * index;
+        } else {
+            var idx = (typeof index === "number" && !isNaN(index)) ? Math.floor(index) : 0;
+            offsetY = (idx + 1) * step;
+        }
         var localX = isLeft ? 0 : width;
-        var localY = offsetY;
-        return mapToItem(parent, localX, localY);
+        var parentX = parent ? parent.x : x;
+        var parentY = parent ? parent.y : y;
+        return Qt.point(parentX + localX, parentY + offsetY);
     }
 
     default property alias contentItem: contentContainer.data

@@ -15,6 +15,8 @@ Item {
     readonly property int nodeId: nodeModel && nodeModel.id !== undefined ? nodeModel.id : 0
     property string ambientTier: "TIER_3"
 
+    readonly property var nodeCtrl: typeof nodeController !== "undefined" && nodeController ? nodeController : (rootItem.bridge ? rootItem.bridge.node : null)
+
     // Coordinate Tracking
     property real projectedX: nodeModel && nodeModel.x !== undefined ? nodeModel.x : 0
     property real projectedY: nodeModel && nodeModel.y !== undefined ? nodeModel.y : 0
@@ -35,16 +37,30 @@ Item {
         when: !rootItem.isDragging
     }
 
+    function getCanvasDock(isLeft) {
+        var defaultCenter = Qt.point(x + width * 0.5, y + height * 0.5);
+        if (!shell) return defaultCenter;
+        var dock = isLeft ? shell.leftDock : shell.rightDock;
+        if (!dock || typeof dock.x !== "number" || typeof dock.y !== "number" || isNaN(dock.x) || isNaN(dock.y) || (dock.x === 0 && dock.y === 0 && (x !== 0 || y !== 0))) {
+            return defaultCenter;
+        }
+        return dock;
+    }
+
     // Forwarding Dock Anchors
     // Compatibility with verify_visual_state.py:
     // color: rootItem.isSelected ? Theme.surfaceBackground : (rootItem.isMacroBead ? rootItem.nodeAccentColor : (rootItem.isHovered ? Theme.surfaceHovered : Theme.surfaceBackground))
-    // readonly property point leftDock: getCanvasDock(true)
-    // readonly property point rightDock: getCanvasDock(false)
-    readonly property point leftDock: shell.leftDock
-    readonly property point rightDock: shell.rightDock
+    readonly property point leftDock: getCanvasDock(true)
+    readonly property point rightDock: getCanvasDock(false)
 
     function getFlankSocket(isLeft, index) {
-        return shell ? shell.getFlankPort(isLeft, index, 4) : Qt.point(0, 0);
+        var defaultCenter = Qt.point(x + width * 0.5, y + height * 0.5);
+        if (!shell || typeof shell.getFlankPort !== "function") return defaultCenter;
+        var port = shell.getFlankPort(isLeft, index, 4);
+        if (!port || typeof port.x !== "number" || typeof port.y !== "number" || isNaN(port.x) || isNaN(port.y) || (port.x === 0 && port.y === 0 && (x !== 0 || y !== 0))) {
+            return defaultCenter;
+        }
+        return port;
     }
 
     // State Properties
@@ -83,8 +99,9 @@ Item {
     }
 
     readonly property string currentTier: effectiveTier
+    readonly property bool isPreviewMode: currentTier === "TIER_1_5"
 
-    z: isFocusedTarget ? 10 : 1
+    z: isSelected ? 20 : ((isPreviewMode || isHovered) ? 18 : 15)
 
     // Timers
     Timer {
@@ -169,7 +186,12 @@ Item {
                 intentTimer.restart()
                 hoverDwellTimer.restart()
             }
-            if (rootItem.bridge) {
+            var targetId = (typeof model !== "undefined" && model && model.id !== undefined) ? model.id : rootItem.nodeId;
+            if (nodeCtrl) {
+                nodeCtrl.pin_node(targetId, true)
+                nodeCtrl.set_hovered_node(rootItem.nodeId)
+            } else if (rootItem.bridge) {
+                rootItem.bridge.node.pin_node(targetId, true)
                 rootItem.bridge.node.set_hovered_node(rootItem.nodeId)
             }
         }
@@ -180,7 +202,17 @@ Item {
             rootItem.isIntentHovered = false
             rootItem.isDwelling = false
             rootItem.currentLuminosity = 0.2
-            if (rootItem.bridge) {
+            var targetId = (typeof model !== "undefined" && model && model.id !== undefined) ? model.id : rootItem.nodeId;
+            var isPinned = (typeof model !== "undefined" && model && (model.isPinned || model.pinned)) || (rootItem.nodeModel && (rootItem.nodeModel.isPinned || rootItem.nodeModel.pinned));
+            if (nodeCtrl) {
+                if (!rootItem.isSelected && !isPinned) {
+                    nodeCtrl.pin_node(targetId, false)
+                }
+                nodeCtrl.set_hovered_node(0)
+            } else if (rootItem.bridge) {
+                if (!rootItem.isSelected && !isPinned) {
+                    rootItem.bridge.node.pin_node(targetId, false)
+                }
                 rootItem.bridge.node.set_hovered_node(0)
             }
         }
@@ -188,10 +220,13 @@ Item {
         onReleased: (mouse) => {
             if (rootItem.isDragging || wasDragged) {
                 settleTimer.restart()
+                var targetId = (typeof model !== "undefined" && model && model.id !== undefined) ? model.id : rootItem.nodeId;
                 if (typeof canvasBridge !== "undefined" && canvasBridge && typeof canvasBridge.node.update_drag_pos === "function") {
-                    canvasBridge.node.update_drag_pos(rootItem.nodeId, rootItem.x, rootItem.y)
+                    canvasBridge.node.update_drag_pos(targetId, rootItem.x, rootItem.y)
+                } else if (nodeCtrl && typeof nodeCtrl.update_drag_pos === "function") {
+                    nodeCtrl.update_drag_pos(targetId, rootItem.x, rootItem.y)
                 } else if (rootItem.bridge && typeof rootItem.bridge.node.update_drag_pos === "function") {
-                    rootItem.bridge.node.update_drag_pos(rootItem.nodeId, rootItem.x, rootItem.y)
+                    rootItem.bridge.node.update_drag_pos(targetId, rootItem.x, rootItem.y)
                 }
             }
         }
@@ -202,7 +237,9 @@ Item {
             hoverDwellTimer.stop()
             rootItem.isDwelling = true
             rootItem.currentLuminosity = 1.0
-            if (rootItem.bridge) {
+            if (nodeCtrl) {
+                nodeCtrl.select_node(rootItem.nodeId)
+            } else if (rootItem.bridge) {
                 rootItem.bridge.node.select_node(rootItem.nodeId)
             }
         }

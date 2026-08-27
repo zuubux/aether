@@ -46,12 +46,17 @@ def test_node_drag_settle_tier_escalation_and_z_index(qapp, qml_engine):
     node_item = node_comp.create()
     assert node_item is not None
 
-    # Initial ambient tier 4, unfocused node z = 1
+    # Initial ambient tier 4, unfocused node z = 15
     node_item.setProperty("ambientTier", "TIER_4")
     assert node_item.property("effectiveTier") == "TIER_4"
-    assert node_item.property("z") == 1
+    assert node_item.property("z") == 15
 
-    # Drag active -> Tier 3 & Z remains <= 100 (z = 1 when unfocused)
+    # Hovered node -> z = 18
+    node_item.setProperty("isHovered", True)
+    assert node_item.property("z") == 18
+    node_item.setProperty("isHovered", False)
+
+    # Drag active -> Tier 3 & Z remains <= 100
     node_item.setProperty("isDragging", True)
     assert node_item.property("effectiveTier") == "TIER_3"
     assert node_item.property("z") <= 100
@@ -62,10 +67,10 @@ def test_node_drag_settle_tier_escalation_and_z_index(qapp, qml_engine):
     assert node_item.property("effectiveTier") == "TIER_3"
     assert node_item.property("z") <= 100
 
-    # Drag release -> Tier 4 & Z = 1
+    # Drag release -> Tier 4 & Z = 15
     node_item.setProperty("isSettling", False)
     assert node_item.property("effectiveTier") == "TIER_4"
-    assert node_item.property("z") == 1
+    assert node_item.property("z") == 15
 
 
 def test_surfaceshell_border_luminosity(qapp, qml_engine):

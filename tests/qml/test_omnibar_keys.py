@@ -714,7 +714,7 @@ def test_focused_node_retained_and_lit_in_conversational_mode(qapp, qml_engine, 
     assert mock_bridge.focusedNodeId == "1"
     assert omni_bar.property("isConversationalMode") is True
 
-    # 4. Verify target node has opacity == 1.0 and z == 10, unfocused node has opacity == 0.15 and z == 1
+    # 4. Verify target node has opacity == 1.0 and z == 20, unfocused node has opacity == 0.15 and z == 15
     viewport = canvas_qml_root.findChild(object, "canvasViewport")
     assert viewport is not None
     node1 = viewport.getNode(1)
@@ -725,11 +725,11 @@ def test_focused_node_retained_and_lit_in_conversational_mode(qapp, qml_engine, 
     assert node1.property("isSelected") is True
     assert node1.property("isFocusedTarget") is True
     assert node1.property("opacity") == 1.0
-    assert node1.property("z") == 10
+    assert node1.property("z") == 20
 
     assert node2.property("isFocusedTarget") is False
     assert node2.property("opacity") == 0.15
-    assert node2.property("z") == 1
+    assert node2.property("z") == 15
 
 
 

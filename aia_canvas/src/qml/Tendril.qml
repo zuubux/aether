@@ -148,35 +148,59 @@ Item {
     readonly property bool sourceIsBead: sourceNode ? !!(sourceNode.isMacroBead || sourceNode.isHoverBloomed) : false
     readonly property bool targetIsBead: targetNode ? !!(targetNode.isMacroBead || targetNode.isHoverBloomed) : false
 
-    function debugStartPt() {
-        if (!sourceNode || !targetNode) return Qt.point(0, 0);
-        if (sourceIsBead) return Qt.point(sCx, sCy);
+    function isNodeValid(node) {
+        if (!node) return false;
+        if (typeof node.x !== "number" || isNaN(node.x)) return false;
+        if (typeof node.y !== "number" || isNaN(node.y)) return false;
+        var w = node.width > 0 ? node.width : (node.implicitWidth > 0 ? node.implicitWidth : 0);
+        var h = node.height > 0 ? node.height : (node.implicitHeight > 0 ? node.implicitHeight : 0);
+        if (w <= 0 || h <= 0) return false;
+        return true;
+    }
+
+    function validateDockPoint(pt, node, fallbackPt) {
+        if (!pt || typeof pt.x !== "number" || typeof pt.y !== "number" || isNaN(pt.x) || isNaN(pt.y)) {
+            return fallbackPt;
+        }
+        if (pt.x === 0 && pt.y === 0) {
+            return fallbackPt;
+        }
+        return pt;
+    }
+
+    function resolveStartPt() {
+        if (!isNodeValid(sourceNode) || !isNodeValid(targetNode)) return Qt.point(0, 0);
+        var center = Qt.point(sCx, sCy);
+        if (sourceIsBead) return center;
         
         var isLeft = targetNode.x < sourceNode.x;
+        var rawPt = null;
         if (sourceId === selectedNodeId && typeof sourceNode.getFlankSocket === "function") {
-            return sourceNode.getFlankSocket(isLeft, organicPortRatio);
+            rawPt = sourceNode.getFlankSocket(isLeft, organicPortRatio);
+        } else {
+            rawPt = isLeft ? sourceNode.leftDock : sourceNode.rightDock;
         }
-        var dock = isLeft ? sourceNode.leftDock : sourceNode.rightDock;
-        if (!dock) return Qt.point(sCx, sCy);
-        return dock;
+        return validateDockPoint(rawPt, sourceNode, center);
     }
 
-    readonly property point rawStartPt: debugStartPt()
+    readonly property point rawStartPt: resolveStartPt()
 
-    function debugEndPt() {
-        if (!sourceNode || !targetNode) return Qt.point(0, 0);
-        if (targetIsBead) return Qt.point(tCx, tCy);
+    function resolveEndPt() {
+        if (!isNodeValid(sourceNode) || !isNodeValid(targetNode)) return Qt.point(0, 0);
+        var center = Qt.point(tCx, tCy);
+        if (targetIsBead) return center;
         
         var isLeft = sourceNode.x < targetNode.x;
+        var rawPt = null;
         if (targetId === selectedNodeId && typeof targetNode.getFlankSocket === "function") {
-            return targetNode.getFlankSocket(isLeft, organicPortRatio);
+            rawPt = targetNode.getFlankSocket(isLeft, organicPortRatio);
+        } else {
+            rawPt = isLeft ? targetNode.leftDock : targetNode.rightDock;
         }
-        var dock = isLeft ? targetNode.leftDock : targetNode.rightDock;
-        if (!dock) return Qt.point(tCx, tCy);
-        return dock;
+        return validateDockPoint(rawPt, targetNode, center);
     }
 
-    readonly property point rawEndPt: debugEndPt()
+    readonly property point rawEndPt: resolveEndPt()
 
     readonly property real dx: rawEndPt.x - rawStartPt.x
     readonly property real dy: rawEndPt.y - rawStartPt.y
@@ -302,15 +326,18 @@ Item {
         return Math.max(0.0, (currentAperture - 0.20) / 0.15)
     }
 
+    readonly property bool isNodesReady: isNodeValid(sourceNode) && isNodeValid(targetNode)
+
     readonly property bool hasValidDocks: {
-        if (!sourceNode || !targetNode) return false;
+        if (!isNodesReady) return false;
         if (rawStartPt.x === 0 && rawStartPt.y === 0) return false;
         if (rawEndPt.x === 0 && rawEndPt.y === 0) return false;
+        if (isNaN(rawStartPt.x) || isNaN(rawStartPt.y) || isNaN(rawEndPt.x) || isNaN(rawEndPt.y)) return false;
         return true;
     }
 
     opacity: targetOpacity * macroOpacityFade
-    visible: sourceNode !== null && targetNode !== null && opacity > 0.005 && hasValidDocks
+    visible: isNodesReady && opacity > 0.005 && hasValidDocks
 
     Behavior on opacity {
         NumberAnimation { duration: 240; easing.type: Easing.OutCubic }

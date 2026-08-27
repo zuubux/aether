@@ -415,18 +415,25 @@ class NodeController(BaseController):
             self.log_error(f"Error updating CSV cell: {e}")
             return False
 
+    @pyqtSlot(int, bool)
     @pyqtSlot(int, float, float)
-    def pin_node(self, node_id: int, x: float, y: float):
+    def pin_node(self, node_id: int, arg2: Any = True, y: float = 0.0):
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
-        if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
-            self.bridge.physics_ctrl.set_node_pinned(node_id, True)
-            self.bridge.physics_ctrl.apply_node_drag(node_id, x, y)
-        if hasattr(self.bridge, "store") and self.bridge.store:
-            node = self.bridge.store.get_node(node_id)
-            if node:
-                node.x = x
-                node.y = y
+        if isinstance(arg2, bool):
+            pinned = arg2
+            if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
+                self.bridge.physics_ctrl.set_node_pinned(node_id, pinned)
+        else:
+            x, y_val = float(arg2), float(y)
+            if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
+                self.bridge.physics_ctrl.set_node_pinned(node_id, True)
+                self.bridge.physics_ctrl.apply_node_drag(node_id, x, y_val)
+            if hasattr(self.bridge, "store") and self.bridge.store:
+                node = self.bridge.store.get_node(node_id)
+                if node:
+                    node.x = x
+                    node.y = y_val
 
     @pyqtSlot(int, float, float)
     def update_drag_pos(self, node_id: int, x: float, y: float):

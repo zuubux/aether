@@ -35,9 +35,9 @@ class PhysicsEngine:
         self._horizon_bearings: dict[int, float] = {}
 
         # Spring & Field Constants
-        self.k_horizon_anchor: float = 9.5
-        self.k_gutter_anchor: float = 11.5
-        self.k_satellite_drift: float = 8.5
+        self.k_horizon_anchor: float = 2.0
+        self.k_gutter_anchor: float = 2.0
+        self.k_satellite_drift: float = 2.0
 
         self.box_bound_x: float = 0.0
         self.box_bound_y: float = 0.0
@@ -202,7 +202,7 @@ class PhysicsEngine:
 
         mask = (Dist_sq < MIN_SEP**2) & (Dist_sq > 1e-6)
         Dist = np.sqrt(np.where(mask, Dist_sq, 1.0))
-        Repulse = (MIN_SEP - Dist) * 8.5
+        Repulse = (MIN_SEP - Dist) * 2.2
         FX = np.where(mask, (DX / Dist) * Repulse, 0.0)
         FY = np.where(mask, (DY / Dist) * Repulse, 0.0)
 
@@ -325,6 +325,27 @@ class PhysicsEngine:
         bound_x, bound_y = (self.viewport_w / 2.0) * 0.78, (self.viewport_h / 2.0) * 0.65
         N = len(pos)
 
+        if has_active_focus:
+            focused_idx = id_to_idx.get(focused_node_id)
+            focal_cx = pos[focused_idx, 0] if focused_idx is not None else self.center_x
+            focal_cy = pos[focused_idx, 1] if focused_idx is not None else self.center_y
+
+            first_deg_list = sorted(
+                first_deg_indices,
+                key=lambda i: math.atan2(pos[i, 1] - focal_cy, pos[i, 0] - focal_cx)
+            )
+            n_first = len(first_deg_list)
+            first_deg_targets = {}
+            if n_first > 0:
+                angle_step = (2.0 * math.pi) / n_first
+                current_angles = [math.atan2(pos[i, 1] - focal_cy, pos[i, 0] - focal_cx) for i in first_deg_list]
+                base_angle = current_angles[0]
+                for rank, i in enumerate(first_deg_list):
+                    target_angle = base_angle + rank * angle_step
+                    tx = focal_cx + 520.0 * math.cos(target_angle)
+                    ty = focal_cy + 520.0 * math.sin(target_angle)
+                    first_deg_targets[i] = (tx, ty)
+
         for idx in range(N):
             nid = node_ids[idx]
             if nid in self.summoning_targets:
@@ -345,20 +366,32 @@ class PhysicsEngine:
             if has_active_focus:
                 if nid != focused_node_id:
                     if idx in first_deg_indices or nid in second_degree_parent:
-                        vp_cx = self.viewport_w / 2.0
-                        wb_w = self.focal_card_w
-                        wb_x = (self.viewport_w - wb_w) / 2.0
-                        target_x = (wb_x - 450.0) if pos[idx, 0] <= vp_cx else (wb_x + wb_w + 450.0)
-                        forces[idx, 0] += (target_x - pos[idx, 0]) * self.k_gutter_anchor
-
-                        if nid in second_degree_parent:
+                        if idx in first_deg_indices:
+                            tx, ty = first_deg_targets.get(
+                                idx,
+                                (
+                                    focal_cx + 520.0 * math.cos(math.atan2(pos[idx, 1] - focal_cy, pos[idx, 0] - focal_cx)),
+                                    focal_cy + 520.0 * math.sin(math.atan2(pos[idx, 1] - focal_cy, pos[idx, 0] - focal_cx)),
+                                )
+                            )
+                            forces[idx, 0] += (tx - pos[idx, 0]) * self.k_gutter_anchor
+                            forces[idx, 1] += (ty - pos[idx, 1]) * self.k_horizon_anchor
+                        elif nid in second_degree_parent:
                             p_nid = second_degree_parent[nid]
                             p_idx = id_to_idx.get(p_nid)
                             if p_idx is not None:
-                                target_sat_y = pos[p_idx, 1] + (((nid % 5) - 2) * 140.0)
+                                p_angle = math.atan2(pos[p_idx, 1] - focal_cy, pos[p_idx, 0] - focal_cx)
+                                sat_angle = p_angle + (((nid % 5) - 2) * 0.25)
+                                target_sat_x = focal_cx + 640.0 * math.cos(sat_angle)
+                                target_sat_y = focal_cy + 640.0 * math.sin(sat_angle)
+                                forces[idx, 0] += (target_sat_x - pos[idx, 0]) * self.k_gutter_anchor
                                 forces[idx, 1] += (target_sat_y - pos[idx, 1]) * self.k_satellite_drift
-                        else:
-                            forces[idx, 1] += (self.center_y - pos[idx, 1]) * self.k_horizon_anchor
+                            else:
+                                cur_angle = math.atan2(pos[idx, 1] - focal_cy, pos[idx, 0] - focal_cx)
+                                target_x = focal_cx + 640.0 * math.cos(cur_angle)
+                                target_y = focal_cy + 640.0 * math.sin(cur_angle)
+                                forces[idx, 0] += (target_x - pos[idx, 0]) * self.k_gutter_anchor
+                                forces[idx, 1] += (target_y - pos[idx, 1]) * self.k_horizon_anchor
                     else:
                         c_idx = comp_ids[idx]
                         if c_idx in comp_centroids:
@@ -390,8 +423,8 @@ class PhysicsEngine:
                 void_r = 380.0 if is_recent else 750.0
                 if dist_to_center < void_r:
                     ramp = ((void_r - dist_to_center) / void_r) ** 1.5
-                    forces[idx, 0] += (dx / dist_to_center) * ramp * 3200.0
-                    forces[idx, 1] += (dy / dist_to_center) * ramp * 3200.0
+                    forces[idx, 0] += (dx / dist_to_center) * ramp * 600.0
+                    forces[idx, 1] += (dy / dist_to_center) * ramp * 600.0
 
                 if is_recent and dist_to_center > 650.0:
                     desk_pull = (dist_to_center - 650.0) * 2.5
@@ -482,13 +515,13 @@ class PhysicsEngine:
 
             fx, fy = forces[idx, 0], forces[idx, 1]
             speed = math.hypot(vel[idx, 0], vel[idx, 1])
-            drag = (5.2 if has_active_focus else 4.0) + (0.045 * speed)
+            drag = (8.7 if has_active_focus else 7.5) + (0.045 * speed)
 
             vel[idx, 0] += ((fx - (drag * vel[idx, 0])) / 1.0) * dt
             vel[idx, 1] += ((fy - (drag * vel[idx, 1])) / 1.0) * dt
 
             cur_speed = math.hypot(vel[idx, 0], vel[idx, 1])
-            max_speed = 340.0 if has_active_focus else 180.0
+            max_speed = 140.0 if has_active_focus else 90.0
             if cur_speed > max_speed:
                 scale = max_speed / cur_speed
                 vel[idx, 0] *= scale
@@ -577,11 +610,7 @@ class PhysicsEngine:
 
         has_active_focus = (focused_node_id > 0) and (focused_node_id in id_to_idx)
 
-        wing_width = (self.viewport_w - self.focal_card_w) / 2.0
-        if has_active_focus:
-            self.center_x = (self.viewport_w - wing_width) / 2.0
-        else:
-            self.center_x = self.viewport_w / 2.0
+        self.center_x = self.viewport_w / 2.0
 
         first_degree_set = set(first_degree_set) if isinstance(first_degree_set, (set, list, tuple)) else set()
         second_degree_set = set(second_degree_set) if isinstance(second_degree_set, (set, list, tuple)) else set()
