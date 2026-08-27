@@ -274,3 +274,121 @@ def test_aperture_20_percent_tier_4_and_hover_elevation(qapp, qml_engine, mock_b
     assert central_node.property("isHovered") is False
     assert central_node.property("currentTier") == "TIER_4"
 
+
+
+def test_aperture_above_160_percent_high_zoom_floor(qapp, qml_engine, mock_bridge):
+    """
+    Verifies that when Aperture / scale > 160% (>1.6):
+    - Central focal nodes (distFromCenter <= 500 * scale) evaluate to TIER_2 (Inspection Slates).
+    - Outer nodes evaluate to TIER_3 (Micro-Labels floor, zero TIER_4 Star Beads).
+    - Hovering an outer TIER_3 node for 240ms steps up to TIER_2.
+    """
+    ctx = qml_engine.rootContext()
+    ctx.setContextProperty("bridge", mock_bridge)
+    ctx.setContextProperty("nodeController", mock_bridge.node_ctrl)
+    mock_bridge.canvas_ctrl.set_aperture(2.0)
+
+    node_comp = QQmlComponent(qml_engine, "aia_canvas/src/qml/Node.qml")
+    assert node_comp.status() == QQmlComponent.Status.Ready, f"Node.qml error: {node_comp.errors()}"
+
+    # 1. Central node (x: 1280.0, y: 720.0, distFromCenter == 0.0 <= 500 * 2.0 = 1000)
+    central_node = node_comp.create()
+    assert central_node is not None
+    central_node.setProperty("bridge", mock_bridge)
+    central_node.setProperty("ambientTier", "TIER_2")
+    central_node.setProperty("nodeModel", {"id": 401, "x": 1280.0, "y": 720.0, "tier": "TIER_3"})
+
+    # 2. Outer node (x: 2500.0, y: 720.0, distFromCenter == 1220.0 > 1000)
+    outer_node = node_comp.create()
+    assert outer_node is not None
+    outer_node.setProperty("bridge", mock_bridge)
+    outer_node.setProperty("ambientTier", "TIER_2")
+    outer_node.setProperty("nodeModel", {"id": 402, "x": 2500.0, "y": 720.0, "tier": "TIER_3"})
+
+    # Assertions
+    assert central_node.property("distFromCenter") == 0.0
+    assert central_node.property("currentTier") == "TIER_2"
+
+    assert outer_node.property("distFromCenter") > 500.0 * outer_node.property("canvasScale")
+    assert outer_node.property("currentTier") == "TIER_3"
+    assert outer_node.property("currentTier") != "TIER_4"
+
+    # Hovering outer node steps up to TIER_2 on 240ms dwell
+    mouse_area = outer_node.findChild(object, "nodeMouseArea")
+    assert mouse_area is not None
+
+    mouse_area.entered.emit()
+    start_time = time.time()
+    while not outer_node.property("isHovered") and (time.time() - start_time) < 1.0:
+        QCoreApplication.processEvents()
+        time.sleep(0.01)
+
+    assert outer_node.property("isHovered") is True
+    assert outer_node.property("currentTier") == "TIER_2"
+
+    mouse_area.exited.emit()
+    QCoreApplication.processEvents()
+    assert outer_node.property("isHovered") is False
+    assert outer_node.property("currentTier") == "TIER_3"
+
+
+def test_aperture_below_40_percent_low_zoom_ceiling(qapp, qml_engine, mock_bridge):
+    """
+    Verifies that when Aperture / scale <= 40% (<=0.4):
+    - Strict ceiling enforces TIER_4 (Star Beads) across all nodes (central and outer).
+    """
+    ctx = qml_engine.rootContext()
+    ctx.setContextProperty("bridge", mock_bridge)
+    ctx.setContextProperty("nodeController", mock_bridge.node_ctrl)
+    mock_bridge.canvas_ctrl.set_aperture(0.3)
+
+    node_comp = QQmlComponent(qml_engine, "aia_canvas/src/qml/Node.qml")
+    assert node_comp.status() == QQmlComponent.Status.Ready, f"Node.qml error: {node_comp.errors()}"
+
+    central_node = node_comp.create()
+    assert central_node is not None
+    central_node.setProperty("bridge", mock_bridge)
+    central_node.setProperty("ambientTier", "TIER_4")
+    central_node.setProperty("nodeModel", {"id": 501, "x": 1280.0, "y": 720.0, "tier": "TIER_3"})
+
+    outer_node = node_comp.create()
+    assert outer_node is not None
+    outer_node.setProperty("bridge", mock_bridge)
+    outer_node.setProperty("ambientTier", "TIER_4")
+    outer_node.setProperty("nodeModel", {"id": 502, "x": 2500.0, "y": 720.0, "tier": "TIER_3"})
+
+    assert central_node.property("currentTier") == "TIER_4"
+    assert outer_node.property("currentTier") == "TIER_4"
+
+
+def test_aperture_100_percent_standard_radial_lod(qapp, qml_engine, mock_bridge):
+    """
+    Verifies standard radial LOD at Aperture @ 100% (1.0):
+    - Central focal nodes evaluate to TIER_3.
+    - Outer nodes (distFromCenter > 850 * scale) dissolve to TIER_4 (Bokeh Embers).
+    """
+    ctx = qml_engine.rootContext()
+    ctx.setContextProperty("bridge", mock_bridge)
+    ctx.setContextProperty("nodeController", mock_bridge.node_ctrl)
+    mock_bridge.canvas_ctrl.set_aperture(1.0)
+
+    node_comp = QQmlComponent(qml_engine, "aia_canvas/src/qml/Node.qml")
+    assert node_comp.status() == QQmlComponent.Status.Ready, f"Node.qml error: {node_comp.errors()}"
+
+    central_node = node_comp.create()
+    assert central_node is not None
+    central_node.setProperty("bridge", mock_bridge)
+    central_node.setProperty("ambientTier", "TIER_3")
+    central_node.setProperty("nodeModel", {"id": 601, "x": 1280.0, "y": 720.0, "tier": "TIER_3"})
+
+    outer_node = node_comp.create()
+    assert outer_node is not None
+    outer_node.setProperty("bridge", mock_bridge)
+    outer_node.setProperty("ambientTier", "TIER_3")
+    outer_node.setProperty("nodeModel", {"id": 602, "x": 2500.0, "y": 720.0, "tier": "TIER_3"})
+
+    assert central_node.property("distFromCenter") == 0.0
+    assert central_node.property("currentTier") == "TIER_3"
+
+    assert outer_node.property("distFromCenter") > 850.0 * outer_node.property("canvasScale")
+    assert outer_node.property("currentTier") == "TIER_4"

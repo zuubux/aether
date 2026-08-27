@@ -19,8 +19,8 @@ Window {
 
     readonly property string ambientTier: {
         var ap = canvasBridge ? canvasBridge.aperture : 1.0;
-        if (ap < 0.45 || pixelBudgetPerNode < 15000) return "TIER_4";
-        if (ap >= 1.6 && pixelBudgetPerNode > 120000) return "TIER_2";
+        if (ap <= 0.4 || pixelBudgetPerNode < 15000) return "TIER_4";
+        if (ap > 1.6 || pixelBudgetPerNode > 120000) return "TIER_2";
         return "TIER_3";
     }
 

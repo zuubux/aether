@@ -117,23 +117,21 @@ Item {
         if (isDwelling) return "TIER_1_5";
 
         // Determine unhovered ambient tier based on Aperture ceiling & scale-aware thresholds
-        var unhoveredTier = "TIER_2";
-        if (ambientTier === "TIER_4") {
+        var unhoveredTier = "TIER_3";
+        if (canvasScale <= 0.4 || ambientTier === "TIER_4") {
             unhoveredTier = "TIER_4";
-        } else if (ambientTier === "TIER_3") {
-            if (distFromCenter > 850 * canvasScale) {
-                unhoveredTier = "TIER_4";
+        } else if (canvasScale > 1.6 || ambientTier === "TIER_2") {
+            if (distFromCenter <= 500 * canvasScale) {
+                unhoveredTier = "TIER_2";
             } else {
-                unhoveredTier = (baseTier === "TIER_4") ? "TIER_4" : "TIER_3";
+                unhoveredTier = "TIER_3";
             }
         } else {
-            // ambientTier === "TIER_2"
+            // Standard zoom (0.4 < canvasScale <= 1.6 or ambientTier === "TIER_3")
             if (distFromCenter > 850 * canvasScale) {
                 unhoveredTier = "TIER_4";
-            } else if (distFromCenter > 500 * canvasScale) {
-                unhoveredTier = (baseTier === "TIER_4") ? "TIER_4" : "TIER_3";
             } else {
-                unhoveredTier = baseTier;
+                unhoveredTier = (baseTier === "TIER_4") ? "TIER_4" : "TIER_3";
             }
         }
 
