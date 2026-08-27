@@ -61,7 +61,7 @@ def test_node_preview_top_alignment(qapp, qml_engine):
 
 def test_search_confirm_activates_node_preview(qapp, qml_engine, mock_bridge, canvas_qml_root):
     import time
-    n1 = {"id": 1, "filePath": "/docs/guide.md", "x": 100.0, "y": 100.0, "archetype": "document", "snippet": "User guide markdown"}
+    n1 = {"id": 1, "filePath": "/docs/guide.md", "x": 1280.0, "y": 720.0, "archetype": "document", "snippet": "User guide markdown"}
 
     node_comp = QQmlComponent(qml_engine, "aia_canvas/src/qml/Node.qml")
     assert node_comp.status() == QQmlComponent.Status.Ready, f"Node.qml error: {node_comp.errors()}"
@@ -82,7 +82,7 @@ def test_search_confirm_activates_node_preview(qapp, qml_engine, mock_bridge, ca
     assert node_item.property("effectiveTier") == "TIER_1_5"
     assert node_item.property("currentTier") == "TIER_1_5"
 
-    for _ in range(15):
+    for _ in range(25):
         time.sleep(0.02)
         qapp.processEvents()
 

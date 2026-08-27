@@ -706,7 +706,7 @@ def test_focused_node_retained_and_lit_in_conversational_mode(qapp, qml_engine, 
     # 2. Transition into AI mode (?)
     omni_bar.open()
     input_field.setProperty("text", "? Tell me about this node")
-    for _ in range(30):
+    for _ in range(50):
         time.sleep(0.01)
         qapp.processEvents()
 

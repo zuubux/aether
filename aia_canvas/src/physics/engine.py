@@ -323,6 +323,7 @@ class PhysicsEngine:
             if strength > 0.01
         }
         bound_x, bound_y = (self.viewport_w / 2.0) * 0.78, (self.viewport_h / 2.0) * 0.65
+        bottom_threshold = self.viewport_h - 140.0
         N = len(pos)
 
         if has_active_focus:
@@ -447,6 +448,11 @@ class PhysicsEngine:
                         k_pull = 1.25 if dist_c < exp_r * 0.8 else min(12.0, 1.25 + ((dist_c - exp_r * 0.8) * 0.25))
                         forces[idx, 0] += dx_c * k_pull
                         forces[idx, 1] += dy_c * k_pull
+
+            if pos[idx, 1] > bottom_threshold:
+                if nid != self.pinned_node_id and not (has_active_focus and nid == focused_node_id):
+                    depth = pos[idx, 1] - bottom_threshold
+                    forces[idx, 1] -= depth * 6.5 + (depth ** 1.3) * 0.8
 
     def _integrate_velocities(
         self,

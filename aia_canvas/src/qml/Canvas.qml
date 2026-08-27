@@ -163,9 +163,7 @@ Window {
         z: 100
 
         // Background Horizon Plane & Iso-lines
-        HorizonGrid {
-            z: -1
-        }
+        // (Linear horizon graphics purged)
 
         // Void Click & Aperture Scroll Controller
         MouseArea {

@@ -127,3 +127,42 @@ def test_velocity_integration_drag_and_max_speed():
     # Initial vel=300 should be capped to ambient max_speed = 90.0
     speed = math.hypot(vel[0, 0], vel[0, 1])
     assert speed <= 90.0
+
+
+def test_acoustic_bottom_hud_exclusion_margin():
+    """Verify nodes initialized in the bottom margin receive upward force and migrate out of exclusion zone."""
+    engine = PhysicsEngine()
+    bottom_threshold = engine.viewport_h - 140.0
+    initial_y = engine.viewport_h - 60.0  # inside exclusion zone (depth = 80px)
+
+    pos = np.array([[engine.center_x, initial_y]], dtype=np.float64)
+    node_ids = np.array([1], dtype=np.int64)
+    id_to_idx = {1: 0}
+    forces = np.zeros((1, 2), dtype=np.float64)
+    comp_ids = np.array([-1], dtype=np.int32)
+
+    engine._apply_docking_constraints(
+        pos=pos,
+        node_ids=node_ids,
+        id_to_idx=id_to_idx,
+        forces=forces,
+        comp_ids=comp_ids,
+        comp_centroids={},
+        has_active_focus=False,
+        focused_node_id=0,
+        first_deg_indices=set(),
+        second_degree_parent={},
+        geom_scale=1.0,
+    )
+
+    # Significant upward restoring force (negative fy)
+    assert forces[0, 1] < -500.0
+
+    # Test migration over multiple simulation steps
+    node = Node(id=1, file_path="/test/bottom_hud.md", x=engine.center_x, y=initial_y)
+    nodes = [node]
+
+    for _ in range(200):
+        engine.step(nodes=nodes, edges=[], focused_node_id=0)
+
+    assert node.y < bottom_threshold

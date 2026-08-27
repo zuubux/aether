@@ -47,6 +47,7 @@ def test_node_drag_settle_tier_escalation_and_z_index(qapp, qml_engine):
     assert node_item is not None
 
     # Initial ambient tier 4, unfocused node z = 15
+    node_item.setProperty("nodeModel", {"id": 1, "x": 1280.0, "y": 720.0})
     node_item.setProperty("ambientTier", "TIER_4")
     assert node_item.property("effectiveTier") == "TIER_4"
     assert node_item.property("z") == 15

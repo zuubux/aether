@@ -40,11 +40,28 @@ Item {
     width: targetWidth
     height: targetHeight
     property real radius: targetRadius
-    clip: true
+    clip: root.tierState !== "TIER_4"
 
-    Behavior on width { NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing } }
-    Behavior on height { NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing } }
-    Behavior on radius { NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing } }
+    readonly property bool isCollapsing: targetWidth < width || targetHeight < height
+
+    Behavior on width {
+        NumberAnimation {
+            duration: root.isCollapsing ? (typeof Theme !== "undefined" && Theme.animCollapseDuration ? Theme.animCollapseDuration : 280) : (typeof Theme !== "undefined" && Theme.animDuration ? Theme.animDuration : 400)
+            easing.type: root.isCollapsing ? (typeof Theme !== "undefined" && Theme.animCollapseEasing ? Theme.animCollapseEasing : Easing.InOutQuad) : (typeof Theme !== "undefined" && Theme.animEasing ? Theme.animEasing : Easing.OutCubic)
+        }
+    }
+    Behavior on height {
+        NumberAnimation {
+            duration: root.isCollapsing ? (typeof Theme !== "undefined" && Theme.animCollapseDuration ? Theme.animCollapseDuration : 280) : (typeof Theme !== "undefined" && Theme.animDuration ? Theme.animDuration : 400)
+            easing.type: root.isCollapsing ? (typeof Theme !== "undefined" && Theme.animCollapseEasing ? Theme.animCollapseEasing : Easing.InOutQuad) : (typeof Theme !== "undefined" && Theme.animEasing ? Theme.animEasing : Easing.OutCubic)
+        }
+    }
+    Behavior on radius {
+        NumberAnimation {
+            duration: root.isCollapsing ? (typeof Theme !== "undefined" && Theme.animCollapseDuration ? Theme.animCollapseDuration : 280) : (typeof Theme !== "undefined" && Theme.animDuration ? Theme.animDuration : 400)
+            easing.type: root.isCollapsing ? (typeof Theme !== "undefined" && Theme.animCollapseEasing ? Theme.animCollapseEasing : Easing.InOutQuad) : (typeof Theme !== "undefined" && Theme.animEasing ? Theme.animEasing : Easing.OutCubic)
+        }
+    }
 
     readonly property point leftDock: Qt.point(parent ? parent.x : x, (parent ? parent.y : y) + height / 2)
     readonly property point rightDock: Qt.point((parent ? parent.x : x) + width, (parent ? parent.y : y) + height / 2)
@@ -71,9 +88,9 @@ Item {
         id: backgroundRect
         anchors.fill: parent
         z: 0
-        color: Theme.surfaceBackground
+        color: root.tierState === "TIER_4" ? "transparent" : Theme.surfaceBackground
         border.color: (root.isSelected || root.isDragging || root.isSettling) ? Theme.accentCyan : (root.isHovered ? Theme.borderHover : Theme.surfaceBorder)
-        border.width: (root.isSelected || root.isDragging || root.isSettling) ? 2 : 1
+        border.width: root.tierState === "TIER_4" ? 0 : ((root.isSelected || root.isDragging || root.isSettling) ? 2 : 1)
         radius: parent.radius
 
         Behavior on border.color {

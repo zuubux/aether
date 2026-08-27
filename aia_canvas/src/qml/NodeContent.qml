@@ -47,15 +47,66 @@ Item {
     property alias nodePreviewLoader: nodePreviewLoader
     property alias focalSlateLoader: focalSlateLoader
 
-    // Star Bead Core Dot
-    Rectangle {
-        visible: root.isBeadMode
+    // TIER 4: Bioluminescent Star Bead / Ember (Multi-Layer Concentric Radial Bokeh Glow)
+    Item {
+        visible: opacity > 0.001
+        opacity: root.isBeadMode ? 1.0 : 0.0
         anchors.centerIn: parent
-        width: 6
-        height: 6
-        radius: 3
-        color: "#ffffff"
-        opacity: 0.85
+        width: 10
+        height: 10
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: root.isBeadMode ? (typeof Theme !== "undefined" && Theme.animDuration ? Theme.animDuration : 400) : (typeof Theme !== "undefined" && Theme.animCollapseDuration ? Theme.animCollapseDuration : 280)
+                easing.type: root.isBeadMode ? (typeof Theme !== "undefined" && Theme.animEasing ? Theme.animEasing : Easing.OutCubic) : (typeof Theme !== "undefined" && Theme.animCollapseEasing ? Theme.animCollapseEasing : Easing.InOutQuad)
+            }
+        }
+
+        readonly property color emberColor: Theme.getBadgeColor(root.nodeData ? root.nodeData.extension : "", root.nodeData ? root.nodeData.archetype : "")
+
+        // Outer soft halo / glow layer (10px diameter with soft edge falloff)
+        Rectangle {
+            anchors.centerIn: parent
+            width: 10
+            height: 10
+            radius: 5
+            color: parent.emberColor
+            opacity: 0.15
+            antialiasing: true
+        }
+
+        // Mid soft halo layer (8px diameter)
+        Rectangle {
+            anchors.centerIn: parent
+            width: 8
+            height: 8
+            radius: 4
+            color: parent.emberColor
+            opacity: 0.30
+            antialiasing: true
+        }
+
+        // Inner halo layer (5px diameter)
+        Rectangle {
+            anchors.centerIn: parent
+            width: 5
+            height: 5
+            radius: 2.5
+            color: parent.emberColor
+            opacity: 0.55
+            antialiasing: true
+        }
+
+        // Inner bright core (3px diameter, archetype color)
+        Rectangle {
+            anchors.centerIn: parent
+            width: 3
+            height: 3
+            radius: 1.5
+            color: parent.emberColor
+            opacity: 1.0
+            antialiasing: true
+        }
     }
 
     // =====================================================================
@@ -72,8 +123,15 @@ Item {
         cardRadius: root.cardRadius
         isHovered: root.isHovered
         isSearchResult: root.isSearchResult
-        visible: root.isCapsuleMode
+        visible: opacity > 0.001
         opacity: (root.isCapsuleMode ? 1.0 : 0.0) * root.searchRowOpacity
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: root.isCapsuleMode ? (typeof Theme !== "undefined" && Theme.animDuration ? Theme.animDuration : 400) : (typeof Theme !== "undefined" && Theme.animCollapseDuration ? Theme.animCollapseDuration : 280)
+                easing.type: root.isCapsuleMode ? (typeof Theme !== "undefined" && Theme.animEasing ? Theme.animEasing : Easing.OutCubic) : (typeof Theme !== "undefined" && Theme.animCollapseEasing ? Theme.animCollapseEasing : Easing.InOutQuad)
+            }
+        }
     }
 
     // =====================================================================
@@ -82,8 +140,15 @@ Item {
     Item {
         id: tokenView
         anchors.fill: parent
-        visible: root.isSlateMode
+        visible: opacity > 0.001
         opacity: (root.isSlateMode ? 1.0 : 0.0) * root.searchRowOpacity
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: root.isSlateMode ? (typeof Theme !== "undefined" && Theme.animDuration ? Theme.animDuration : 400) : (typeof Theme !== "undefined" && Theme.animCollapseDuration ? Theme.animCollapseDuration : 280)
+                easing.type: root.isSlateMode ? (typeof Theme !== "undefined" && Theme.animEasing ? Theme.animEasing : Easing.OutCubic) : (typeof Theme !== "undefined" && Theme.animCollapseEasing ? Theme.animCollapseEasing : Easing.InOutQuad)
+            }
+        }
 
         Rectangle {
             id: iconBadge
@@ -127,11 +192,18 @@ Item {
         id: nodePreviewLoader
         anchors.fill: parent
         z: 2
-        active: root.isPreviewMode
+        active: root.isPreviewMode || opacity > 0.001
         asynchronous: true
-        visible: root.isPreviewMode
-        opacity: root.isPreviewMode ? 1.0 : 0.0
+        visible: opacity > 0.001
+        opacity: (root.isPreviewMode ? 1.0 : 0.0) * root.searchRowOpacity
         source: Qt.resolvedUrl("node/NodePreview.qml")
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration: root.isPreviewMode ? (typeof Theme !== "undefined" && Theme.animDuration ? Theme.animDuration : 400) : (typeof Theme !== "undefined" && Theme.animCollapseDuration ? Theme.animCollapseDuration : 280)
+                easing.type: root.isPreviewMode ? (typeof Theme !== "undefined" && Theme.animEasing ? Theme.animEasing : Easing.OutCubic) : (typeof Theme !== "undefined" && Theme.animCollapseEasing ? Theme.animCollapseEasing : Easing.InOutQuad)
+            }
+        }
 
         onStatusChanged: {
             if (status === Loader.Error) {

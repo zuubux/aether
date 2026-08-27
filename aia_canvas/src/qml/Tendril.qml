@@ -326,6 +326,11 @@ Item {
         return Math.max(0.0, (currentAperture - 0.20) / 0.15)
     }
 
+    readonly property real distanceFalloff: {
+        if (spanDist <= 800.0) return 1.0;
+        return Math.max(0.0, 1.0 - (spanDist - 800.0) / 400.0);
+    }
+
     readonly property bool isNodesReady: isNodeValid(sourceNode) && isNodeValid(targetNode)
 
     readonly property bool hasValidDocks: {
@@ -336,7 +341,7 @@ Item {
         return true;
     }
 
-    opacity: targetOpacity * macroOpacityFade
+    opacity: targetOpacity * macroOpacityFade * distanceFalloff
     visible: isNodesReady && opacity > 0.005 && hasValidDocks
 
     Behavior on opacity {

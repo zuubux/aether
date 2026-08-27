@@ -79,9 +79,9 @@ QtObject {
     readonly property real tendrilStrokeSibling: 1.0
 
     // Tier Dimensions
-    readonly property real tier4Width: 12
-    readonly property real tier4Height: 12
-    readonly property real tier4Radius: 6
+    readonly property real tier4Width: 10
+    readonly property real tier4Height: 10
+    readonly property real tier4Radius: 5
 
     readonly property real tier3Width: 124
     readonly property real tier3Height: 22
@@ -96,15 +96,15 @@ QtObject {
     readonly property real tier1_5Radius: 12
 
     // Timers
-    readonly property int dwellIntentMs: 300
+    readonly property int dwellHoverMs: 240
+    readonly property int dwellIntentMs: 1100
     readonly property int dwellRichMs: 2000
 
     // Animations
-    readonly property int animDuration: 220
-    // We cannot use Easing.OutQuint directly in QtObject as a value type if we aren't careful, 
-    // but we can just use an int for duration. The easing is an enum, so we can expose it as an int, 
-    // Easing.OutQuint is an enum value.
-    readonly property int animEasing: Easing.OutQuint
+    readonly property int animDuration: 400
+    readonly property int animEasing: Easing.OutCubic
+    readonly property int animCollapseDuration: 280
+    readonly property int animCollapseEasing: Easing.InOutQuad
 
     // Semantic Badge Colors for file archetypes
     readonly property color badgePdf: "#EF4444"      // Crimson

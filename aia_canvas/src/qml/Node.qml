@@ -14,12 +14,22 @@ Item {
     property var omniBar: typeof canvasRoot !== "undefined" && canvasRoot && canvasRoot.omniBar ? canvasRoot.omniBar : (typeof omniBar !== "undefined" ? omniBar : null)
     readonly property int nodeId: nodeModel && nodeModel.id !== undefined ? nodeModel.id : 0
     property string ambientTier: "TIER_3"
+    readonly property string globalTier: ambientTier
+    readonly property real canvasScale: (viewportContainer && viewportContainer.scale !== undefined && viewportContainer.scale > 0) ? viewportContainer.scale : (bridge && bridge.aperture !== undefined && bridge.aperture > 0 ? bridge.aperture : 1.0)
 
     readonly property var nodeCtrl: typeof nodeController !== "undefined" && nodeController ? nodeController : (rootItem.bridge ? rootItem.bridge.node : null)
 
     // Coordinate Tracking
-    property real projectedX: nodeModel && nodeModel.x !== undefined ? nodeModel.x : 0
-    property real projectedY: nodeModel && nodeModel.y !== undefined ? nodeModel.y : 0
+    readonly property real nodeX: nodeModel && nodeModel.x !== undefined ? nodeModel.x : 0
+    readonly property real nodeY: nodeModel && nodeModel.y !== undefined ? nodeModel.y : 0
+    property real projectedX: nodeX
+    property real projectedY: nodeY
+
+    readonly property real distFromCenter: {
+        var canvasW = viewportContainer ? viewportContainer.width : (parent ? parent.width : 2560);
+        var canvasH = viewportContainer ? viewportContainer.height : (parent ? parent.height : 1440);
+        return Math.hypot(nodeX - (canvasW * 0.5), nodeY - (canvasH * 0.5));
+    }
 
     width: shell.width
     height: shell.height
@@ -64,17 +74,19 @@ Item {
     }
 
     // State Properties
-    property bool isIntentHovered: false
     property bool isDwelling: false
     property bool isDragging: nodeMouseArea.drag.active
     property bool isSettling: settleTimer.running
     property string baseTier: (nodeModel && nodeModel.tier !== undefined) ? nodeModel.tier : ambientTier
     property real currentLuminosity: 0.2
     readonly property bool isFocusedTarget: bridge ? ((nodeId === bridge.focusedNodeId || nodeId === bridge.selectedNodeId || String(nodeId) === String(bridge.focusedNodeId) || String(nodeId) === String(bridge.selectedNodeId)) && nodeId > 0) : false
+    readonly property bool isPinned: Boolean((typeof model !== "undefined" && model && (model.isPinned || model.pinned)) || (nodeModel && (nodeModel.isPinned || nodeModel.pinned)))
     property bool isSelected: isFocusedTarget
     property bool isHovered: false
     property bool isSearchActive: false
     property bool isSearchMatchOrConnected: false
+
+    readonly property real emberOpacity: Math.max(0.20, 0.85 - (distFromCenter / 1800.0) * 0.65)
 
     opacity: {
         if (omniBar && omniBar.isConversationalMode) {
@@ -83,19 +95,54 @@ Item {
         if (isSearchActive) {
             return (isSearchMatchOrConnected || isFocusedTarget) ? 1.0 : 0.12;
         }
+        if (effectiveTier === "TIER_4" && !isHovered && !isSelected && !isFocusedTarget && !isPinned) {
+            return emberOpacity;
+        }
         return 1.0;
     }
-    Behavior on opacity { NumberAnimation { duration: typeof Theme !== "undefined" ? Theme.animDuration : 220; easing.type: typeof Theme !== "undefined" ? Theme.animEasing : Easing.OutQuint } }
+    readonly property bool isCollapsing: shell ? shell.isCollapsing : (!isHovered && !isSelected && !isDwelling)
+    Behavior on opacity {
+        NumberAnimation {
+            duration: rootItem.isCollapsing ? (typeof Theme !== "undefined" && Theme.animCollapseDuration ? Theme.animCollapseDuration : 280) : (typeof Theme !== "undefined" && Theme.animDuration ? Theme.animDuration : 400)
+            easing.type: rootItem.isCollapsing ? (typeof Theme !== "undefined" && Theme.animCollapseEasing ? Theme.animCollapseEasing : Easing.InOutQuad) : (typeof Theme !== "undefined" && Theme.animEasing ? Theme.animEasing : Easing.OutCubic)
+        }
+    }
 
     readonly property string effectiveTier: {
         if (isDragging || isSettling) {
-            if (ambientTier === "TIER_4") return "TIER_3";
+            if (baseTier === "TIER_4" || ambientTier === "TIER_4") return "TIER_3";
             return "TIER_2"; // Tier 3 and Tier 2 clamp to Tier 2 during transit & settle
         }
         if (isSelected) return "TIER_1_5";
         if (isDwelling) return "TIER_1_5";
-        if (isIntentHovered) return "TIER_2";
-        return ambientTier;
+
+        // Determine unhovered ambient tier based on Aperture ceiling & scale-aware thresholds
+        var unhoveredTier = "TIER_2";
+        if (ambientTier === "TIER_4") {
+            unhoveredTier = "TIER_4";
+        } else if (ambientTier === "TIER_3") {
+            if (distFromCenter > 850 * canvasScale) {
+                unhoveredTier = "TIER_4";
+            } else {
+                unhoveredTier = (baseTier === "TIER_4") ? "TIER_4" : "TIER_3";
+            }
+        } else {
+            // ambientTier === "TIER_2"
+            if (distFromCenter > 850 * canvasScale) {
+                unhoveredTier = "TIER_4";
+            } else if (distFromCenter > 500 * canvasScale) {
+                unhoveredTier = (baseTier === "TIER_4") ? "TIER_4" : "TIER_3";
+            } else {
+                unhoveredTier = baseTier;
+            }
+        }
+
+        if (isHovered) {
+            if (unhoveredTier === "TIER_4") return "TIER_3";
+            return "TIER_2";
+        }
+
+        return unhoveredTier;
     }
 
     readonly property string currentTier: effectiveTier
@@ -106,17 +153,17 @@ Item {
     // Timers
     Timer {
         id: intentTimer
-        interval: typeof Theme !== "undefined" ? Theme.dwellIntentMs : 300
+        interval: typeof Theme !== "undefined" && Theme.dwellIntentMs !== undefined ? Theme.dwellIntentMs : 1100
         repeat: false
         onTriggered: {
-            rootItem.isIntentHovered = true
+            rootItem.isDwelling = true
             rootItem.currentLuminosity = 0.6
         }
     }
 
     Timer {
         id: hoverDwellTimer
-        interval: 140
+        interval: typeof Theme !== "undefined" && Theme.dwellHoverMs !== undefined ? Theme.dwellHoverMs : 240
         repeat: false
         onTriggered: {
             rootItem.isHovered = true
@@ -128,6 +175,7 @@ Item {
                 rootItem.bridge.node.pin_node(targetId, true)
                 rootItem.bridge.node.set_hovered_node(rootItem.nodeId)
             }
+            intentTimer.restart()
         }
     }
 
@@ -198,7 +246,6 @@ Item {
 
         onEntered: {
             if (!rootItem.isSelected && !nodeMouseArea.drag.active && !settleTimer.running && !nodeMouseArea.pressed) {
-                intentTimer.restart()
                 hoverDwellTimer.restart()
             }
         }
@@ -206,7 +253,6 @@ Item {
         onExited: {
             intentTimer.stop()
             hoverDwellTimer.stop()
-            rootItem.isIntentHovered = false
             rootItem.isDwelling = false
             rootItem.currentLuminosity = 0.2
             if (rootItem.isHovered) {
