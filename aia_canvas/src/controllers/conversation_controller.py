@@ -115,8 +115,15 @@ class ConversationController(BaseController):
                 accumulated = []
                 self.setEngineState("STREAMING")
                 is_error = False
+                t0_ns = time.perf_counter_ns()
+                first_token = True
                 try:
                     async for chunk in self.engine.stream_prompt(prompt, context=context):
+                        if first_token:
+                            first_token = False
+                            ttft_ms = (time.perf_counter_ns() - t0_ns) / 1e6
+                            from core.telemetry import TelemetrySink
+                            TelemetrySink.instance().record_llm_ttft(ttft_ms)
                         if "[Gemini Advisory]" in chunk or ("error" in chunk.lower() and ("missing" in chunk.lower() or "failure" in chunk.lower() or "http" in chunk.lower())):
                             is_error = True
                             self.setEngineState("ERROR")

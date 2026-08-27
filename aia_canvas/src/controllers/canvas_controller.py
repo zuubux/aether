@@ -1,11 +1,12 @@
 """
 Canvas Controller Implementation
-Manages viewport dimensions, central workbench geometry, wing widths, and zoom aperture state.
+Manages viewport dimensions, central workbench geometry, wing widths, zoom aperture state, and telemetry metrics.
 """
 
 from typing import Optional
 from PyQt6.QtCore import pyqtProperty, pyqtSignal, pyqtSlot
 
+from core.telemetry import TelemetrySink
 from .base_controller import BaseController
 
 
@@ -14,6 +15,7 @@ class CanvasController(BaseController):
 
     workbenchDimensionsChanged = pyqtSignal()
     apertureChanged = pyqtSignal(float)
+    telemetryChanged = pyqtSignal()
 
     def __init__(self, bridge, parent: Optional[object] = None):
         """Initialize CanvasController with parent bridge reference.
@@ -26,6 +28,26 @@ class CanvasController(BaseController):
         self._aperture: float = 1.0
         self._workbench_width: float = 1600.0
         self._workbench_height: float = 1000.0
+
+    @pyqtProperty(float, notify=telemetryChanged)
+    def physicsStepMs(self) -> float:
+        return TelemetrySink.instance().physics_step_ms
+
+    @pyqtProperty(float, notify=telemetryChanged)
+    def renderFps(self) -> float:
+        return TelemetrySink.instance().render_fps
+
+    @pyqtProperty(float, notify=telemetryChanged)
+    def ipcRttMs(self) -> float:
+        return TelemetrySink.instance().ipc_rtt_ms
+
+    @pyqtProperty(float, notify=telemetryChanged)
+    def dbQueryMs(self) -> float:
+        return TelemetrySink.instance().db_query_ms
+
+    @pyqtProperty(float, notify=telemetryChanged)
+    def llmTtftMs(self) -> float:
+        return TelemetrySink.instance().llm_ttft_ms
 
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def workbenchWidth(self) -> float:

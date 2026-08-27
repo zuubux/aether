@@ -55,7 +55,12 @@ class SearchController(BaseController):
             typing_cadence_ms=cadence_ms,
         )
 
+        import time
+        from core.telemetry import TelemetrySink
+        t0 = time.perf_counter_ns()
         results = self.router.dispatch(query, ctx)
+        t1 = time.perf_counter_ns()
+        TelemetrySink.instance().record_db_query((t1 - t0) / 1e6)
 
         # Convert OmniResult objects to QML-friendly dicts
         qml_results = []

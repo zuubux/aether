@@ -57,6 +57,10 @@ def mock_bridge(qapp, monkeypatch):
     yield bridge
     if hasattr(bridge, "_physics_timer") and bridge._physics_timer:
         bridge._physics_timer.stop()
+    if hasattr(bridge, "physics_ctrl") and bridge.physics_ctrl:
+        bridge.physics_ctrl.stop()
+    if hasattr(bridge, "_telemetry_timer") and bridge._telemetry_timer:
+        bridge._telemetry_timer.stop()
     if hasattr(bridge, "conversation_ctrl") and bridge.conversation_ctrl:
         bridge.conversation_ctrl.stop()
     if hasattr(bridge, "weaver_client") and bridge.weaver_client:

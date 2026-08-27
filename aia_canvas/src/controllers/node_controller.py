@@ -52,16 +52,11 @@ class NodeController(BaseController):
         selected_id = getattr(self.bridge, "_selected_node_id", 0)
         if selected_id != node_id:
             self.bridge._selected_node_id = node_id
-            
-            if node_id > 0:
-                if hasattr(self.bridge, "physics") and self.bridge.physics:
-                    if node_id in self.bridge.physics_engine.recent_node_ids:
-                        self.bridge.physics_engine.recent_node_ids.remove(node_id)
-                    self.bridge.physics_engine.recent_node_ids.insert(0, node_id)
-                    self.bridge.physics_engine.recent_node_ids = self.bridge.physics_engine.recent_node_ids[:8]
 
             if not getattr(self.bridge, "_search_active", False) and hasattr(self.bridge, "_recalculate_focal_weights"):
                 self.bridge._recalculate_focal_weights(node_id)
+            if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
+                self.bridge.physics_ctrl.set_active_focus(node_id, node_id > 0)
             self.selectedNodeChanged.emit(node_id)
 
         if node_id == 0:
@@ -424,8 +419,9 @@ class NodeController(BaseController):
     def pin_node(self, node_id: int, x: float, y: float):
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
-        if hasattr(self.bridge, "physics") and self.bridge.physics:
-            self.bridge.physics_engine.pin_node(node_id)
+        if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
+            self.bridge.physics_ctrl.set_node_pinned(node_id, True)
+            self.bridge.physics_ctrl.apply_node_drag(node_id, x, y)
         if hasattr(self.bridge, "store") and self.bridge.store:
             node = self.bridge.store.get_node(node_id)
             if node:
@@ -436,6 +432,8 @@ class NodeController(BaseController):
     def update_drag_pos(self, node_id: int, x: float, y: float):
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
+        if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
+            self.bridge.physics_ctrl.apply_node_drag(node_id, x, y)
         if hasattr(self.bridge, "store") and self.bridge.store:
             node = self.bridge.store.get_node(node_id)
             if node:
@@ -450,13 +448,13 @@ class NodeController(BaseController):
     def release_node(self, node_id: int):
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
-        if hasattr(self.bridge, "physics") and self.bridge.physics:
-            self.bridge.physics_engine.unpin_node()
+        if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
+            self.bridge.physics_ctrl.set_node_pinned(node_id, False)
 
     @pyqtSlot(int, float, float)
     def set_custom_anchor(self, node_id: int, x: float, y: float):
-        if hasattr(self.bridge, "physics") and self.bridge.physics:
-            self.bridge.physics_engine.set_custom_anchor(node_id, x, y)
+        if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
+            self.bridge.physics_ctrl.apply_node_drag(node_id, x, y)
 
     @pyqtSlot(str, result=bool)
     def copy_csv_data(self, file_path: str) -> bool:

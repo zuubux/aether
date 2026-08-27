@@ -131,8 +131,10 @@ class WeaverIPCClient(QObject):
         if sent_time is not None:
             import time
             from telemetry.metrics import TelemetryCollector
+            from core.telemetry import TelemetrySink
             latency = (time.perf_counter() - sent_time) * 1000.0
             TelemetryCollector().record_ipc(latency)
+            TelemetrySink.instance().record_ipc_rtt(latency)
             
         if callback:
             callback(result, error if error else None)

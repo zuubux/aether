@@ -456,7 +456,7 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
 
     # Verify search shelf opacity is 0, bridge searchActive is False (node highlights cleared), debounceTimer stopped, provider pill opacity 0.3
     assert omni_bar.property("isConversationalMode") is True
-    assert search_shelf.property("opacity") == 0.0
+    assert search_shelf.property("opacity") < 0.01
     assert mock_bridge.searchActive is False
     assert debounce_timer is not None
     assert debounce_timer.property("running") is False

@@ -5,6 +5,7 @@ Handles multi-cluster galaxy dispersion, fluid splines, and wing companion slott
 
 import logging
 import math
+import numpy as np
 
 from models import Edge, Node
 
@@ -146,149 +147,173 @@ class PhysicsEngine:
 
     def _apply_coulomb_repulsion(
         self,
-        nodes: list[Node],
-        forces: dict[int, list[float]],
-        node_comp_map: dict[int, int],
+        pos: np.ndarray,
+        node_ids: np.ndarray,
+        comp_ids: np.ndarray,
+        forces: np.ndarray,
         has_active_focus: bool,
         focused_node_id: int,
-        first_degree_set: set[int],
-        second_degree_set: set[int],
+        first_deg_indices: set[int],
+        second_deg_indices: set[int],
         geom_scale: float,
     ) -> None:
-        num_nodes = len(nodes)
-        for i in range(num_nodes):
-            n1 = nodes[i]
-            for j in range(i + 1, num_nodes):
-                n2 = nodes[j]
-                dx = n2.x - n1.x
-                dy = n2.y - n1.y
-                dist_sq = dx * dx + dy * dy
-                dist = math.sqrt(dist_sq) or 1.0
+        N = len(pos)
+        if N <= 1:
+            return
 
-                same_cluster = (node_comp_map.get(n1.id) == node_comp_map.get(n2.id)) and (node_comp_map.get(n1.id) is not None)
+        DX = pos[:, 0] - pos[:, 0][:, None]
+        DY = pos[:, 1] - pos[:, 1][:, None]
+        Dist_sq = DX * DX + DY * DY
 
-                n1_focal = has_active_focus and (n1.id == focused_node_id or n1.id in first_degree_set or n1.id in second_degree_set)
-                n2_focal = has_active_focus and (n2.id == focused_node_id or n2.id in first_degree_set or n2.id in second_degree_set)
+        ID1 = node_ids[:, None]
+        ID2 = node_ids[None, :]
+        Jitter = ((ID1 + ID2) % 17) - 8.0
+        Same_Cluster = (comp_ids[:, None] == comp_ids[None, :]) & (comp_ids[:, None] >= 0)
 
-                if has_active_focus:
-                    if n1_focal != n2_focal:
-                        min_sep = 0.0
-                    elif n1.id == focused_node_id or n2.id == focused_node_id:
-                        min_sep = 0.0
-                    elif n1_focal and n2_focal:
-                        min_sep = 120.0
-                    else:
-                        organic_jitter = ((n1.id + n2.id) % 17) - 8.0
-                        min_sep = 42.0 + organic_jitter if same_cluster else 220.0
-                else:
-                    organic_jitter = ((n1.id + n2.id) % 17) - 8.0
-                    friend_base = 48.0 + max(0.0, (self.aperture - 0.50) * 150.0)
-                    friend_sep = friend_base + organic_jitter
-                    stranger_sep = 340.0 * geom_scale
-                    min_sep = friend_sep if same_cluster else stranger_sep
+        if has_active_focus:
+            focused_idx = np.where(node_ids == focused_node_id)[0]
+            focused_idx_val = focused_idx[0] if len(focused_idx) > 0 else -1
+            focal_flags = np.array(
+                [idx == focused_idx_val or idx in first_deg_indices or idx in second_deg_indices for idx in range(N)]
+            )
+            n1_focal = focal_flags[:, None]
+            n2_focal = focal_flags[None, :]
+            is_focused = (node_ids == focused_node_id)
+            touch_focused = is_focused[:, None] | is_focused[None, :]
 
-                if dist < min_sep:
-                    repulse = (min_sep - dist) * 8.5
-                    fx = (dx / dist) * repulse
-                    fy = (dy / dist) * repulse
-                    forces[n1.id][0] -= fx
-                    forces[n1.id][1] -= fy
-                    forces[n2.id][0] += fx
-                    forces[n2.id][1] += fy
+            MIN_SEP = np.where(
+                n1_focal != n2_focal,
+                0.0,
+                np.where(
+                    touch_focused,
+                    0.0,
+                    np.where(
+                        n1_focal & n2_focal,
+                        120.0,
+                        np.where(Same_Cluster, 42.0 + Jitter, 220.0),
+                    ),
+                ),
+            )
+        else:
+            friend_base = 48.0 + max(0.0, (self.aperture - 0.50) * 150.0)
+            friend_sep = friend_base + Jitter
+            stranger_sep = 340.0 * geom_scale
+            MIN_SEP = np.where(Same_Cluster, friend_sep, stranger_sep)
+
+        mask = (Dist_sq < MIN_SEP**2) & (Dist_sq > 1e-6)
+        Dist = np.sqrt(np.where(mask, Dist_sq, 1.0))
+        Repulse = (MIN_SEP - Dist) * 8.5
+        FX = np.where(mask, (DX / Dist) * Repulse, 0.0)
+        FY = np.where(mask, (DY / Dist) * Repulse, 0.0)
+
+        forces[:, 0] -= np.sum(FX, axis=1)
+        forces[:, 1] -= np.sum(FY, axis=1)
 
     def _apply_hooke_springs(
         self,
         edges: list[Edge],
-        node_map: dict[int, Node],
-        forces: dict[int, list[float]],
+        pos: np.ndarray,
+        node_ids: np.ndarray,
+        id_to_idx: dict[int, int],
+        forces: np.ndarray,
         geom_scale: float,
         has_active_focus: bool,
         focused_node_id: int,
-        first_degree_set: set[int],
-        second_degree_set: set[int],
+        first_deg_indices: set[int],
+        second_deg_indices: set[int],
     ) -> None:
-        for e in edges:
-            n1 = node_map.get(e.sourceId)
-            n2 = node_map.get(e.targetId)
-            if not n1 or not n2:
-                continue
+        valid_edges = [e for e in edges if e.sourceId in id_to_idx and e.targetId in id_to_idx]
+        if not valid_edges:
+            return
 
-            dx = n2.x - n1.x
-            dy = n2.y - n1.y
-            dist = math.sqrt(dx * dx + dy * dy) or 1.0
+        src_idx = np.array([id_to_idx[e.sourceId] for e in valid_edges], dtype=np.int32)
+        tgt_idx = np.array([id_to_idx[e.targetId] for e in valid_edges], dtype=np.int32)
+        weights = np.array([e.weight for e in valid_edges], dtype=np.float64)
+        types = [e.edgeType.lower() for e in valid_edges]
 
-            rest_len = 150.0 if e.edgeType == "explicit" else (200.0 if e.edgeType == "temporal" else 240.0)
-            rest_len *= geom_scale
-            displacement = dist - rest_len
+        dx = pos[tgt_idx, 0] - pos[src_idx, 0]
+        dy = pos[tgt_idx, 1] - pos[src_idx, 1]
+        dist = np.hypot(dx, dy)
+        dist_safe = np.where(dist < 1e-6, 1.0, dist)
 
-            k_spring = 0.85 * min(1.0, e.weight)
+        rest_len = np.array([150.0 if t == "explicit" else (200.0 if t == "temporal" else 240.0) for t in types]) * geom_scale
+        displacement = dist_safe - rest_len
 
-            if e.edgeType.lower() == "temporal":
-                k_spring = 0.0
+        k_spring = 0.85 * np.minimum(1.0, weights)
+        for e_i, (e, t) in enumerate(zip(valid_edges, types)):
+            if t == "temporal":
+                k_spring[e_i] = 0.0
             else:
-                is_cross_desk_temporal = (e.edgeType == "temporal") and (
-                    (n1.id in self.recent_node_ids) != (n2.id in self.recent_node_ids)
+                is_cross_desk_temporal = (t == "temporal") and (
+                    (e.sourceId in self.recent_node_ids) != (e.targetId in self.recent_node_ids)
                 )
                 if is_cross_desk_temporal:
-                    k_spring *= 0.10
+                    k_spring[e_i] *= 0.10
 
-            if n1.id in self.staged_targets or n2.id in self.staged_targets:
-                k_spring = 0.0
+            if e.sourceId in self.staged_targets or e.targetId in self.staged_targets:
+                k_spring[e_i] = 0.0
 
-            spring_force = displacement * k_spring
+        spring_force = displacement * k_spring
+        if not has_active_focus:
+            mask_cap = spring_force > 150.0
+            spring_force = np.where(mask_cap, 150.0 + (spring_force - 150.0) * 0.05, spring_force)
 
-            if not has_active_focus and spring_force > 150.0:
-                spring_force = 150.0 + (spring_force - 150.0) * 0.05
+        fx_s = (dx / dist_safe) * spring_force
+        fy_s = (dy / dist_safe) * spring_force
 
-            fx = (dx / dist) * spring_force
-            fy = (dy / dist) * spring_force
+        if has_active_focus:
+            def get_tier_idx(idx):
+                nid = node_ids[idx]
+                if nid == focused_node_id:
+                    return 0
+                if idx in first_deg_indices:
+                    return 1
+                if idx in second_deg_indices:
+                    return 2
+                return 3
 
-            if has_active_focus:
-                def get_tier(nid):
-                    if nid == focused_node_id:
-                        return 0
-                    if nid in first_degree_set:
-                        return 1
-                    if nid in second_degree_set:
-                        return 2
-                    return 3
-
-                t1 = get_tier(n1.id)
-                t2 = get_tier(n2.id)
+            for e_i in range(len(valid_edges)):
+                s = src_idx[e_i]
+                t = tgt_idx[e_i]
+                t1 = get_tier_idx(s)
+                t2 = get_tier_idx(t)
 
                 if t1 == 0 or t2 == 0:
                     continue
-
                 if t1 == 1 and t2 == 2:
-                    forces[n2.id][0] -= fx * 0.3
-                    forces[n2.id][1] -= fy * 0.3
+                    forces[t, 0] -= fx_s[e_i] * 0.3
+                    forces[t, 1] -= fy_s[e_i] * 0.3
                     continue
                 elif t2 == 1 and t1 == 2:
-                    forces[n1.id][0] += fx * 0.3
-                    forces[n1.id][1] += fy * 0.3
+                    forces[s, 0] += fx_s[e_i] * 0.3
+                    forces[s, 1] += fy_s[e_i] * 0.3
                     continue
-
                 if (t1 == 2 and t2 >= 3) or (t2 == 2 and t1 >= 3):
                     continue
-
                 if (t1 == 1 and t2 >= 3) or (t2 == 1 and t1 >= 3):
                     continue
 
-            forces[n1.id][0] += fx
-            forces[n1.id][1] += fy
-            forces[n2.id][0] -= fx
-            forces[n2.id][1] -= fy
+                forces[s, 0] += fx_s[e_i]
+                forces[s, 1] += fy_s[e_i]
+                forces[t, 0] -= fx_s[e_i]
+                forces[t, 1] -= fy_s[e_i]
+        else:
+            np.add.at(forces[:, 0], src_idx, fx_s)
+            np.add.at(forces[:, 1], src_idx, fy_s)
+            np.add.at(forces[:, 0], tgt_idx, -fx_s)
+            np.add.at(forces[:, 1], tgt_idx, -fy_s)
 
     def _apply_docking_constraints(
         self,
-        nodes: list[Node],
-        node_map: dict[int, Node],
-        forces: dict[int, list[float]],
-        node_comp_map: dict[int, int],
+        pos: np.ndarray,
+        node_ids: np.ndarray,
+        id_to_idx: dict[int, int],
+        forces: np.ndarray,
+        comp_ids: np.ndarray,
         comp_centroids: dict[int, tuple[float, float, int]],
         has_active_focus: bool,
         focused_node_id: int,
-        first_degree_set: set[int],
+        first_deg_indices: set[int],
         second_degree_parent: dict[int, int],
         geom_scale: float,
     ) -> None:
@@ -298,171 +323,195 @@ class PhysicsEngine:
             if strength > 0.01
         }
         bound_x, bound_y = (self.viewport_w / 2.0) * 0.78, (self.viewport_h / 2.0) * 0.65
+        N = len(pos)
 
-        for node in nodes:
-            if node.id in self.summoning_targets:
-                tpos, strength = self.summoning_targets[node.id]
-                forces[node.id][0] += (tpos[0] - node.x) * strength * 12.0
-                forces[node.id][1] += (tpos[1] - node.y) * strength * 12.0
+        for idx in range(N):
+            nid = node_ids[idx]
+            if nid in self.summoning_targets:
+                tpos, strength = self.summoning_targets[nid]
+                forces[idx, 0] += (tpos[0] - pos[idx, 0]) * strength * 12.0
+                forces[idx, 1] += (tpos[1] - pos[idx, 1]) * strength * 12.0
 
-            if node.id in self.staged_targets:
-                tx, ty = self.staged_targets[node.id]
-                forces[node.id][0] = (tx - node.x) * 15.0
-                forces[node.id][1] = (ty - node.y) * 15.0
+            if nid in self.staged_targets:
+                tx, ty = self.staged_targets[nid]
+                forces[idx, 0] = (tx - pos[idx, 0]) * 15.0
+                forces[idx, 1] = (ty - pos[idx, 1]) * 15.0
                 continue
 
-            dx, dy = node.x - self.center_x, node.y - self.center_y
+            dx = pos[idx, 0] - self.center_x
+            dy = pos[idx, 1] - self.center_y
             dist_to_center = math.hypot(dx, dy) or 1.0
 
             if has_active_focus:
-                if node.id != focused_node_id:
-                    if node.id in first_degree_set or node.id in second_degree_parent:
+                if nid != focused_node_id:
+                    if idx in first_deg_indices or nid in second_degree_parent:
                         vp_cx = self.viewport_w / 2.0
                         wb_w = self.focal_card_w
                         wb_x = (self.viewport_w - wb_w) / 2.0
-                        target_x = (wb_x - 450.0) if node.x <= vp_cx else (wb_x + wb_w + 450.0)
-                        forces[node.id][0] += (target_x - node.x) * self.k_gutter_anchor
+                        target_x = (wb_x - 450.0) if pos[idx, 0] <= vp_cx else (wb_x + wb_w + 450.0)
+                        forces[idx, 0] += (target_x - pos[idx, 0]) * self.k_gutter_anchor
 
-                        if node.id in second_degree_parent:
-                            parent_node = node_map.get(second_degree_parent[node.id])
-                            if parent_node:
-                                target_sat_y = parent_node.y + (((node.id % 5) - 2) * 140.0)
-                                forces[node.id][1] += (target_sat_y - node.y) * self.k_satellite_drift
+                        if nid in second_degree_parent:
+                            p_nid = second_degree_parent[nid]
+                            p_idx = id_to_idx.get(p_nid)
+                            if p_idx is not None:
+                                target_sat_y = pos[p_idx, 1] + (((nid % 5) - 2) * 140.0)
+                                forces[idx, 1] += (target_sat_y - pos[idx, 1]) * self.k_satellite_drift
                         else:
-                            forces[node.id][1] += (self.center_y - node.y) * self.k_horizon_anchor
+                            forces[idx, 1] += (self.center_y - pos[idx, 1]) * self.k_horizon_anchor
                     else:
-                        c_idx = node_comp_map.get(node.id, -1)
+                        c_idx = comp_ids[idx]
                         if c_idx in comp_centroids:
                             ccx, ccy, count = comp_centroids[c_idx]
                             if count >= 3:
-                                dx_c, dy_c = ccx - node.x, ccy - node.y
+                                dx_c = ccx - pos[idx, 0]
+                                dy_c = ccy - pos[idx, 1]
                                 dist_c = math.hypot(dx_c, dy_c) or 1.0
                                 exp_r = min(600.0 * geom_scale, (55.0 + (24.0 * math.sqrt(count))) * geom_scale)
                                 k_pull = 1.25 if dist_c < exp_r * 0.8 else min(12.0, 1.25 + ((dist_c - exp_r * 0.8) * 0.25))
-                                forces[node.id][0] += dx_c * k_pull
-                                forces[node.id][1] += dy_c * k_pull
+                                forces[idx, 0] += dx_c * k_pull
+                                forces[idx, 1] += dy_c * k_pull
 
                         if abs(dx) > bound_x:
-                            forces[node.id][0] -= (1.0 if dx > 0 else -1.0) * (abs(dx) - bound_x) * 8.0
+                            forces[idx, 0] -= (1.0 if dx > 0 else -1.0) * (abs(dx) - bound_x) * 8.0
                         if abs(dy) > bound_y:
-                            forces[node.id][1] -= (1.0 if dy > 0 else -1.0) * (abs(dy) - bound_y) * 8.0
+                            forces[idx, 1] -= (1.0 if dy > 0 else -1.0) * (abs(dy) - bound_y) * 8.0
             else:
-                if node.id in self.custom_anchors:
-                    ax, ay = self.custom_anchors[node.id]
-                    forces[node.id][0] += (ax - node.x) * 4.0
-                    forces[node.id][1] += (ay - node.y) * 4.0
+                if nid in self.custom_anchors:
+                    ax, ay = self.custom_anchors[nid]
+                    forces[idx, 0] += (ax - pos[idx, 0]) * 4.0
+                    forces[idx, 1] += (ay - pos[idx, 1]) * 4.0
 
                 if abs(dx) < 1.0 and abs(dy) < 1.0:
-                    dx, dy = 1.0 + (node.id % 5), 1.0 + (node.id % 7)
+                    dx, dy = 1.0 + (nid % 5), 1.0 + (nid % 7)
                     dist_to_center = math.hypot(dx, dy)
 
-                is_recent = node.id in self.recent_node_ids
+                is_recent = nid in self.recent_node_ids
                 void_r = 380.0 if is_recent else 750.0
                 if dist_to_center < void_r:
                     ramp = ((void_r - dist_to_center) / void_r) ** 1.5
-                    forces[node.id][0] += (dx / dist_to_center) * ramp * 3200.0
-                    forces[node.id][1] += (dy / dist_to_center) * ramp * 3200.0
+                    forces[idx, 0] += (dx / dist_to_center) * ramp * 3200.0
+                    forces[idx, 1] += (dy / dist_to_center) * ramp * 3200.0
 
                 if is_recent and dist_to_center > 650.0:
                     desk_pull = (dist_to_center - 650.0) * 2.5
-                    forces[node.id][0] -= (dx / dist_to_center) * desk_pull
-                    forces[node.id][1] -= (dy / dist_to_center) * desk_pull
+                    forces[idx, 0] -= (dx / dist_to_center) * desk_pull
+                    forces[idx, 1] -= (dy / dist_to_center) * desk_pull
 
                 if abs(dx) > bound_x:
-                    forces[node.id][0] -= (1.0 if dx > 0 else -1.0) * (abs(dx) - bound_x) * 4.5
+                    forces[idx, 0] -= (1.0 if dx > 0 else -1.0) * (abs(dx) - bound_x) * 4.5
                 if abs(dy) > bound_y:
-                    forces[node.id][1] -= (1.0 if dy > 0 else -1.0) * (abs(dy) - bound_y) * 4.5
+                    forces[idx, 1] -= (1.0 if dy > 0 else -1.0) * (abs(dy) - bound_y) * 4.5
 
-                c_idx = node_comp_map.get(node.id, -1)
+                c_idx = comp_ids[idx]
                 if c_idx in comp_centroids and not is_recent:
                     ccx, ccy, count = comp_centroids[c_idx]
                     if count >= 3:
-                        dx_c, dy_c = ccx - node.x, ccy - node.y
+                        dx_c = ccx - pos[idx, 0]
+                        dy_c = ccy - pos[idx, 1]
                         dist_c = math.hypot(dx_c, dy_c) or 1.0
                         exp_r = min(600.0 * geom_scale, (55.0 + (24.0 * math.sqrt(count))) * geom_scale)
                         k_pull = 1.25 if dist_c < exp_r * 0.8 else min(12.0, 1.25 + ((dist_c - exp_r * 0.8) * 0.25))
-                        forces[node.id][0] += dx_c * k_pull
-                        forces[node.id][1] += dy_c * k_pull
+                        forces[idx, 0] += dx_c * k_pull
+                        forces[idx, 1] += dy_c * k_pull
 
     def _integrate_velocities(
         self,
         nodes: list[Node],
-        forces: dict[int, list[float]],
-        node_mass: dict[int, float],
+        pos: np.ndarray,
+        vel: np.ndarray,
+        forces: np.ndarray,
+        node_ids: np.ndarray,
+        id_to_idx: dict[int, int],
+        comp_ids: np.ndarray,
         dt: float,
         has_active_focus: bool,
         focused_node_id: int,
         hovered_node_id: int,
-        first_degree_set: set[int],
+        first_deg_indices: set[int],
         second_degree_parent: dict[int, int],
         focal_weights: dict[int, float],
+        first_degree_set: set[int],
     ) -> bool:
+        N = len(nodes)
+        focused_idx = id_to_idx.get(focused_node_id, -1)
+
         if has_active_focus:
             vp_cx = self.viewport_w / 2.0
-            left_flank = [n for n in nodes if (n.id in first_degree_set or n.id in second_degree_parent) and n.x <= vp_cx]
-            right_flank = [n for n in nodes if (n.id in first_degree_set or n.id in second_degree_parent) and n.x > vp_cx]
+            left_flank = [idx for idx in range(N) if (idx in first_deg_indices or node_ids[idx] in second_degree_parent) and pos[idx, 0] <= vp_cx]
+            right_flank = [idx for idx in range(N) if (idx in first_deg_indices or node_ids[idx] in second_degree_parent) and pos[idx, 0] > vp_cx]
 
-            left_flank.sort(key=lambda n: focal_weights.get(n.id, 0.0), reverse=True)
-            right_flank.sort(key=lambda n: focal_weights.get(n.id, 0.0), reverse=True)
+            left_flank.sort(key=lambda idx: focal_weights.get(node_ids[idx], 0.0), reverse=True)
+            right_flank.sort(key=lambda idx: focal_weights.get(node_ids[idx], 0.0), reverse=True)
 
             for flank_list in (left_flank, right_flank):
                 for i in range(len(flank_list)):
                     for j in range(i + 1, len(flank_list)):
-                        na, nb = flank_list[i], flank_list[j]
-                        dx, dy = nb.x - na.x, nb.y - na.y
+                        na_idx, nb_idx = flank_list[i], flank_list[j]
+                        dx = pos[nb_idx, 0] - pos[na_idx, 0]
+                        dy = pos[nb_idx, 1] - pos[na_idx, 1]
                         dist_sq = dx * dx + dy * dy
                         if dist_sq < 3600.0 and dist_sq > 0.001:
                             dist = math.sqrt(dist_sq)
                             push = (60.0 - dist) / dist * 0.15
-                            na.vy -= dy * push
-                            na.vx -= dx * push
-                            nb.vy += dy * push
-                            nb.vx += dx * push
+                            vel[na_idx, 1] -= dy * push
+                            vel[na_idx, 0] -= dx * push
+                            vel[nb_idx, 1] += dy * push
+                            vel[nb_idx, 0] += dx * push
 
-        for node in nodes:
-            if node.id in self.staged_targets:
-                tx, ty = self.staged_targets[node.id]
-                node.x, node.y = tx, ty
-                node.vx, node.vy = 0.0, 0.0
+        hovered_idx = id_to_idx.get(hovered_node_id, -1)
+        pinned_idx = id_to_idx.get(self.pinned_node_id, -1)
+
+        for idx in range(N):
+            nid = node_ids[idx]
+            if nid in self.staged_targets:
+                tx, ty = self.staged_targets[nid]
+                pos[idx, 0], pos[idx, 1] = tx, ty
+                vel[idx, 0], vel[idx, 1] = 0.0, 0.0
                 continue
 
-            if (has_active_focus and node.id == focused_node_id) or (node.id == hovered_node_id and node.id != self.pinned_node_id):
-                node.vx, node.vy = 0.0, 0.0
+            if (has_active_focus and idx == focused_idx) or (idx == hovered_idx and nid != self.pinned_node_id):
+                vel[idx, 0], vel[idx, 1] = 0.0, 0.0
                 continue
 
-            if node.id == self.pinned_node_id:
-                node.vx, node.vy = 0.0, 0.0
-                if has_active_focus and node.id in first_degree_set:
-                    self._horizon_bearings[node.id] = math.atan2(node.y - self.center_y, node.x - self.center_x)
+            if idx == pinned_idx:
+                vel[idx, 0], vel[idx, 1] = 0.0, 0.0
+                if has_active_focus and idx in first_deg_indices:
+                    self._horizon_bearings[nid] = math.atan2(pos[idx, 1] - self.center_y, pos[idx, 0] - self.center_x)
                 continue
 
-            mass = node_mass.get(node.id, 1.0)
-            fx, fy = forces[node.id]
-            speed = math.hypot(node.vx, node.vy)
+            fx, fy = forces[idx, 0], forces[idx, 1]
+            speed = math.hypot(vel[idx, 0], vel[idx, 1])
             drag = (5.2 if has_active_focus else 4.0) + (0.045 * speed)
 
-            node.vx += ((fx - (drag * node.vx)) / mass) * dt
-            node.vy += ((fy - (drag * node.vy)) / mass) * dt
+            vel[idx, 0] += ((fx - (drag * vel[idx, 0])) / 1.0) * dt
+            vel[idx, 1] += ((fy - (drag * vel[idx, 1])) / 1.0) * dt
 
-            cur_speed = math.hypot(node.vx, node.vy)
+            cur_speed = math.hypot(vel[idx, 0], vel[idx, 1])
             max_speed = 340.0 if has_active_focus else 180.0
             if cur_speed > max_speed:
                 scale = max_speed / cur_speed
-                node.vx *= scale
-                node.vy *= scale
+                vel[idx, 0] *= scale
+                vel[idx, 1] *= scale
 
-            node.x += node.vx * dt
-            node.y += node.vy * dt
+            pos[idx, 0] += vel[idx, 0] * dt
+            pos[idx, 1] += vel[idx, 1] * dt
 
-        for node in nodes:
-            if has_active_focus and node.id == focused_node_id:
-                node.depthZ = 0.0
+        # Update node coordinates at the end of the step
+        for idx, n in enumerate(nodes):
+            n.x = float(pos[idx, 0])
+            n.y = float(pos[idx, 1])
+            n.vx = float(vel[idx, 0])
+            n.vy = float(vel[idx, 1])
+            n.clusterId = int(comp_ids[idx])
+            if has_active_focus and n.id == focused_node_id:
+                n.depthZ = 0.0
             else:
-                norm_y = max(0.0, min(1.0, 1.0 - (node.y / self.viewport_h)))
-                is_wing = has_active_focus and (node.id in first_degree_set or node.id in second_degree_parent)
-                node.depthZ = norm_y * 0.25 if is_wing else norm_y * (1.0 - node.focus * 0.5)
+                norm_y = max(0.0, min(1.0, 1.0 - (n.y / self.viewport_h)))
+                is_wing = has_active_focus and (n.id in first_degree_set or n.id in second_degree_parent)
+                n.depthZ = norm_y * 0.25 if is_wing else norm_y * (1.0 - n.focus * 0.5)
 
-        total_velocity = sum(math.hypot(n.vx, n.vy) for n in nodes)
+        total_velocity = float(np.sum(np.hypot(vel[:, 0], vel[:, 1])))
         return total_velocity >= 0.01 * len(nodes)
 
     def _find_connected_components(self, nodes: list[Node], edges: list[Edge]) -> list[set[int]]:
@@ -494,11 +543,18 @@ class PhysicsEngine:
 
         return components
 
-    def step(self, nodes: list[Node], edges: list[Edge], focused_node_id: int, hovered_node_id: int = 0, dt: float = 0.008,
-             first_degree_set: set[int] | None = None,
-             second_degree_set: set[int] | None = None,
-             second_degree_parent: dict[int, int] | None = None,
-             focal_weights: dict[int, float] | None = None) -> bool:
+    def step(
+        self,
+        nodes: list[Node],
+        edges: list[Edge],
+        focused_node_id: int,
+        hovered_node_id: int = 0,
+        dt: float = 0.008,
+        first_degree_set: set[int] | None = None,
+        second_degree_set: set[int] | None = None,
+        second_degree_parent: dict[int, int] | None = None,
+        focal_weights: dict[int, float] | None = None,
+    ) -> bool:
         """
         Advances the physics simulation by one tick.
         Returns True if the system is still active, False if it has settled and can sleep.
@@ -506,8 +562,20 @@ class PhysicsEngine:
         if not nodes:
             return False
 
-        node_map = {n.id: n for n in nodes}
-        has_active_focus = (focused_node_id > 0) and (focused_node_id in node_map)
+        N = len(nodes)
+        id_to_idx = {n.id: i for i, n in enumerate(nodes)}
+        node_ids = np.array([n.id for n in nodes], dtype=np.int64)
+
+        pos = np.empty((N, 2), dtype=np.float64)
+        vel = np.empty((N, 2), dtype=np.float64)
+
+        for i, n in enumerate(nodes):
+            pos[i, 0] = float(n.x)
+            pos[i, 1] = float(n.y)
+            vel[i, 0] = float(n.vx)
+            vel[i, 1] = float(n.vy)
+
+        has_active_focus = (focused_node_id > 0) and (focused_node_id in id_to_idx)
 
         wing_width = (self.viewport_w - self.focal_card_w) / 2.0
         if has_active_focus:
@@ -520,34 +588,40 @@ class PhysicsEngine:
         second_degree_parent = second_degree_parent or {}
         focal_weights = focal_weights or {}
 
-        for node in nodes:
-            node.clusterId = -1
+        first_deg_indices = {id_to_idx[nid] for nid in first_degree_set if nid in id_to_idx}
+        second_deg_indices = {id_to_idx[nid] for nid in second_degree_set if nid in id_to_idx}
 
         components = self._find_connected_components(nodes, edges)
-        node_comp_map: dict[int, int] = {}
+        comp_ids = np.full(N, -1, dtype=np.int32)
         comp_centroids: dict[int, tuple[float, float, int]] = {}
 
         for c_idx, comp in enumerate(components):
             if has_active_focus:
-                c_nodes = [node_map[nid] for nid in comp if nid in node_map and nid != focused_node_id and nid not in first_degree_set and nid not in second_degree_set]
+                c_nodes_idx = [
+                    id_to_idx[nid]
+                    for nid in comp
+                    if nid in id_to_idx
+                    and nid != focused_node_id
+                    and nid not in first_degree_set
+                    and nid not in second_degree_set
+                ]
             else:
-                c_nodes = [node_map[nid] for nid in comp if nid in node_map]
+                c_nodes_idx = [id_to_idx[nid] for nid in comp if nid in id_to_idx]
 
-            if len(c_nodes) >= 3:
-                cx = sum(n.x for n in c_nodes) / len(c_nodes)
-                cy = sum(n.y for n in c_nodes) / len(c_nodes)
-                comp_centroids[c_idx] = (cx, cy, len(c_nodes))
+            if len(c_nodes_idx) >= 3:
+                cx = float(np.mean(pos[c_nodes_idx, 0]))
+                cy = float(np.mean(pos[c_nodes_idx, 1]))
+                comp_centroids[c_idx] = (cx, cy, len(c_nodes_idx))
 
                 for nid in comp:
-                    node_comp_map[nid] = c_idx
-                    if nid in node_map:
-                        node_map[nid].clusterId = c_idx
+                    if nid in id_to_idx:
+                        comp_ids[id_to_idx[nid]] = c_idx
 
-        forces: dict[int, list[float]] = {n.id: [0.0, 0.0] for n in nodes}
-        node_mass: dict[int, float] = {n.id: 1.0 for n in nodes}
+        forces = np.zeros((N, 2), dtype=np.float64)
 
         if not has_active_focus:
             comp_indices = list(comp_centroids.keys())
+            recent_indices = {id_to_idx[nid] for nid in self.recent_node_ids if nid in id_to_idx}
             for i in range(len(comp_indices)):
                 c1_idx = comp_indices[i]
                 c1_x, c1_y, count1 = comp_centroids[c1_idx]
@@ -564,35 +638,74 @@ class PhysicsEngine:
                         fx, fy = (dx / dist) * push, (dy / dist) * push
 
                         for nid in components[c1_idx]:
-                            if nid in forces and nid not in self.recent_node_ids:
-                                forces[nid][0] -= fx / count1
-                                forces[nid][1] -= fy / count1
+                            idx = id_to_idx.get(nid)
+                            if idx is not None and idx not in recent_indices:
+                                forces[idx, 0] -= fx / count1
+                                forces[idx, 1] -= fy / count1
 
                         for nid in components[c2_idx]:
-                            if nid in forces and nid not in self.recent_node_ids:
-                                forces[nid][0] += fx / count2
-                                forces[nid][1] += fy / count2
+                            idx = id_to_idx.get(nid)
+                            if idx is not None and idx not in recent_indices:
+                                forces[idx, 0] += fx / count2
+                                forces[idx, 1] += fy / count2
 
         geom_scale = math.sqrt(self.aperture)
 
         self._apply_coulomb_repulsion(
-            nodes, forces, node_comp_map, has_active_focus, focused_node_id,
-            first_degree_set, second_degree_set, geom_scale
+            pos,
+            node_ids,
+            comp_ids,
+            forces,
+            has_active_focus,
+            focused_node_id,
+            first_deg_indices,
+            second_deg_indices,
+            geom_scale,
         )
 
         self._apply_hooke_springs(
-            edges, node_map, forces, geom_scale, has_active_focus, focused_node_id,
-            first_degree_set, second_degree_set
+            edges,
+            pos,
+            node_ids,
+            id_to_idx,
+            forces,
+            geom_scale,
+            has_active_focus,
+            focused_node_id,
+            first_deg_indices,
+            second_deg_indices,
         )
 
         self._apply_docking_constraints(
-            nodes, node_map, forces, node_comp_map, comp_centroids, has_active_focus,
-            focused_node_id, first_degree_set, second_degree_parent, geom_scale
+            pos,
+            node_ids,
+            id_to_idx,
+            forces,
+            comp_ids,
+            comp_centroids,
+            has_active_focus,
+            focused_node_id,
+            first_deg_indices,
+            second_degree_parent,
+            geom_scale,
         )
 
         return self._integrate_velocities(
-            nodes, forces, node_mass, dt, has_active_focus, focused_node_id,
-            hovered_node_id, first_degree_set, second_degree_parent, focal_weights
+            nodes,
+            pos,
+            vel,
+            forces,
+            node_ids,
+            id_to_idx,
+            comp_ids,
+            dt,
+            has_active_focus,
+            focused_node_id,
+            hovered_node_id,
+            first_deg_indices,
+            second_degree_parent,
+            focal_weights,
+            first_degree_set,
         )
 
 

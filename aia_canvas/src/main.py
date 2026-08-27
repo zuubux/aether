@@ -81,6 +81,7 @@ def main():
     engine = QQmlApplicationEngine()
 
     bridge = CanvasBridge()
+    bridge.physics_ctrl.start()
     app._bridge = bridge
 
     engine.rootContext().setContextProperty("canvasBridge", bridge)
@@ -91,8 +92,8 @@ def main():
     engine.rootContext().setContextProperty("searchController", bridge.search_ctrl)
 
     intent_engine = IntentEngine(bridge)
-    # Forward the nodesSummoned signal from intent_engine to the physics engine
-    intent_engine.nodesSummoned.connect(bridge.physics_engine.summon_nodes)
+    # Forward the nodesSummoned signal from intent_engine to the physics controller
+    intent_engine.nodesSummoned.connect(bridge.physics_ctrl.summon_nodes)
     engine.rootContext().setContextProperty("intentEngine", intent_engine)
 
     screens = app.screens()

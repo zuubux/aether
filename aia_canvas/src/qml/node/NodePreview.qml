@@ -164,7 +164,7 @@ Item {
     Item {
         id: mediaContainer
         anchors.top: headerLayout ? headerLayout.bottom : parent.top
-        anchors.bottom: (debugHud.visible) ? debugHud.top : parent.bottom
+        anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 6
@@ -212,7 +212,7 @@ Item {
         id: textContentContainer
         anchors.top: headerLayout ? headerLayout.bottom : parent.top
         anchors.topMargin: 8
-        anchors.bottom: (debugHud.visible) ? debugHud.top : parent.bottom
+        anchors.bottom: parent.bottom
         anchors.bottomMargin: 8
         anchors.left: parent.left
         anchors.right: parent.right

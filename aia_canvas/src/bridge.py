@@ -9,6 +9,7 @@ import os
 import time
 from typing import Any
 
+from core.telemetry import TelemetrySink
 from ipc.client import WeaverIPCClient
 from models import Edge, Node
 from physics.engine import PhysicsEngine
@@ -71,6 +72,9 @@ class CanvasBridge(QObject):
         self.node_ctrl = NodeController(self)
         self.physics_ctrl = PhysicsController(self)
         self.completion_engine = CompletionEngine(self)
+
+        # Start physics controller worker simulation loop during initialization
+        self.physics_ctrl.start()
 
         # Connect controller child signals to the corresponding bridge signals
         self.canvas_ctrl.workbenchDimensionsChanged.connect(self.workbenchDimensionsChanged)
@@ -152,10 +156,16 @@ class CanvasBridge(QObject):
         self.ipc.nodeDeleted.connect(self._on_node_deleted)
         self.ipc.start()
 
-        # 120Hz Physics Integrator (8ms tick)
-        self._physics_timer = QTimer()
-        self._physics_timer.timeout.connect(self._on_physics_tick)
-        self._physics_timer.start(8)
+        # Throttled Telemetry Timer (~10Hz / 100ms)
+        self._telemetry_timer = QTimer(self)
+        self._telemetry_timer.setInterval(100)
+        self._telemetry_timer.timeout.connect(self._emit_telemetry_tick)
+        self._telemetry_timer.start()
+
+    def _emit_telemetry_tick(self):
+        self.telemetryChanged.emit()
+        if hasattr(self, 'canvas_ctrl') and self.canvas_ctrl:
+            self.canvas_ctrl.telemetryChanged.emit()
 
     def _recalculate_focal_weights(self, primary_id: int):
         self._cached_first_degree.clear()
@@ -227,59 +237,44 @@ class CanvasBridge(QObject):
             else:
                 node.focus = 0.22
 
-    def _on_physics_tick(self):
-        t0 = time.perf_counter()
+    @pyqtSlot(object)
+    def _on_positions_updated(self, snapshot: Any = None):
+        """
+        Consumes position snapshots from PhysicsWorker to update main thread node models smoothly.
+        """
+        if snapshot is None:
+            return
+
+        for node in snapshot:
+            nid = getattr(node, "id", None) if not isinstance(node, dict) else node.get("id")
+            if nid is not None:
+                store_node = self.store.get_node(nid)
+                if store_node:
+                    x_val = getattr(node, "x", None) if not isinstance(node, dict) else node.get("x")
+                    y_val = getattr(node, "y", None) if not isinstance(node, dict) else node.get("y")
+                    if x_val is not None and store_node is not node:
+                        store_node.x = x_val
+                    if y_val is not None and store_node is not node:
+                        store_node.y = y_val
 
         nodes = self.store.get_all_nodes()
-        
-        # FIX: Physics ALWAYS needs the full structural graph to keep background galaxies glued together.
-        active_physics_edges = list(self._structural_edges)
-        struct_sigs = {(e.sourceId, e.targetId, e.edgeType) for e in self._structural_edges}
-        
-        if self._selected_node_id > 0:
-            # Add any fresh focal edges (like resurrected temporals) so they get simulated
-            for e in self._focal_edges:
-                if (e.sourceId, e.targetId, e.edgeType) not in struct_sigs:
-                    active_physics_edges.append(e)
-        
-        # Pass hovered node ID into step
-        try:
-            focused_id = 0 if getattr(self, "_search_active", False) else self._selected_node_id
-            is_active = self.physics_engine.step(
-                nodes, active_physics_edges, focused_id, self._hovered_node_id, dt=0.008,
-                first_degree_set=self._cached_first_degree if not getattr(self, "_search_active", False) else set(),
-                second_degree_set=self._cached_second_degree if not getattr(self, "_search_active", False) else set(),
-                second_degree_parent=self._cached_second_degree_parent if not getattr(self, "_search_active", False) else {},
-                focal_weights=self._cached_focal_weights if not getattr(self, "_search_active", False) else {}
-            )
-        except RuntimeError:
-            return
-        
-        if not is_active and self._physics_timer.isActive():
-            self._physics_timer.stop()
-            # Still update halos one last time when stopping
-            self._cluster_halos = self.physics_engine.get_cluster_halos(
-                nodes, active_physics_edges, self._selected_node_id,
-                first_degree_set=self._cached_first_degree,
-                second_degree_set=self._cached_second_degree
-            )
-            self.clusterHalosChanged.emit()
-            return
-            
+        active_edges = list(self._structural_edges)
         self._cluster_halos = self.physics_engine.get_cluster_halos(
-            nodes, active_physics_edges, self._selected_node_id,
+            nodes,
+            active_edges,
+            self._selected_node_id,
             first_degree_set=self._cached_first_degree,
-            second_degree_set=self._cached_second_degree
+            second_degree_set=self._cached_second_degree,
         )
         self.clusterHalosChanged.emit()
-
-        t1 = time.perf_counter()
-        self._last_frametime_ms = (t1 - t0) * 1000.0
-        self.telemetryChanged.emit()
+        self.nodesChanged.emit()
 
     def _wake_physics(self):
-        if not self._physics_timer.isActive():
-            self._physics_timer.start(8)
+        nodes = self.store.get_all_nodes()
+        edges = list(self._structural_edges)
+        if hasattr(self, "physics_ctrl") and self.physics_ctrl:
+            self.physics_ctrl.sync_graph_data(nodes, edges)
+            self.physics_ctrl.start()
 
     def _upsert_edge(self, new_edge: Edge):
         """Insert or update edge with balanced multi-tier ambient allocation."""
@@ -441,8 +436,28 @@ class CanvasBridge(QObject):
         return self.physics_ctrl.clusterHalos
 
     @pyqtProperty(float, notify=telemetryChanged)
+    def physicsStepMs(self) -> float:
+        return TelemetrySink.instance().physics_step_ms
+
+    @pyqtProperty(float, notify=telemetryChanged)
     def physicsFrametime(self) -> float:
-        return self.physics_ctrl.physicsFrametime
+        return TelemetrySink.instance().physics_step_ms or getattr(self, "_last_frametime_ms", 0.0)
+
+    @pyqtProperty(float, notify=telemetryChanged)
+    def renderFps(self) -> float:
+        return TelemetrySink.instance().render_fps
+
+    @pyqtProperty(float, notify=telemetryChanged)
+    def ipcRttMs(self) -> float:
+        return TelemetrySink.instance().ipc_rtt_ms
+
+    @pyqtProperty(float, notify=telemetryChanged)
+    def dbQueryMs(self) -> float:
+        return TelemetrySink.instance().db_query_ms
+
+    @pyqtProperty(float, notify=telemetryChanged)
+    def llmTtftMs(self) -> float:
+        return TelemetrySink.instance().llm_ttft_ms
 
     @pyqtProperty(int, notify=telemetryChanged)
     def activeNodeCount(self) -> int:
@@ -472,6 +487,9 @@ class CanvasBridge(QObject):
     @pyqtSlot(float)
     def record_frame(self, delta_ms: float):
         self.telemetry.record_frame(delta_ms)
+        if delta_ms > 0:
+            fps = 1000.0 / delta_ms
+            TelemetrySink.instance().record_render_fps(fps)
 
     @pyqtSlot(str, result=bool)
     def is_image_file(self, file_path: str) -> bool:

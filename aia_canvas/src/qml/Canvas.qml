@@ -79,19 +79,6 @@ Window {
         }
     }
 
-    Binding {
-        target: canvasBridge
-        property: "focalCardWidth"
-        value: focalCardItem ? focalCardItem.width : 880.0
-        when: canvasBridge !== null && focalCardItem !== null
-    }
-    Binding {
-        target: canvasBridge
-        property: "focalCardHeight"
-        value: focalCardItem ? focalCardItem.height : 600.0
-        when: canvasBridge !== null && focalCardItem !== null
-    }
-    
     screen: Qt.application.screens[targetScreenIdx !== undefined ? targetScreenIdx : 0]
     visibility: (isFullscreen || isSpanAll) ? Window.FullScreen : Window.Windowed
 
