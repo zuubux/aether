@@ -22,6 +22,7 @@ class OmniContext:
     focused_node_path: Optional[str] = None
     selected_node_ids: List[str] = field(default_factory=list)
     typing_cadence_ms: float = 0.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class AetherContextBuilder:

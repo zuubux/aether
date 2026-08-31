@@ -22,6 +22,16 @@ Item {
     signal ribbonItemClicked(int index)
     signal selectCurrentRibbonItem()
 
+    onCurrentRibbonIndexChanged: {
+        if (!shelfExpanded) {
+            ribbonListView.currentIndex = currentRibbonIndex;
+            ribbonListView.positionViewAtIndex(currentRibbonIndex, ListView.Contain);
+        } else {
+            shelfGridView.currentIndex = currentRibbonIndex;
+            shelfGridView.positionViewAtIndex(currentRibbonIndex, GridView.Contain);
+        }
+    }
+
     visible: active && !isShellMode && !isConversationalMode && resultsCount > 0
     height: shelfExpanded ? 240 : 52
 
@@ -42,12 +52,7 @@ Item {
             clip: true
             visible: !root.shelfExpanded
             model: root.resultsList ? root.resultsList.slice(0, 16) : []
-            currentIndex: root.currentRibbonIndex
-            onCurrentIndexChanged: {
-                if (!root.shelfExpanded && root.currentRibbonIndex !== currentIndex) {
-                    root.currentRibbonIndex = currentIndex;
-                }
-            }
+            // Removed currentIndex bindings and onCurrentIndexChanged to prevent recursive two-way binding traps
 
             delegate: OmniRibbonItem {
                 resultData: modelData
@@ -72,12 +77,7 @@ Item {
             clip: true
             visible: root.shelfExpanded
             model: root.resultsList || []
-            currentIndex: root.currentRibbonIndex
-            onCurrentIndexChanged: {
-                if (root.shelfExpanded && root.currentRibbonIndex !== currentIndex) {
-                    root.currentRibbonIndex = currentIndex;
-                }
-            }
+            // Removed currentIndex bindings and onCurrentIndexChanged to prevent recursive two-way binding traps
 
             delegate: OmniRibbonItem {
                 width: 128

@@ -34,7 +34,7 @@ class FuzzySearchEngine(OmniEngine):
             nodes = context.metadata["nodes"]
 
         results: List[OmniResult] = []
-        ext_query = q_clean.removeprefix(".")
+        ext_query = q_clean.lstrip("*").removeprefix(".")
 
         for node in nodes:
             # Gather node text fields
