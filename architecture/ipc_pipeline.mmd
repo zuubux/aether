@@ -1,0 +1,24 @@
+graph LR
+    subgraph Frontend [AIA Canvas]
+        QML[QML Engine]
+        PyQt[PyQt6 Bridge]
+        QML <-->|Properties/Signals| PyQt
+    end
+
+    subgraph IPC [Transport Layer]
+        Socket[/Unix Domain Socket<br>/run/user/1000/aia_weaver/aia_weaver.sock/]
+        Stream[Async Event Stream]
+        Socket <--> Stream
+    end
+
+    subgraph Backend [AIA Weaver]
+        Router[Message Router]
+        Physics[Physics Engine]
+        DB[(Graph Database)]
+        
+        Router <--> Physics
+        Router <--> DB
+    end
+
+    PyQt <-->|Serialization| Socket
+    Stream <-->|Deserialization| Router

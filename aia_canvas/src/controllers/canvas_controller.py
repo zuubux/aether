@@ -104,6 +104,10 @@ class CanvasController(BaseController):
             self.bridge._wake_physics()
         if hasattr(self.bridge, 'physics') and self.bridge.physics:
             self.bridge.physics_engine.set_viewport_dimensions(width, height)
+        if hasattr(self.bridge, 'spatial_layout_bridge') and self.bridge.spatial_layout_bridge:
+            self.bridge.spatial_layout_bridge.set_viewport_dimensions(width, height)
+            if hasattr(self.bridge, 'update_spatial_budget'):
+                self.bridge.update_spatial_budget()
         self.workbenchDimensionsChanged.emit()
 
     @pyqtSlot(float)

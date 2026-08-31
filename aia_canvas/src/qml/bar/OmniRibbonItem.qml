@@ -24,8 +24,8 @@ Rectangle {
     border.color: isCurrentItem ? Theme.accentFocus : (hoverArea.containsMouse ? Theme.borderHover : Theme.borderSubtle)
     border.width: isCurrentItem ? 1.5 : 1
 
-    Behavior on color { ColorAnimation { duration: 150 } }
-    Behavior on border.color { ColorAnimation { duration: 150 } }
+    Behavior on color { ColorAnimation { duration: Theme.animFadeInDuration ?? 160 } }
+    Behavior on border.color { ColorAnimation { duration: Theme.animFadeInDuration ?? 160 } }
 
     Column {
         anchors.fill: parent

@@ -347,8 +347,8 @@ FocusScope {
                     visible: true
                     z: 20
                     
-                    Behavior on color { ColorAnimation { duration: 150 } }
-                    Behavior on opacity { NumberAnimation { duration: 150 } }
+                    Behavior on color { ColorAnimation { duration: Theme.animFadeInDuration ?? 160 } }
+                    Behavior on opacity { NumberAnimation { duration: Theme.animFadeInDuration ?? 160 } }
                 }
 
                 Text {

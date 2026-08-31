@@ -1,0 +1,36 @@
+graph TD
+    subgraph Tokens [Theme.qml Singleton]
+        Durations[Anim Durations<br>animDuration / animCollapseDuration / animFadeInDuration]
+        Easings[Easing Curves<br>animEasing / animCollapseEasing]
+        Tiers[Tier Geometry Tokens<br>tier4, tier3, tier2, tier1_5]
+    end
+
+    subgraph Controller [AetherMotion Subsystem]
+        AM[AetherMotion.qml]
+        Bloom[bloom / triggerBloom Subroutine]
+        ScaleAnim[Scale NumberAnimation<br>Easing.OutQuint]
+        GlideAnim[Y-Translate Glide<br>Easing.OutQuint]
+        LayerCache[GPU Layer Dynamic Caching<br>target.layer.enabled]
+        
+        AM --> Bloom
+        Bloom --> ScaleAnim
+        Bloom --> GlideAnim
+        Bloom --> LayerCache
+    end
+
+    subgraph Surfaces [UI Surfaces & Leaf Delegates]
+        NodeShell[SurfaceShell / Node Delegates]
+        PreviewCard[PreviewSlate / NodePreview]
+        HUD[OmniBar / DialogueDrawer / ShellOutputDrawer]
+    end
+
+    Durations -->|Duration Tokens| AM
+    Easings -->|Easing Tokens| AM
+    Durations -->|Property Behaviors| HUD
+    Easings -->|Property Behaviors| HUD
+
+    ScaleAnim -->|Matrix Transform| NodeShell
+    ScaleAnim -->|Matrix Transform| PreviewCard
+    GlideAnim -->|Translate Y| NodeShell
+    GlideAnim -->|Translate Y| PreviewCard
+    LayerCache -->|Hardware Acceleration| NodeShell

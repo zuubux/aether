@@ -118,14 +118,14 @@ Item {
     }
 
     readonly property bool showShellOutput: root.active && root.isShellMode && root.resultsCount > 0
-    readonly property real maxShellOutputHeight: Math.min(460, parent ? parent.height * 0.55 : 460)
-    readonly property real shellContentCalculatedHeight: 16 + (barShell.shellDrawer && barShell.shellDrawer.shellListView ? barShell.shellDrawer.shellListView.contentHeight : 0) + (systemStatusItem ? 26 : 0) + 12
+    readonly property real maxShellOutputHeight: parent ? parent.height * 0.6 : 600
+    readonly property real shellContentCalculatedHeight: (barShell.shellDrawer && barShell.shellDrawer.shellListView ? barShell.shellDrawer.shellListView.contentHeight : 0) + (systemStatusItem ? 32 : 0)
     readonly property real shellDrawerHeight: showShellOutput ? Math.min(maxShellOutputHeight, Math.max(48, shellContentCalculatedHeight)) : 0
 
     readonly property bool showDialogueOutput: root.active && root.isConversationalMode && root.resultsCount > 0
-    readonly property real maxDialogueOutputHeight: Math.min(460, parent ? parent.height * 0.55 : 460)
-    readonly property real calculatedTextHeight: (barShell.dialogueDrawer && barShell.dialogueDrawer.dialogueTextDummy) ? barShell.dialogueDrawer.dialogueTextDummy.implicitHeight : 60
-    readonly property real dialogueContentCalculatedHeight: calculatedTextHeight + 58
+    readonly property real maxDialogueOutputHeight: parent ? parent.height * 0.6 : 600
+    readonly property real calculatedTextHeight: (barShell.dialogueDrawer && barShell.dialogueDrawer.dialogueListView) ? barShell.dialogueDrawer.dialogueListView.contentHeight : 60
+    readonly property real dialogueContentCalculatedHeight: calculatedTextHeight + 66
     readonly property real dialogueDrawerHeight: showDialogueOutput ? Math.min(maxDialogueOutputHeight, Math.max(64, dialogueContentCalculatedHeight)) : 0
 
     readonly property bool showOutputDrawer: showShellOutput || showDialogueOutput
@@ -135,6 +135,8 @@ Item {
     signal dismissed()
     signal cancelQuery()
 
+    signal requestAscensionToSlate(var history)
+    property var turnHistory: []
     width: (root.isShellMode || root.isConversationalMode) ? Math.min(860, parent ? parent.width * 0.82 : 860) : Math.min(680, parent ? parent.width * 0.85 : 680)
     height: outputDrawerHeight + (showOutputDrawer ? 1 : 0) + 48
     anchors.bottom: parent ? parent.bottom : undefined
@@ -144,7 +146,7 @@ Item {
     visible: opacity > 0.01
 
     Behavior on width { NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing } }
-    Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+    Behavior on height { NumberAnimation { duration: Theme.animCollapseDuration; easing.type: Theme.animCollapseEasing } }
     Behavior on opacity { NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing } }
 
     function open() { active = true; inputCapsule.inputField.forceActiveFocus(); }
@@ -208,6 +210,7 @@ Item {
                 dispatchCurrentQuery();
             }
             querySubmitted(rawText);
+            inputCapsule.text = "? ";
         }
     }
 
@@ -356,7 +359,7 @@ Item {
         border.width: 1
         border.color: root.isConversationalMode ? Theme.accentAI : (root.isShellMode ? Theme.accentShell : Theme.borderSubtle)
         readonly property color borderColor: border.color
-        Behavior on border.color { ColorAnimation { duration: 200 } }
+        Behavior on border.color { ColorAnimation { duration: Theme.animFadeInDuration ?? 160 } }
 
         property alias shellDrawer: shellDrawer
         property alias dialogueDrawer: dialogueDrawer
@@ -388,6 +391,7 @@ Item {
                     height: root.dialogueDrawerHeight
                     showDialogueOutput: root.showDialogueOutput
                     dialogueFullText: root.dialogueFullText
+                    activePrompt: root.lastExecutedPrompt ? root.lastExecutedPrompt.replace(/^[\?\s]+/, "") : ""
                     engineState: root.engineState
                     providerMeta: root.providerMeta
                     isConversationalMode: root.isConversationalMode
@@ -609,6 +613,19 @@ Item {
         }
         function onEngineStateChanged(state) {
             root.engineState = state;
+        }
+        function onResponseFinished(fullText) {
+            var prompt = root.lastExecutedPrompt;
+            var response = fullText || (barShell.dialogueDrawer ? barShell.dialogueDrawer.dialogueFullText : "");
+            if (prompt !== "" && response !== "") {
+                var turn = { "prompt": prompt, "response": response };
+                var hist = root.turnHistory ? root.turnHistory.slice() : [];
+                hist.push(turn);
+                root.turnHistory = hist;
+                if (hist.length >= 3) {
+                    root.requestAscensionToSlate(hist);
+                }
+            }
         }
     }
 

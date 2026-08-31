@@ -11,6 +11,7 @@ from typing import Any
 
 from core.telemetry import TelemetrySink
 from ipc.client import WeaverIPCClient
+from layout.physics_bridge import PhysicsBridgeLayout
 from models import Edge, Node
 from physics.engine import PhysicsEngine
 from PyQt6.QtCore import QObject, QTimer, pyqtProperty, pyqtSignal, pyqtSlot
@@ -41,6 +42,8 @@ class CanvasBridge(QObject):
     providerMetadataChanged = pyqtSignal()
     nodeRemoved = pyqtSignal(int)
     focalCardDimensionsChanged = pyqtSignal()
+    canvasInteractingChanged = pyqtSignal(bool)
+    sig_constellation_active = pyqtSignal(int, bool, arguments=['node_id', 'active'])
 
     # Async Media Signals
     pdfPageReady = pyqtSignal(str, int, str, arguments=['filePath', 'pageIndex', 'imagePath'])
@@ -54,8 +57,10 @@ class CanvasBridge(QObject):
         import time
         self._t0 = time.perf_counter()
         self._qml_ready_time = 0.0
+        self._canvas_is_interacting: bool = False
         self.store = GraphStore()
         self.physics_engine = PhysicsEngine()
+        self.spatial_layout_bridge = PhysicsBridgeLayout()
 
         from controllers.canvas_controller import CanvasController
         from controllers.conversation_controller import ConversationController
@@ -88,6 +93,7 @@ class CanvasBridge(QObject):
         self.node_ctrl.selectedNodeChanged.connect(self.selectedNodeChanged)
         self.node_ctrl.hoveredNodeChanged.connect(self.hoveredNodeChanged)
         self.node_ctrl.nodeRemoved.connect(self.nodeRemoved)
+        self.node_ctrl.sig_constellation_active.connect(self.sig_constellation_active)
         
         # Connect Async Media Signals
         self.node_ctrl.pdfPageReady.connect(self.pdfPageReady)
@@ -237,6 +243,47 @@ class CanvasBridge(QObject):
             else:
                 node.focus = 0.22
 
+    @pyqtProperty(bool, notify=canvasInteractingChanged)
+    def canvas_is_interacting(self) -> bool:
+        return getattr(self, "_canvas_is_interacting", False)
+
+    @canvas_is_interacting.setter
+    def canvas_is_interacting(self, val: bool):
+        bval = bool(val)
+        if getattr(self, "_canvas_is_interacting", False) != bval:
+            self._canvas_is_interacting = bval
+            self.canvasInteractingChanged.emit(bval)
+
+    @pyqtProperty(bool, notify=canvasInteractingChanged)
+    def canvasIsInteracting(self) -> bool:
+        return self.canvas_is_interacting
+
+    @canvasIsInteracting.setter
+    def canvasIsInteracting(self, val: bool):
+        self.canvas_is_interacting = val
+
+    def update_spatial_budget(self):
+        """
+        Evaluates spatial budget zoning and target positions across all nodes in GraphStore.
+        Spatial budgeting runs continuously even during hover states to avoid update backlogs.
+        Glacial outward drift is locked while canvas interaction or node dragging is active.
+        """
+        nodes = self.store.get_all_nodes()
+        if not nodes:
+            return
+        pinned_id = getattr(self, "_selected_node_id", 0)
+        recent = getattr(self.physics_engine, "recent_node_ids", [])
+        is_interacting = (
+            getattr(self, "_canvas_is_interacting", False) or
+            getattr(self.node_ctrl, "is_dragging", False)
+        )
+        self.spatial_layout_bridge.sync_nodes(
+            nodes,
+            pinned_node_id=pinned_id,
+            recent_node_ids=recent,
+            is_interacting=is_interacting,
+        )
+
     @pyqtSlot(object)
     def _on_positions_updated(self, snapshot: Any = None):
         """
@@ -256,6 +303,8 @@ class CanvasBridge(QObject):
                         store_node.x = x_val
                     if y_val is not None and store_node is not node:
                         store_node.y = y_val
+
+        self.update_spatial_budget()
 
         nodes = self.store.get_all_nodes()
         active_edges = list(self._structural_edges)
@@ -340,6 +389,12 @@ class CanvasBridge(QObject):
         node_ctrl = getattr(self, "node_ctrl", None)
         return getattr(node_ctrl, "selectedNodeId", 0) if node_ctrl else getattr(self, "_selected_node_id", 0)
 
+    @pyqtProperty(int, notify=sig_constellation_active)
+    def constellationActiveNodeId(self) -> int:
+        """int: Currently active constellation target node ID (0 if none)."""
+        node_ctrl = getattr(self, "node_ctrl", None)
+        return getattr(node_ctrl, "constellationActiveNodeId", 0) if node_ctrl else 0
+
     @pyqtProperty(str, notify=selectedNodeChanged)
     def focusedNodeId(self) -> str:
         """str: String ID representation of focused node."""
@@ -396,7 +451,9 @@ class CanvasBridge(QObject):
     @pyqtProperty(int, notify=hoveredNodeChanged)
     def hoveredNodeId(self) -> int:
         """int: ID of currently hovered node (0 if none)."""
-        return self.node_ctrl.hoveredNodeId
+        if hasattr(self, "node_ctrl") and self.node_ctrl:
+            return self.node_ctrl.hoveredNodeId
+        return getattr(self, "_hovered_node_id", 0)
 
     @pyqtProperty(bool, notify=connectionStatusChanged)
     def isConnected(self) -> bool:

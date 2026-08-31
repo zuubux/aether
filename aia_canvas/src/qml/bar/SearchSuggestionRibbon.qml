@@ -25,7 +25,7 @@ Item {
     visible: active && !isShellMode && !isConversationalMode && resultsCount > 0
     height: shelfExpanded ? 240 : 52
 
-    Behavior on height { NumberAnimation { duration: 200; easing.type: Easing.OutQuint } }
+    Behavior on height { NumberAnimation { duration: Theme.animCollapseDuration; easing.type: Theme.animCollapseEasing } }
 
     Row {
         anchors.fill: parent

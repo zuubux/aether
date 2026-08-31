@@ -43,23 +43,28 @@
   - Only generate halos for connected communities with $N \ge 3$ nodes.
 - **Shader Compilation:** Whenever editing `.frag` or `.vert` files, compile using `/usr/lib64/qt6/bin/qsb --qt6 -o <path>.qsb <path>.frag`.
 
-## 7. Modular QML Frontend Contract
+## 7. Modular QML Frontend & Motion Contract
 - **QML Component Hierarchy:**
-  - `Node.qml` acts strictly as an interactive coordinator / state-machine container. Visual rendering code resides strictly within leaf delegates in `aia_canvas/src/qml/node/`:
-    - `NodePill.qml`: Renders Tier 3/4 compact capsules and extension badges.
-    - `NodePreview.qml`: Renders Tier 1.5 in-canvas hover-dwell cards (320x220).
+  - `Node.qml` acts strictly as an interactive coordinator and state container.
+  - `SurfaceShell.qml` controls the outer background frame, border rendering, and morph lifecycle.
+  - `NodeContent.qml` orchestrates active tier delegates via synchronized crossfades.
+  - Leaf delegates reside in `aia_canvas/src/qml/node/`:
+    - `NodePill.qml`: Renders Tier 3 compact capsules and extension badges.
+    - `NodePreview.qml`: Renders Tier 1.5 in-canvas hover-dwell cards (320x220). Loaded synchronously (`asynchronous: false`) to prevent mid-bloom pop.
     - `NodeAura.qml`: Renders semantic glow, selection halo, and search highlight shaders.
-    - `tokenView` (inline in `Node.qml`): Renders Tier 2 ambient inspection slates (220x64).
   - Screen-space search and preview inspections reside in `aia_canvas/src/qml/search/` (`SearchShelf.qml`).
 - **UI State Machine Invariants:**
   - **Mutually Exclusive State Flags:** Maintain strict mutual exclusivity between `isPreviewMode`, `isSlateMode`, `isCapsuleMode`, and `isBeadMode`.
-  - **Single Delegate Visibility Invariant:** Exactly ONE visual delegate must be active and visible (`opacity: 1.0`) per node at any given time.
+  - **Single Delegate Visibility Invariant:** Exactly ONE visual delegate must be active and visible (`opacity: 1.0`) per node at any given steady state.
   - **Aperture & Dimension Thresholds:**
     - **Tier 4 (<40%):** 14x14 bead (`isBeadMode`).
     - **Tier 3 (40%-100%):** Compact capsule with height 32 and natural width (`isCapsuleMode`).
     - **Tier 2 (>100%):** 220x64 inspection slate (`isSlateMode`).
     - **Tier 1.5 (Search / Dwell):** 320x220 preview card (`isPreviewMode` or `SearchShelf`).
-  - **Unified Animations:** All dimensional transitions (width, height, radius) must use unified 220ms `Easing.OutQuint` curves.
+- **Motion & Acceleration Pipeline:**
+  - Expansion phases (Tier 3 $\to$ Tier 2 $\to$ Tier 1.5) must use `0`-duration CPU layout snaps coupled with GPU-cached (`layer.enabled`) scale transforms driven by `AetherMotion.qml`.
+  - Never animate layout geometry properties (`width`, `height`) during expansion blooms; GPU scaling matrices handle visual expansion.
+  - Retiring content (e.g. `tokenView`) must fade out rapidly (80ms, `Easing.OutQuad`) to prevent orphaned or stretching labels during bounds transitions.
 
 ## 8. Concurrency, Thread Affinity & QThread Guardrails
 - **Rule 8.1 (Zero Direct Worker Invocations):** The Main GUI thread must NEVER call methods on background `QThread` workers directly (e.g., `worker.start()`, `worker.apply_drag()`). All cross-thread commands MUST use PyQt Signals/Slots to ensure safe `QueuedConnection` execution.
@@ -73,21 +78,28 @@
 - **Rule 9.1 (Strict In-Memory Bounds):** Telemetry collectors must use fixed-size ring buffers (`collections.deque(maxlen=120)`) with zero disk I/O churn or unbounded allocations.
 - **Rule 9.2 (Numeric Scalars Only):** Telemetry samples must strictly record numerical values (latencies, counts, frametimes, byte lengths). File paths, queries, and payload content are forbidden in telemetry buffers.
 - **Rule 9.3 (Air-Gapped Local Boundaries):** Telemetry endpoints must never initiate external network connections or web sockets; all telemetry exposure occurs via in-process `bridge.py` slots or standard POSIX streams (`journald`).
+- **Rule 9.4 (Quiet Production Streams):** Verbose debug logging (such as QML `console.log` motion dumps) must remain silenced by default and only activated when `--debug` is explicitly supplied.
 
-## 10. Rigorous QA, Code Hygiene & Testing Governance
+## 10. Rigorous QA, Code Hygiene & Test-Diet Guardrails
+- **Strict Anti-Test-Bloat Policy:**
+  - Do NOT generate new test files or new test cases for refactors, visual polish, logging silencing, or parameter tweaks.
+  - Only introduce new test cases when building entirely new features, modules, or distinct business logic.
+  - If a refactor changes an existing contract, update the assertions in the existing test file rather than appending duplicate verification tests.
+- **Mandatory Parameterization Rule:** When adding test coverage or handling edge cases for existing modules, spatial zones, or component states, you MUST extend existing `@pytest.mark.parametrize` matrices rather than writing new standalone test functions.
+- **Strict Anti-Test-Weakening Policy:**
+  - When tests fail during a refactor, fix the production code—never weaken or delete assertions simply to make `pytest` pass.
+- **Test Performance & Fast Execution:**
+  - Unit and integration tests must run fast. Avoid adding `QTest.qWait()`, event-loop spinning, or real-time wall-clock sleep loops.
+  - Mock timers and pump events synchronously to maintain sub-second test execution.
 - **Strict Testing Location Boundary:**
   - ALL tests must reside strictly within `tests/` (`tests/unit/`, `tests/qml/`, `tests/integration/`).
-  - Creating ad-hoc test files in `scripts/` or the workspace root directory is strictly forbidden.
-- **Strict Anti-Test-Weakening Policy:**
-  - When tests fail during a refactor, fix the production code—never modify, loosen, or delete assertions simply to make `pytest` pass.
-  - Test contract changes are only allowed if the core user specification deliberately changed, and must be explicitly called out in the completion summary.
+  - Creating ad-hoc test files in `scripts/` or the workspace root is strictly forbidden.
 - **Headless Synchronous Engine Invariant:** `PhysicsEngine.step()` and core engine methods must remain directly callable in headless unit tests without requiring asynchronous event loops or `time.sleep()`.
-- **Zero Zombie Code:** When deprecating, refactoring, or replacing functions, variables, signals, or QML properties, delete the superseded code and its mock references immediately. Do not leave commented-out blocks or orphaned methods.
+- **Zero Zombie Code:** When deprecating, refactoring, or replacing functions, variables, signals, or QML properties, delete the superseded code immediately. Do not leave commented-out blocks or orphaned methods.
 - **Shared Fixtures & Behavioral Contracts:**
   - Consume shared fixtures from `tests/conftest.py` for headless `QGuiApplication` and QML engine setups.
-  - Test real behavioral contracts (e.g., `QTest.keyClick`, state transitions, coordinate math) rather than asserting static mock return values.
-- **Standardized Execution:**
-  - All automated test runs must pass cleanly via `pytest tests/`.
+  - Test real behavioral contracts rather than asserting static mock return values.
+- **Standardized Execution:** All test runs must pass cleanly via `pytest tests/`.
 - **Explicit Completion Report Format:**
   - In the final response, itemize:
     1. The exact files modified or deleted.

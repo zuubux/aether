@@ -1,13 +1,13 @@
 """
 QML and Controller Tests for Node Hover Drift Locking, Relative Tier Escalation, Z-Index Stacking, and Deep Horizon Dissipation.
 Verifies that:
-1. Mouse hover calls pin_node(node_id, true) and unpin on exit via NodeController.
+1. Mouse hover calls set_hovered_node(node_id) without pinning node via NodeController.
 2. NodeController.pin_node supports boolean pin/unpin toggles.
 3. Node.qml z-index stacking follows: isSelected ? 20 : ((isPreviewMode || isHovered) ? 18 : 15).
 4. Relative tier escalation steps up +1 tier on 240ms dwell, then to Tier 1.5 on sustained dwell (~1340ms total: 240ms + 1100ms intent), resetting on mouse exit:
    - Tier 4 -> Tier 3 (240ms) -> Tier 1.5 (~1340ms) -> Tier 4 (exit)
    - Tier 3 -> Tier 2 (240ms) -> Tier 1.5 (~1340ms) -> Tier 3 (exit)
-   - Tier 2 -> Tier 2 hovered/pinned (240ms) -> Tier 1.5 (~1340ms) -> Tier 2 (exit)
+   - Tier 2 -> Tier 2 hovered (240ms) -> Tier 1.5 (~1340ms) -> Tier 2 (exit)
 5. Nodes at distFromCenter > 850 render as TIER_4 Star Beads / Embers when unhovered and elevate to TIER_3 on 240ms hover.
 """
 
@@ -42,6 +42,9 @@ def test_node_qml_hover_preview_z_index_stacking(qapp, qml_engine):
     node_comp = QQmlComponent(qml_engine, "aia_canvas/src/qml/Node.qml")
     assert node_comp.status() == QQmlComponent.Status.Ready, f"Node.qml error: {node_comp.errors()}"
     node_item = node_comp.create()
+    for c in node_item.children():
+        if "Timer" in c.metaObject().className():
+            c.setProperty("interval", 15)
     assert node_item is not None
 
     # Default ambient state -> z = 15
@@ -78,6 +81,9 @@ def test_node_qml_relative_hover_dwell_escalation(qapp, qml_engine, mock_bridge,
     node_comp = QQmlComponent(qml_engine, "aia_canvas/src/qml/Node.qml")
     assert node_comp.status() == QQmlComponent.Status.Ready, f"Node.qml error: {node_comp.errors()}"
     node_item = node_comp.create()
+    for c in node_item.children():
+        if "Timer" in c.metaObject().className():
+            c.setProperty("interval", 15)
     assert node_item is not None
 
     node_item.setProperty("bridge", mock_bridge)
@@ -106,7 +112,7 @@ def test_node_qml_relative_hover_dwell_escalation(qapp, qml_engine, mock_bridge,
     assert node_item.property("currentTier") == base_tier
     assert mock_bridge.physics_engine.pinned_node_id == 0
 
-    # 2. Sustained Hover Dwell (240ms) -> expected_hover_tier, pinned, isHovered = True
+    # 2. Sustained Hover Dwell (240ms) -> expected_hover_tier, isHovered = True, set_hovered_node called (pinned_node_id remains 0)
     mouse_area.entered.emit()
     QCoreApplication.processEvents()
     assert node_item.property("isHovered") is False
@@ -118,7 +124,8 @@ def test_node_qml_relative_hover_dwell_escalation(qapp, qml_engine, mock_bridge,
         time.sleep(0.01)
 
     assert node_item.property("isHovered") is True
-    assert mock_bridge.physics_engine.pinned_node_id == 101
+    assert mock_bridge._hovered_node_id == 101
+    assert mock_bridge.physics_engine.pinned_node_id == 0
     assert node_item.property("currentTier") == expected_hover_tier
     assert node_item.property("z") == 18
 
@@ -131,18 +138,20 @@ def test_node_qml_relative_hover_dwell_escalation(qapp, qml_engine, mock_bridge,
     assert node_item.property("currentTier") == "TIER_1_5"
     assert node_item.property("isPreviewMode") is True
     assert node_item.property("isHovered") is True
-    assert mock_bridge.physics_engine.pinned_node_id == 101
+    assert mock_bridge._hovered_node_id == 101
+    assert mock_bridge.physics_engine.pinned_node_id == 0
 
-    # 4. Exit after dwell -> collapses back to base_tier and unpins
+    # 4. Exit after dwell -> collapses back to base_tier and clears hovered node
     mouse_area.exited.emit()
     start_time = time.time()
-    while mock_bridge.physics_engine.pinned_node_id != 0 and (time.time() - start_time) < 1.0:
+    while mock_bridge._hovered_node_id != 0 and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
         time.sleep(0.01)
 
     assert node_item.property("isHovered") is False
     assert node_item.property("isDwelling") is False
     assert node_item.property("currentTier") == base_tier
+    assert mock_bridge._hovered_node_id == 0
     assert mock_bridge.physics_engine.pinned_node_id == 0
     assert node_item.property("z") == 15
 
@@ -155,6 +164,9 @@ def test_node_qml_deep_horizon_dissipation_and_hover_elevation(qapp, qml_engine,
     node_comp = QQmlComponent(qml_engine, "aia_canvas/src/qml/Node.qml")
     assert node_comp.status() == QQmlComponent.Status.Ready, f"Node.qml error: {node_comp.errors()}"
     node_item = node_comp.create()
+    for c in node_item.children():
+        if "Timer" in c.metaObject().className():
+            c.setProperty("interval", 15)
     assert node_item is not None
 
     node_item.setProperty("bridge", mock_bridge)

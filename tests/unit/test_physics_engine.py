@@ -166,3 +166,68 @@ def test_acoustic_bottom_hud_exclusion_margin():
         engine.step(nodes=nodes, edges=[], focused_node_id=0)
 
     assert node.y < bottom_threshold
+
+
+def test_tendril_spring_pull_forces_disabled():
+    """Verify that edge/tendril spring pull forces are set to 0.0 in the simulation loop."""
+    engine = PhysicsEngine()
+    pos = np.array([[100.0, 100.0], [500.0, 500.0]], dtype=np.float64)
+    node_ids = np.array([1, 2], dtype=np.int64)
+    id_to_idx = {1: 0, 2: 1}
+    forces = np.zeros((2, 2), dtype=np.float64)
+    edge = Edge(source_id=1, target_id=2, edge_type="explicit", category="topological", weight=1.0)
+
+    engine._apply_hooke_springs(
+        edges=[edge],
+        pos=pos,
+        node_ids=node_ids,
+        id_to_idx=id_to_idx,
+        forces=forces,
+        geom_scale=1.0,
+        has_active_focus=False,
+        focused_node_id=0,
+        first_deg_indices=set(),
+        second_deg_indices=set(),
+    )
+
+    # Spring forces must be strictly 0.0
+    assert np.all(forces == 0.0)
+
+
+def test_static_node_resting_zero_velocity():
+    """Verify nodes settle to static resting state with zero residual velocity when forces/speeds are low."""
+    engine = PhysicsEngine()
+    node = Node(id=1, file_path="/test/rest.md", x=1000.0, y=1000.0)
+    nodes = [node]
+
+    pos = np.array([[1000.0, 1000.0]], dtype=np.float64)
+    vel = np.array([[0.04, -0.03]], dtype=np.float64)
+    forces = np.zeros((1, 2), dtype=np.float64)
+    node_ids = np.array([1], dtype=np.int64)
+    id_to_idx = {1: 0}
+    comp_ids = np.array([-1], dtype=np.int32)
+
+    engine._integrate_velocities(
+        nodes=nodes,
+        pos=pos,
+        vel=vel,
+        forces=forces,
+        node_ids=node_ids,
+        id_to_idx=id_to_idx,
+        comp_ids=comp_ids,
+        dt=0.016,
+        has_active_focus=False,
+        focused_node_id=0,
+        hovered_node_id=0,
+        first_deg_indices=set(),
+        second_degree_parent={},
+        focal_weights={},
+        first_degree_set=set(),
+    )
+
+    # Residual velocity should be zeroed out
+    assert vel[0, 0] == 0.0
+    assert vel[0, 1] == 0.0
+    assert node.vx == 0.0
+    assert node.vy == 0.0
+

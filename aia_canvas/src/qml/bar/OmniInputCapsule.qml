@@ -132,7 +132,7 @@ Item {
                 var sigil = root.modePrefix;
                 if (!sigil || !txt.startsWith(sigil)) return 0;
                 var prefixToHide = txt.startsWith(sigil + " ") ? (sigil + " ") : sigil;
-                return -inputFontMetrics.advanceWidth(prefixToHide);
+                return -Math.round(inputFontMetrics.advanceWidth(prefixToHide));
             }
             placeholderText: ""
             background: Item {}
@@ -141,7 +141,6 @@ Item {
                 id: customPlaceholder
                 objectName: "customPlaceholderText"
                 anchors.left: parent.left
-                anchors.leftMargin: inputField.leftPadding
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom

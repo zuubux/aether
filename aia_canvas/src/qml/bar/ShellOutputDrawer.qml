@@ -12,10 +12,11 @@ Item {
     property bool showShellOutput: false
     property var shellOutputModel: []
     property var systemStatusItem: null
+    property alias shellListView: shellListView
 
     visible: showShellOutput
 
-    Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+    Behavior on height { NumberAnimation { duration: Theme.animCollapseDuration; easing.type: Theme.animCollapseEasing } }
 
     Rectangle {
         id: shellDrawerBg
@@ -46,14 +47,15 @@ Item {
             objectName: "shellListView"
             width: shellScrollView.width
             clip: true
-            topMargin: 16
+            topMargin: 24
             bottomMargin: 12
             spacing: 4
             model: root.shellOutputModel
 
             delegate: Item {
                 width: shellListView.width
-                height: lineText.implicitHeight
+                visible: (modelData.title || modelData.line || "") !== ""
+                height: visible ? lineText.implicitHeight : 0
 
                 Text {
                     id: lineText

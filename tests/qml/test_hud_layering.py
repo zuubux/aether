@@ -84,6 +84,7 @@ Item {
     id: testRoot
     SurfaceShell {
         id: testShell
+        archetypeColor: "#00F2FE"
     }
     property alias shell: testShell
     readonly property color bgBorderColor: testShell.children[0].border.color
@@ -96,12 +97,12 @@ Item {
     shell_inst = test_item.property("shell")
 
     # At rest
-    assert test_item.property("bgBorderWidth") == 1
-    assert test_item.property("bgBorderColor").name().lower() == "#1e2430"
+    assert test_item.property("bgBorderWidth") == 1.0
+    assert test_item.property("bgBorderColor").name().lower() == "#30363d"
 
     # Dragging
     shell_inst.setProperty("isDragging", True)
-    assert test_item.property("bgBorderWidth") == 2
+    assert test_item.property("bgBorderWidth") == 1.5
     start = time.time()
     while time.time() - start < 0.4:
         QCoreApplication.processEvents()

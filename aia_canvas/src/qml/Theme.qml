@@ -40,6 +40,34 @@ QtObject {
     readonly property color borderSeamSubtle: Qt.rgba(1.0, 1.0, 1.0, 0.06)
     readonly property color surfaceBorder: "#1e2430"
     readonly property color surfaceHovered: "#161c28"
+    readonly property int touchHitboxMin: 44
+    readonly property FontLoader fontLoaderAiVoice: FontLoader {
+        objectName: "fontLoaderAiVoice"
+        source: Qt.resolvedUrl("../../assets/fonts/Epilogue-VariableFont_wght.ttf")
+    }
+    readonly property string fontAiVoice: fontLoaderAiVoice.name ? fontLoaderAiVoice.name : "'Epilogue', 'Source Serif 4', sans-serif"
+
+    // Synthetic AI Voice Context Tints (Text & Glyphs)
+    readonly property color aiVoiceGlacial: "#F1F5F9"  // Dialogue / Primary Reasoning (Crisp neutral slate)
+    readonly property color aiVoiceMist: "#E2E8F0"     // Node Diagnostics / Analytical
+    readonly property color aiVoiceEmerald: "#A7F3D0"  // Code Diffs / Additions / Proposals
+    readonly property color aiVoiceAmber: "#FEF3C7"    // Advisory / Cautionary notes
+
+    // Active Default Binding
+    readonly property color aiVoiceColor: aiVoiceGlacial
+
+    // Helper function for role-based tint resolution
+    function aiTextColorForRole(role) {
+        switch (role) {
+            case "diagnostic": return aiVoiceMist;
+            case "diff": return aiVoiceEmerald;
+            case "advisory": return aiVoiceAmber;
+            case "dialogue":
+            default:
+                return aiVoiceGlacial;
+        }
+    }
+
     readonly property color surfaceButton: "#161B22"
     readonly property color surfaceButtonHover: "#21262D"
     readonly property color borderSubtle: "#30363D"
@@ -102,8 +130,9 @@ QtObject {
 
     // Animations
     readonly property int animDuration: 400
-    readonly property int animEasing: Easing.OutCubic
+    readonly property int animFadeInDuration: 200
     readonly property int animCollapseDuration: 280
+    readonly property int animEasing: Easing.OutCubic
     readonly property int animCollapseEasing: Easing.InOutQuad
 
     // Semantic Badge Colors for file archetypes

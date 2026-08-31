@@ -12,6 +12,14 @@ class GraphStore:
         self._nodes: dict[int, Node] = {}
         self._edges: list[Edge] = []
 
+    @property
+    def nodes(self) -> dict[int, Node]:
+        return self._nodes
+
+    @property
+    def edges(self) -> list[Edge]:
+        return self._edges
+
     def get_node(self, node_id: int) -> Node | None:
         return self._nodes.get(node_id)
 
@@ -27,6 +35,15 @@ class GraphStore:
             existing.filePath = node.filePath
         else:
             self._nodes[node.id] = node
+
+    def add_edge(self, edge: Edge):
+        self._edges.append(edge)
+
+    def get_focal_edges(self, node_id: int) -> list[Edge]:
+        return [
+            e for e in self._edges 
+            if getattr(e, "sourceId", None) == node_id or getattr(e, "targetId", None) == node_id or getattr(e, "source_id", None) == node_id or getattr(e, "target_id", None) == node_id
+        ]
 
     def remove_node(self, node_id: int):
         self._nodes.pop(node_id, None)

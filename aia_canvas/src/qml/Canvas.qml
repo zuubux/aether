@@ -4,6 +4,7 @@ import "hud"
 import "search"
 import "bar"
 
+import "background"
 Window {
     id: canvasRoot
     width: 2560
@@ -11,6 +12,14 @@ Window {
     title: "Aether Canvas"
     color: "#07080b"
     property bool showDiagnostics: false
+    CanvasAtmosphere {
+        id: canvasAtmosphere
+        anchors.fill: parent
+        cameraX: canvasViewport.targetX
+        cameraY: canvasViewport.targetY
+    }
+
+
     readonly property alias omniBar: omniBar
 
     readonly property int nodeCount: (canvasBridge && canvasBridge.nodes) ? Math.max(1, canvasBridge.nodes.length) : 1

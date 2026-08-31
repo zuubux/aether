@@ -24,23 +24,24 @@ def test_provider_metadata_contract():
     """Verify ProviderMetadata structure and reactivity across providers and controller."""
     meta = ProviderMetadata()
     assert meta.id == "gemini_flash"
-    assert meta.display_name == "Flash"
+    assert meta.display_name == "3.7 Flash"
     assert meta.accent_color == "#38BDF8"
     assert meta.icon_glyph == "✦"
     assert meta["id"] == "gemini_flash"
     assert meta.to_dict() == {
         "id": "gemini_flash",
-        "display_name": "Flash",
+        "display_name": "3.7 Flash",
         "accent_color": "#38BDF8",
         "icon_glyph": "✦",
+        "icon_path": "aia_canvas/assets/icons/providers/gemini.svg",
     }
 
-    provider = GeminiProvider()
+    provider = GeminiProvider(model="gemini-3.7-flash")
     assert provider.metadata.id == "gemini_flash"
-    assert provider.metadata.display_name == "Flash"
+    assert provider.metadata.display_name == "3.7 Flash"
 
     engine = ConversationEngine(provider=provider)
-    assert engine.provider_metadata.to_dict()["display_name"] == "Flash"
+    assert engine.provider_metadata.to_dict()["display_name"] == "3.7 Flash"
 
     # Test custom metadata provider
     class CustomLLMProvider(BaseLLMProvider):
@@ -154,10 +155,11 @@ def test_conversation_engine_provider_switch():
     asyncio.run(_test())
 
 
-def test_gemini_provider_missing_credentials_fallback(monkeypatch):
+def test_gemini_provider_missing_credentials_fallback(monkeypatch, tmp_path):
     """Verify GeminiProvider advisory when credentials are missing."""
     monkeypatch.delenv("AETHER_GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
     provider = GeminiProvider(api_key=None)
     assert not provider.validate_credentials()
@@ -169,6 +171,42 @@ def test_gemini_provider_missing_credentials_fallback(monkeypatch):
     assert len(chunks) == 1
     assert chunks[0].startswith("[Gemini Advisory]")
     assert "missing" in chunks[0].lower() or "set" in chunks[0].lower()
+
+
+def test_gemini_provider_model_resolution(monkeypatch, tmp_path):
+    """Verify Gemini model resolution precedence: explicit > settings.json > AETHER_GEMINI_MODEL > default (gemini-3.7-flash)."""
+    monkeypatch.delenv("AETHER_GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    # 1. Default fallback -> gemini-3.7-flash
+    provider_default = GeminiProvider()
+    assert provider_default.model == "gemini-3.7-flash"
+    assert provider_default.metadata.display_name == "3.7 Flash"
+
+    # 2. Environment variable AETHER_GEMINI_MODEL
+    monkeypatch.setenv("AETHER_GEMINI_MODEL", "gemini-3.6-flash")
+    provider_env = GeminiProvider()
+    assert provider_env.model == "gemini-3.6-flash"
+    assert provider_env.metadata.display_name == "3.6 Flash"
+
+    # 3. Settings JSON fallback when env var is absent
+    monkeypatch.delenv("AETHER_GEMINI_MODEL", raising=False)
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    config_dir = tmp_path / ".config" / "aether"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    settings_file = config_dir / "settings.json"
+    settings_file.write_text(
+        json.dumps({"gemini_model": "gemini-3.7-pro"}), encoding="utf-8"
+    )
+
+    provider_json = GeminiProvider()
+    assert provider_json.model == "gemini-3.7-pro"
+    assert provider_json.metadata.display_name == "3.7 Pro"
+
+    # 4. Explicit parameter overrides settings JSON
+    provider_explicit = GeminiProvider(model="custom-model-x")
+    assert provider_explicit.model == "custom-model-x"
 
 
 def test_gemini_provider_credentials_resolution(monkeypatch, tmp_path):
@@ -312,12 +350,12 @@ def test_gemini_provider_system_instruction_and_envelope_passed(monkeypatch):
 
         assert "".join(chunks) == "Gemini response"
         assert captured_payload is not None
-        assert "systemInstruction" in captured_payload
-        assert (
-            captured_payload["systemInstruction"]["parts"][0]["text"]
-            == AETHER_SYSTEM_INSTRUCTION
-        )
-        assert captured_payload["contents"][0]["parts"][0]["text"] == envelope_prompt
+        assert "system_instruction" in captured_payload
+        sys_text = captured_payload["system_instruction"]["parts"][0]["text"]
+        assert AETHER_SYSTEM_INSTRUCTION in sys_text
+        assert "[Spatial Context]" in sys_text
+        assert captured_payload["generationConfig"]["maxOutputTokens"] == 350
+        assert captured_payload["contents"][0]["parts"][0]["text"] == "How do I run this?"
 
     asyncio.run(_test())
 
@@ -453,4 +491,51 @@ def test_conversation_controller_stream_prompt(qapp):
     assert tokens == ["Tokyo ", "time ", "response"]
     assert finished == ["Tokyo time response"]
     assert controller.engineState == "IDLE"
+
+
+def test_centralized_context_builder_and_persona_identity(monkeypatch):
+    """Verify AetherContextBuilder renders system timestamp, platform details, workspace path, and identity string."""
+    import platform
+    from omni.context import AetherContextBuilder
+    from omni.engines.conversation.persona import AETHER_SYSTEM_INSTRUCTION
+
+    # 1. Identity string check
+    assert AETHER_SYSTEM_INSTRUCTION.startswith("You are Aether, an intelligent spatial workspace.")
+    assert "Aether HUD" not in AETHER_SYSTEM_INSTRUCTION
+
+    # 2. Builder defaults check
+    builder = AetherContextBuilder()
+    sys_inst = builder.build_system_instruction()
+
+    assert "You are Aether" in sys_inst
+    assert "[RUNTIME ENVIRONMENT]" in sys_inst
+    assert "- System Timestamp: " in sys_inst
+    assert f"- Host Platform: {platform.system()}" in sys_inst
+    assert f"- Working Directory: {builder.cwd}" in sys_inst
+    assert f"- Workspace Path: {builder.workspace_path}" in sys_inst
+
+    # 3. Builder explicit parameter & telemetry check
+    custom_builder = AetherContextBuilder(
+        cwd="/tmp/workspace",
+        workspace_path="/tmp/workspace",
+        timestamp="Thursday, August 27, 2026, 19:32 MDT",
+        platform_info="Linux 6.6.0-x86_64 (x86_64)",
+        telemetry={
+            "node_count": 42,
+            "focused_node_id": "node_999",
+            "focused_node_type": "Python",
+            "context_pills": ["pill_1", "pill_2"],
+        },
+    )
+    custom_inst = custom_builder.build_system_instruction()
+
+    assert "Thursday, August 27, 2026, 19:32 MDT" in custom_inst
+    assert "Linux 6.6.0-x86_64 (x86_64)" in custom_inst
+    assert "- Working Directory: /tmp/workspace" in custom_inst
+    assert "[CANVAS TELEMETRY]" in custom_inst
+    assert "- Node Count: 42" in custom_inst
+    assert "- Focused Node ID: node_999" in custom_inst
+    assert "- Focused Node Type: Python" in custom_inst
+    assert "- Attached Context Pills: pill_1, pill_2" in custom_inst
+
 

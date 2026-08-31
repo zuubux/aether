@@ -8,8 +8,9 @@ import datetime
 import mimetypes
 import os
 from pathlib import Path
+import platform
 import sqlite3
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from .models import SpatialContext
 
@@ -22,6 +23,105 @@ class OmniContext:
     selected_node_ids: List[str] = field(default_factory=list)
     typing_cadence_ms: float = 0.0
 
+
+class AetherContextBuilder:
+    """Centralized builder for system instructions and runtime environment context."""
+
+    def __init__(
+        self,
+        cwd: Optional[str] = None,
+        workspace_path: Optional[str] = None,
+        telemetry: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[str] = None,
+        platform_info: Optional[str] = None,
+    ):
+        self.cwd = cwd or os.getcwd()
+        self.workspace_path = (
+            workspace_path or os.environ.get("AETHER_WORKSPACE") or self.cwd
+        )
+        self.telemetry = telemetry or {}
+
+        if timestamp is not None:
+            self.timestamp = timestamp
+        else:
+            now = datetime.datetime.now().astimezone()
+            tz_name = now.strftime("%Z").strip()
+            self.timestamp = now.strftime(f"%A, %B %d, %Y, %H:%M {tz_name}").strip()
+
+        if platform_info is not None:
+            self.platform_info = platform_info
+        else:
+            self.platform_info = (
+                f"{platform.system()} {platform.release()} ({platform.machine()})"
+            )
+
+    def get_environment_context(self) -> Dict[str, Any]:
+        """Returns runtime environment metadata dictionary."""
+        return {
+            "timestamp": self.timestamp,
+            "platform": self.platform_info,
+            "cwd": self.cwd,
+            "workspace_path": self.workspace_path,
+            "telemetry": self.telemetry,
+        }
+
+    def build_system_instruction(
+        self,
+        base_instruction: Optional[str] = None,
+        canvas_telemetry: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Formats base persona instruction with structured runtime environment & telemetry context blocks."""
+        from .engines.conversation.persona import AETHER_SYSTEM_INSTRUCTION
+
+        base = base_instruction or AETHER_SYSTEM_INSTRUCTION
+        if "[RUNTIME ENVIRONMENT]" in base:
+            return base
+
+        telemetry = (
+            canvas_telemetry if canvas_telemetry is not None else self.telemetry
+        )
+
+        context_lines = [
+            "[RUNTIME ENVIRONMENT]",
+            f"- System Timestamp: {self.timestamp}",
+            f"- Host Platform: {self.platform_info}",
+            f"- Working Directory: {self.cwd}",
+            f"- Workspace Path: {self.workspace_path}",
+        ]
+
+        if telemetry:
+            context_lines.append("[CANVAS TELEMETRY]")
+            if "node_count" in telemetry:
+                context_lines.append(f"- Node Count: {telemetry['node_count']}")
+            if "focused_node_id" in telemetry and telemetry["focused_node_id"]:
+                context_lines.append(
+                    f"- Focused Node ID: {telemetry['focused_node_id']}"
+                )
+            if "focused_node_type" in telemetry and telemetry["focused_node_type"]:
+                context_lines.append(
+                    f"- Focused Node Type: {telemetry['focused_node_type']}"
+                )
+            if "attached_context_ids" in telemetry or "context_pills" in telemetry:
+                pills = (
+                    telemetry.get("attached_context_ids")
+                    or telemetry.get("context_pills")
+                    or []
+                )
+                context_lines.append(
+                    f"- Attached Context Pills: {', '.join(str(p) for p in pills) if pills else 'None'}"
+                )
+            for k, v in telemetry.items():
+                if k not in (
+                    "node_count",
+                    "focused_node_id",
+                    "focused_node_type",
+                    "attached_context_ids",
+                    "context_pills",
+                ):
+                    context_lines.append(f"- {k}: {v}")
+
+        env_block = "\n".join(context_lines)
+        return f"{base}\n\n{env_block}"
 
 
 def _is_binary_file(path_str: str, mime_type: Optional[str]) -> bool:

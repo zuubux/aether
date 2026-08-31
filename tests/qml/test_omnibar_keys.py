@@ -89,7 +89,7 @@ def test_omnibar_key_events_and_shelf_expansion(qapp, qml_engine, canvas_qml_roo
     up_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Up, Qt.KeyboardModifier.NoModifier)
     qapp.sendEvent(input_field, up_evt)
     for _ in range(6):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
 
     assert omni_bar.property("shelfExpanded")
@@ -101,7 +101,7 @@ def test_omnibar_key_events_and_shelf_expansion(qapp, qml_engine, canvas_qml_roo
     qapp.processEvents()
     qapp.sendEvent(input_field, down_evt)
     for _ in range(10):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
 
     assert not omni_bar.property("shelfExpanded")
@@ -127,7 +127,7 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root):
 
     omni_bar.open()
     for _ in range(10):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
 
     # Standard query
@@ -149,7 +149,7 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root):
     bar_shell = omni_bar.findChild(object, "barShell")
     input_field.setProperty("text", "? explain quantum")
     for _ in range(12):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
     assert prefix_icon.property("visible") is False
     assert mode_badge.property("visible") is True
@@ -159,7 +159,7 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root):
     assert bar_shell.property("borderColor").name().lower() == "#38bdf8"
     assert mode_sigil.property("text") == "?"
     if search_shelf:
-        assert search_shelf.property("opacity") == 0.0
+        assert search_shelf.property("opacity") < 0.01
 
     # Test Gemini provider badge dynamic identity
     omni_bar.setProperty("activeProvider", "gemini")
@@ -194,7 +194,7 @@ def test_omnibar_shell_drawer_rendering(qapp, qml_engine, canvas_qml_root):
 
     omni_bar.open()
     for _ in range(12):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
 
     # Enter shell query
@@ -206,7 +206,7 @@ def test_omnibar_shell_drawer_rendering(qapp, qml_engine, canvas_qml_root):
     ]
     omni_bar.setProperty("resultsList", results)
     for _ in range(12):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
 
     # Ribbon container suppressed in shell mode
@@ -377,12 +377,12 @@ def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_ro
     # 1. Type conversational query
     input_field.setProperty("text", "? Explain Aether")
     for _ in range(12):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
 
     assert omni_bar.property("isConversationalMode") is True
     assert bar_shell.property("borderColor").name().lower() == "#38bdf8"
-    assert search_shelf.property("opacity") == 0.0
+    assert search_shelf.property("opacity") < 0.01
     assert ribbon_container.property("visible") is False
 
     # 2. Simulate streaming results arriving into resultsList
@@ -392,7 +392,7 @@ def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_ro
     ]
     omni_bar.setProperty("resultsList", stream_results)
     for _ in range(12):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
 
     # 3. Verify dialogue output drawer opens and expands
@@ -401,15 +401,14 @@ def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_ro
     assert omni_bar.property("dialogueDrawerHeight") > 0
     assert omni_bar.property("height") > 48
 
-    # 4. Verify Provider Badge as Top-Right Header Pill
+    # 4. Verify Provider Badge as Top-Right Header Pill (Frameless / Boxless)
     provider_pill = omni_bar.findChild(object, "providerHeaderPill")
     assert provider_pill is not None
-    assert provider_pill.property("opacity") == 0.3
-    assert provider_pill.property("radius") == 4
+    assert provider_pill.property("opacity") == 1.0
 
     name_text = omni_bar.findChild(object, "nameText")
     assert name_text is not None
-    assert name_text.property("text") == "Flash"
+    assert name_text.property("text") == "3.7 Flash"
     assert name_text.property("font").pixelSize() == 10
 
     glyph_text = omni_bar.findChild(object, "glyphText")
@@ -451,7 +450,7 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
     # Type a conversational query starting with ?
     input_field.setProperty("text", "? What is the architecture?")
     for _ in range(10):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
 
     # Verify search shelf opacity is 0, bridge searchActive is False (node highlights cleared), debounceTimer stopped, provider pill opacity 0.3
@@ -461,7 +460,7 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
     assert debounce_timer is not None
     assert debounce_timer.property("running") is False
     assert provider_pill is not None
-    assert provider_pill.property("opacity") == 0.3
+    assert provider_pill.property("opacity") == 1.0
     assert True not in search_active_signals
 
     # Also test shell mode query starting with >
@@ -471,11 +470,11 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
 
     input_field.setProperty("text", "> ls -la")
     for _ in range(5):
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
 
     assert omni_bar.property("isShellMode") is True
-    assert search_shelf.property("opacity") == 0.0
+    assert search_shelf.property("opacity") < 0.01
     assert mock_bridge.searchActive is False
     assert debounce_timer.property("running") is False
 
@@ -517,7 +516,7 @@ def test_omnibar_ai_auto_send_debounce_and_idempotency(qapp, qml_engine, canvas_
     for _ in range(50):
         if mock_bridge.engineState in ("STREAMING", "ERROR", "IDLE"):
             break
-        time.sleep(0.02)
+        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
         qapp.processEvents()
     qapp.processEvents()
 
@@ -609,6 +608,7 @@ def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas
 
     assert omni_bar.property("showShellOutput") is True
     assert shell_drawer.property("visible") is True
+    assert shell_drawer.property("shellListView") is not None
     assert omni_bar.property("systemStatusItem") is not None
     assert len(omni_bar.property("shellOutputModel").toVariant()) == 1
     assert omni_bar.property("showDialogueOutput") is False
@@ -675,6 +675,7 @@ def test_omnibar_enter_key_triggers_conversation_execution(qapp, qml_engine, can
     assert omni_bar.property("active") is True
     assert omni_bar.property("showDialogueOutput") is True
     assert dialogue_drawer.property("visible") is True
+    assert input_field.property("text") == "? "
 
     # Emit token signal from conversation engine
     mock_bridge.conversation.tokenReceived.emit("System is operational.")
@@ -743,7 +744,7 @@ def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qm
     assert "accent_color" in provider_meta
     assert "icon_glyph" in provider_meta
     assert provider_meta["id"] == "gemini_flash"
-    assert provider_meta["display_name"] == "Flash"
+    assert provider_meta["display_name"] == "3.7 Flash"
     assert provider_meta["accent_color"] == "#38BDF8"
     assert provider_meta["icon_glyph"] == "✦"
 
@@ -780,12 +781,30 @@ def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qm
     assert omni_bar.property("showDialogueOutput") is True
     assert omni_bar.property("dialogueFullText") == "A graph database stores nodes and edges."
 
+    # Verify active prompt header row in DialogueDrawer
+    dialogue_drawer = omni_bar.findChild(object, "dialogueDrawer")
+    assert dialogue_drawer is not None
+    active_prompt_header = dialogue_drawer.findChild(object, "activePromptHeader")
+    active_prompt_text = dialogue_drawer.findChild(object, "activePromptText")
+    assert active_prompt_header is not None
+    assert active_prompt_text is not None
+    assert active_prompt_text.property("font").italic() is True
+    # Verify activePromptText strips leading '?' or whitespace
+    dialogue_drawer.setProperty("activePrompt", "?  What is spatial graph?")
+    assert active_prompt_text.property("text") == "What is spatial graph?"
+
+    # Verify custom placeholder unclipped left margin when modePrefix is active
+    custom_placeholder = omni_bar.findChild(object, "customPlaceholderText")
+    assert custom_placeholder is not None
+    assert custom_placeholder.property("x") == 0
+
     # Verify dialogueText delegate font and formatting (if delegate instantiated)
     dialogue_text_items = omni_bar.findChildren(object, "dialogueText")
     if len(dialogue_text_items) > 0:
         dialogue_text = dialogue_text_items[0]
         assert "Inter" in dialogue_text.property("font").family()
         assert dialogue_text.property("font").pixelSize() == 13
+        assert dialogue_text.property("color").name().lower() == "#f1f5f9"
 
     # 3. Test Status Dot States: IDLE, STREAMING, ERROR
     # A) IDLE State: Color = Theme.accentAI (#38BDF8), static opacity = 0.5

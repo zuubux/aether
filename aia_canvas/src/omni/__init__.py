@@ -4,7 +4,12 @@ Provides OmniContext, SpatialContext, OmniResult, OmniEngine, OmniRouter and bui
 """
 
 from .models import SpatialContext
-from .context import OmniContext, assemble_spatial_context, format_spatial_envelope
+from .context import (
+    AetherContextBuilder,
+    OmniContext,
+    assemble_spatial_context,
+    format_spatial_envelope,
+)
 from .base import OmniResult, OmniEngine
 from .router import OmniRouter
 from .engines import (
@@ -18,6 +23,7 @@ from .engines import (
 )
 
 __all__ = [
+    "AetherContextBuilder",
     "SpatialContext",
     "OmniContext",
     "assemble_spatial_context",

@@ -222,86 +222,11 @@ class PhysicsEngine:
         first_deg_indices: set[int],
         second_deg_indices: set[int],
     ) -> None:
-        valid_edges = [e for e in edges if e.sourceId in id_to_idx and e.targetId in id_to_idx]
-        if not valid_edges:
-            return
-
-        src_idx = np.array([id_to_idx[e.sourceId] for e in valid_edges], dtype=np.int32)
-        tgt_idx = np.array([id_to_idx[e.targetId] for e in valid_edges], dtype=np.int32)
-        weights = np.array([e.weight for e in valid_edges], dtype=np.float64)
-        types = [e.edgeType.lower() for e in valid_edges]
-
-        dx = pos[tgt_idx, 0] - pos[src_idx, 0]
-        dy = pos[tgt_idx, 1] - pos[src_idx, 1]
-        dist = np.hypot(dx, dy)
-        dist_safe = np.where(dist < 1e-6, 1.0, dist)
-
-        rest_len = np.array([150.0 if t == "explicit" else (200.0 if t == "temporal" else 240.0) for t in types]) * geom_scale
-        displacement = dist_safe - rest_len
-
-        k_spring = 0.85 * np.minimum(1.0, weights)
-        for e_i, (e, t) in enumerate(zip(valid_edges, types)):
-            if t == "temporal":
-                k_spring[e_i] = 0.0
-            else:
-                is_cross_desk_temporal = (t == "temporal") and (
-                    (e.sourceId in self.recent_node_ids) != (e.targetId in self.recent_node_ids)
-                )
-                if is_cross_desk_temporal:
-                    k_spring[e_i] *= 0.10
-
-            if e.sourceId in self.staged_targets or e.targetId in self.staged_targets:
-                k_spring[e_i] = 0.0
-
-        spring_force = displacement * k_spring
-        if not has_active_focus:
-            mask_cap = spring_force > 150.0
-            spring_force = np.where(mask_cap, 150.0 + (spring_force - 150.0) * 0.05, spring_force)
-
-        fx_s = (dx / dist_safe) * spring_force
-        fy_s = (dy / dist_safe) * spring_force
-
-        if has_active_focus:
-            def get_tier_idx(idx):
-                nid = node_ids[idx]
-                if nid == focused_node_id:
-                    return 0
-                if idx in first_deg_indices:
-                    return 1
-                if idx in second_deg_indices:
-                    return 2
-                return 3
-
-            for e_i in range(len(valid_edges)):
-                s = src_idx[e_i]
-                t = tgt_idx[e_i]
-                t1 = get_tier_idx(s)
-                t2 = get_tier_idx(t)
-
-                if t1 == 0 or t2 == 0:
-                    continue
-                if t1 == 1 and t2 == 2:
-                    forces[t, 0] -= fx_s[e_i] * 0.3
-                    forces[t, 1] -= fy_s[e_i] * 0.3
-                    continue
-                elif t2 == 1 and t1 == 2:
-                    forces[s, 0] += fx_s[e_i] * 0.3
-                    forces[s, 1] += fy_s[e_i] * 0.3
-                    continue
-                if (t1 == 2 and t2 >= 3) or (t2 == 2 and t1 >= 3):
-                    continue
-                if (t1 == 1 and t2 >= 3) or (t2 == 1 and t1 >= 3):
-                    continue
-
-                forces[s, 0] += fx_s[e_i]
-                forces[s, 1] += fy_s[e_i]
-                forces[t, 0] -= fx_s[e_i]
-                forces[t, 1] -= fy_s[e_i]
-        else:
-            np.add.at(forces[:, 0], src_idx, fx_s)
-            np.add.at(forces[:, 1], src_idx, fy_s)
-            np.add.at(forces[:, 0], tgt_idx, -fx_s)
-            np.add.at(forces[:, 1], tgt_idx, -fy_s)
+        """
+        Edge/tendril spring pull forces are set to 0.0 to disable tension calculations
+        while retaining edge connectivity strictly for visual rendering in QML.
+        """
+        return
 
     def _apply_docking_constraints(
         self,
@@ -532,6 +457,9 @@ class PhysicsEngine:
                 scale = max_speed / cur_speed
                 vel[idx, 0] *= scale
                 vel[idx, 1] *= scale
+            elif cur_speed < 0.1 and math.hypot(fx, fy) < 1.0:
+                vel[idx, 0] = 0.0
+                vel[idx, 1] = 0.0
 
             pos[idx, 0] += vel[idx, 0] * dt
             pos[idx, 1] += vel[idx, 1] * dt

@@ -193,4 +193,5 @@ def test_persona_cleanliness_and_content():
 
     assert isinstance(AETHER_SYSTEM_INSTRUCTION, str)
     assert "Aether" in AETHER_SYSTEM_INSTRUCTION
-    assert "Target Telemetry" in AETHER_SYSTEM_INSTRUCTION
+    assert "BEHAVIORAL INVARIANTS" in AETHER_SYSTEM_INSTRUCTION
+    assert "Temporal Anchoring" in AETHER_SYSTEM_INSTRUCTION

@@ -167,10 +167,8 @@ Item {
             rootItem.isHovered = true
             var targetId = (typeof model !== "undefined" && model && model.id !== undefined) ? model.id : rootItem.nodeId;
             if (nodeCtrl) {
-                nodeCtrl.pin_node(targetId, true)
                 nodeCtrl.set_hovered_node(rootItem.nodeId)
             } else if (rootItem.bridge) {
-                rootItem.bridge.node.pin_node(targetId, true)
                 rootItem.bridge.node.set_hovered_node(rootItem.nodeId)
             }
             intentTimer.restart()

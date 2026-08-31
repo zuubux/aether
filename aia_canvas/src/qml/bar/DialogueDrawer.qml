@@ -11,19 +11,47 @@ Item {
 
     property bool showDialogueOutput: false
     property string dialogueFullText: ""
+    property string activePrompt: ""
     property string engineState: "IDLE"
     property var providerMeta: null
     property bool isConversationalMode: false
+    property alias dialogueListView: dialogueListView
 
     visible: showDialogueOutput
 
-    Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+    Behavior on height { NumberAnimation { duration: Theme.animCollapseDuration; easing.type: Theme.animCollapseEasing } }
 
     Rectangle {
         id: dialogueDrawerBg
         objectName: "dialogueDrawerBg"
         anchors.fill: parent
         color: "transparent"
+    }
+
+    Item {
+        id: activePromptHeader
+        objectName: "activePromptHeader"
+        anchors.top: parent.top
+        anchors.topMargin: 10
+        anchors.left: parent.left
+        anchors.leftMargin: 16
+        anchors.right: providerHeaderPill.left
+        anchors.rightMargin: 12
+        height: 24
+        visible: activePromptText.text !== ""
+
+        Text {
+            id: activePromptText
+            objectName: "activePromptText"
+            anchors.fill: parent
+            verticalAlignment: Text.AlignVCenter
+            text: root.activePrompt ? root.activePrompt.replace(/^[\?\s]+/, "") : ""
+            font.family: Theme.fontAiBody.family
+            font.pixelSize: 12
+            font.italic: true
+            color: Theme.textMuted
+            elide: Text.ElideRight
+        }
     }
 
     ProviderBadge {
@@ -39,25 +67,11 @@ Item {
         showDialogueOutput: root.showDialogueOutput
     }
 
-    Text {
-        id: dialogueTextDummy
-        objectName: "dialogueTextDummy"
-        visible: false
-        width: Math.max(100, dialogueScrollView.width - 12)
-        textFormat: Text.MarkdownText
-        text: "<style>code, pre { font-family: '" + Theme.fontAiCode.family + "', monospace; font-size: 12px; }</style>" + root.dialogueFullText
-        font.family: Theme.fontAiBody.family
-        font.pixelSize: 13
-        lineHeight: 1.3
-        wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-        elide: Text.ElideNone
-    }
-
     ScrollView {
         id: dialogueScrollView
         objectName: "dialogueScrollView"
         anchors.top: parent.top
-        anchors.topMargin: 34
+        anchors.topMargin: 42
         anchors.left: parent.left
         anchors.leftMargin: 16
         anchors.right: parent.right
@@ -85,13 +99,12 @@ Item {
                 objectName: "dialogueText"
                 width: dialogueListView.width
                 textFormat: Text.MarkdownText
-                text: "<style>code, pre { font-family: '" + Theme.fontAiCode.family + "', monospace; font-size: 12px; }</style>" + modelData
-                font.family: Theme.fontAiBody.family
-                font.pixelSize: 13
+                text: modelData
+                font: Theme.fontAiBody
                 lineHeight: 1.3
                 wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                 elide: Text.ElideNone
-                color: Theme.textPrimary
+                color: Theme.aiTextColorForRole("dialogue")
             }
 
             onCountChanged: {

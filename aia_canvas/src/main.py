@@ -14,9 +14,35 @@ from pathlib import Path
 from aia_intent import IntentEngine
 from bridge import CanvasBridge
 from content.streamer import MmapTextStreamer
-from PyQt6.QtCore import QCoreApplication, QLibraryInfo, QTimer
+from PyQt6.QtCore import QCoreApplication, QLibraryInfo, QTimer, QtMsgType, qInstallMessageHandler
 from PyQt6.QtGui import QGuiApplication, QSurfaceFormat
 from PyQt6.QtQml import QQmlApplicationEngine, qmlRegisterType
+
+
+def qt_message_handler(mode, context, message):
+    """Forward Qt and QML console logs/warnings directly to stdout or stderr."""
+    if mode == QtMsgType.QtDebugMsg:
+        msg_type = "DEBUG"
+        stream = sys.stdout
+    elif mode == QtMsgType.QtInfoMsg:
+        msg_type = "INFO"
+        stream = sys.stdout
+    elif mode == QtMsgType.QtWarningMsg:
+        msg_type = "WARNING"
+        stream = sys.stderr
+    elif mode == QtMsgType.QtCriticalMsg:
+        msg_type = "CRITICAL"
+        stream = sys.stderr
+    elif mode == QtMsgType.QtFatalMsg:
+        msg_type = "FATAL"
+        stream = sys.stderr
+    else:
+        msg_type = "LOG"
+        stream = sys.stdout
+
+    location = f" ({context.file}:{context.line})" if context.file and context.line else ""
+    stream.write(f"[QML {msg_type}] {message}{location}\n")
+    stream.flush()
 
 
 def setup_observability(debug=False):
@@ -29,6 +55,9 @@ def setup_observability(debug=False):
     return logging.getLogger("aia_canvas.main")
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
+
     parser = argparse.ArgumentParser(description="Aether Canvas")
     parser.add_argument("--fullscreen", "--full-screen", action="store_true", help="Launch in fullscreen mode")
     parser.add_argument("--span-all", action="store_true", help="Span across all connected displays")
@@ -41,6 +70,9 @@ def main():
     
     # Parse known args so Qt can still parse its own if needed
     args, unparsed_args = parser.parse_known_args()
+
+    if args.debug:
+        os.environ["QT_LOGGING_RULES"] = "qml.debug=true"
 
     logger = setup_observability(args.debug)
     logger.info("Initializing Aether Canvas...")
@@ -72,6 +104,7 @@ def main():
     app = QGuiApplication(sys.argv)
     app.setApplicationName("Aether Canvas")
     app.setOrganizationName("Aether")
+    qInstallMessageHandler(qt_message_handler)
 
     # Allow clean Ctrl+C termination from terminal
     signal.signal(signal.SIGINT, signal.SIG_DFL)

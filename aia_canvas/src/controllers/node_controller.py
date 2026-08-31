@@ -26,6 +26,143 @@ class NodeController(BaseController):
     hoveredNodeChanged = pyqtSignal(int)
     nodeRemoved = pyqtSignal(int)
     edge_added = pyqtSignal(int, int, str, arguments=['source_id', 'target_id', 'edge_type'])
+    isDraggingChanged = pyqtSignal(bool)
+    sig_constellation_active = pyqtSignal(int, bool, arguments=['node_id', 'active'])
+    constellationActiveNodeIdChanged = pyqtSignal(int)
+
+    def __init__(self, bridge, parent=None):
+        super().__init__(bridge, parent)
+        self._is_dragging: bool = False
+        self._constellation_active_node_id: int = 0
+
+    @pyqtProperty(int, notify=constellationActiveNodeIdChanged)
+    def constellationActiveNodeId(self) -> int:
+        return getattr(self, "_constellation_active_node_id", 0)
+
+    @pyqtSlot(int, bool)
+    def set_constellation_active(self, node_id: int, active: bool):
+        bactive = bool(active)
+        target_id = node_id if bactive else 0
+        prev_id = getattr(self, "_constellation_active_node_id", 0)
+
+        if bactive:
+            self._constellation_active_node_id = node_id
+        elif prev_id == node_id:
+            self._constellation_active_node_id = 0
+
+        curr_id = getattr(self, "_constellation_active_node_id", 0)
+        if prev_id != curr_id or bactive:
+            self.constellationActiveNodeIdChanged.emit(curr_id)
+            self.sig_constellation_active.emit(node_id, bactive)
+
+        if hasattr(self.bridge, "spatial_layout_bridge"):
+            self.bridge.spatial_layout_bridge.set_constellation_active(node_id, bactive)
+
+    @pyqtSlot(int, int, result=bool)
+    def is_node_constellation_frozen(self, node_id: int, target_id: int) -> bool:
+        if target_id <= 0:
+            return False
+        if node_id == target_id:
+            return True
+        if hasattr(self.bridge, "spatial_layout_bridge"):
+            store_nodes = self.bridge.store.nodes if (hasattr(self.bridge, "store") and hasattr(self.bridge.store, "nodes")) else {}
+            nodes = list(store_nodes.values()) if isinstance(store_nodes, dict) else list(store_nodes)
+            edges = []
+            if hasattr(self.bridge, "store") and hasattr(self.bridge.store, "get_focal_edges"):
+                edges.extend(self.bridge.store.get_focal_edges(target_id))
+            if hasattr(self.bridge, "_ambient_edges"):
+                edges.extend(getattr(self.bridge, "_ambient_edges", []))
+            if hasattr(self.bridge, "_focal_edges"):
+                edges.extend(getattr(self.bridge, "_focal_edges", []))
+            res = self.bridge.spatial_layout_bridge.is_node_frozen_in_constellation(node_id, target_id, nodes, edges)
+            return res
+        return False
+
+    @pyqtSlot(int, int, result=bool)
+    def is_connected_peer(self, node_id: int, target_id: int) -> bool:
+        """
+        Determines if node_id is a directly connected graph edge neighbor of target_id
+        (and node_id != target_id). Does NOT alter mass, spatial zones, or target coordinates.
+        """
+        if target_id <= 0 or node_id <= 0 or node_id == target_id:
+            return False
+
+        edges = []
+        if hasattr(self.bridge, "store"):
+            store = self.bridge.store
+            if hasattr(store, "get_focal_edges"):
+                edges.extend(store.get_focal_edges(target_id))
+            if hasattr(store, "_edges"):
+                edges.extend(getattr(store, "_edges", []))
+        if hasattr(self.bridge, "_ambient_edges"):
+            edges.extend(getattr(self.bridge, "_ambient_edges", []))
+        if hasattr(self.bridge, "_focal_edges"):
+            edges.extend(getattr(self.bridge, "_focal_edges", []))
+
+        for edge in edges:
+            if isinstance(edge, dict):
+                src = edge.get("sourceId") or edge.get("source_id") or edge.get("source")
+                tgt = edge.get("targetId") or edge.get("target_id") or edge.get("target")
+            else:
+                src = getattr(edge, "sourceId", None) or getattr(edge, "source_id", None) or getattr(edge, "source", None)
+                tgt = getattr(edge, "targetId", None) or getattr(edge, "target_id", None) or getattr(edge, "target", None)
+            if (src == target_id and tgt == node_id) or (tgt == target_id and src == node_id):
+                return True
+        return False
+
+    @pyqtSlot(int, int, result=bool)
+    def is_peer_warmed(self, node_id: int, target_id: int) -> bool:
+        return self.is_connected_peer(node_id, target_id)
+
+    @pyqtSlot(int, result='QVariantList')
+    def get_connected_peers(self, node_id: int) -> list:
+        """
+        Returns a list of node IDs of all directly connected graph edge neighbors of node_id.
+        Does NOT alter mass, spatial zones, or target coordinates.
+        """
+        if node_id <= 0:
+            return []
+
+        edges = []
+        if hasattr(self.bridge, "store"):
+            store = self.bridge.store
+            if hasattr(store, "get_focal_edges"):
+                edges.extend(store.get_focal_edges(node_id))
+            if hasattr(store, "_edges"):
+                edges.extend(getattr(store, "_edges", []))
+        if hasattr(self.bridge, "_ambient_edges"):
+            edges.extend(getattr(self.bridge, "_ambient_edges", []))
+        if hasattr(self.bridge, "_focal_edges"):
+            edges.extend(getattr(self.bridge, "_focal_edges", []))
+
+        peers = set()
+        for edge in edges:
+            if isinstance(edge, dict):
+                src = edge.get("sourceId") or edge.get("source_id") or edge.get("source")
+                tgt = edge.get("targetId") or edge.get("target_id") or edge.get("target")
+            else:
+                src = getattr(edge, "sourceId", None) or getattr(edge, "source_id", None) or getattr(edge, "source", None)
+                tgt = getattr(edge, "targetId", None) or getattr(edge, "target_id", None) or getattr(edge, "target", None)
+            if src == node_id and tgt and tgt != node_id:
+                peers.add(int(tgt))
+            elif tgt == node_id and src and src != node_id:
+                peers.add(int(src))
+        return list(peers)
+
+    @pyqtProperty(bool, notify=isDraggingChanged)
+    def is_dragging(self) -> bool:
+        return getattr(self, "_is_dragging", False)
+
+    @is_dragging.setter
+    def is_dragging(self, val: bool):
+        bval = bool(val)
+        if getattr(self, "_is_dragging", False) != bval:
+            self._is_dragging = bval
+            self.isDraggingChanged.emit(bval)
+
+    @pyqtProperty(bool, notify=isDraggingChanged)
+    def isDragging(self) -> bool:
+        return self.is_dragging
 
     # Async Media Signals
     pdfPageReady = pyqtSignal(str, int, str, arguments=['filePath', 'pageIndex', 'imagePath'])
@@ -49,6 +186,9 @@ class NodeController(BaseController):
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
             
+        if node_id > 0:
+            self.reset_interaction_epoch(node_id)
+
         selected_id = getattr(self.bridge, "_selected_node_id", 0)
         if selected_id != node_id:
             self.bridge._selected_node_id = node_id
@@ -83,12 +223,35 @@ class NodeController(BaseController):
                 )
 
     @pyqtSlot(int)
+    def apply_hover_grace(self, node_id: int):
+        """
+        Neutralized for passive hover isolation: temporary hover dwells do not bump last_interaction_epoch
+        or inflate mass score in SpatialBudgetEngine. Zone promotions are reserved exclusively for explicit
+        user actions (select_node, user dragging, or manual pinning).
+        """
+        pass
+
+    @pyqtSlot(int)
+    def reset_interaction_epoch(self, node_id: int):
+        """Resets last_interaction_epoch to current UTC timestamp (decay factor 1.0)."""
+        if node_id <= 0:
+            return
+        if hasattr(self.bridge, "store") and self.bridge.store:
+            node = self.bridge.store.get_node(node_id)
+            if node:
+                import time
+                node.last_interaction_epoch = time.time()
+                node.is_explicit_action = True
+
+    @pyqtSlot(int)
     def set_hovered_node(self, node_id: int):
         """Sets the currently hovered node ID after hover-dwell debounce (0 to clear)."""
         hovered_id = getattr(self.bridge, "_hovered_node_id", 0)
         if hovered_id != node_id:
             self.bridge._hovered_node_id = node_id
             self.hoveredNodeChanged.emit(node_id)
+            if node_id > 0:
+                self.apply_hover_grace(node_id)
             if hasattr(self.bridge, "_wake_physics"):
                 self.bridge._wake_physics()
                 
@@ -120,20 +283,35 @@ class NodeController(BaseController):
                     self.select_node(node.id)
                     break
 
+    def reset_interaction_epoch_by_path(self, file_path: str):
+        if not file_path or not hasattr(self.bridge, "store") or not self.bridge.store:
+            return
+        clean_path = urllib.parse.unquote(file_path.replace("file://", ""))
+        for node in self.bridge.store.get_all_nodes():
+            if node.filePath == clean_path or node.filePath == file_path:
+                self.reset_interaction_epoch(node.id)
+                break
+
     @pyqtSlot(str)
     def open_in_file_manager(self, file_path: str):
         from utils.desktop import open_in_file_manager as desktop_open_file_manager
-        if not desktop_open_file_manager(file_path):
+        if desktop_open_file_manager(file_path):
+            self.reset_interaction_epoch_by_path(file_path)
+        else:
             self.log_error(f"Failed to open {file_path} in file manager.")
 
     @pyqtSlot(str)
     def open_in_external_editor(self, file_path: str):
         from utils.desktop import open_in_external_editor as desktop_open_editor
-        if not desktop_open_editor(file_path):
+        if desktop_open_editor(file_path):
+            self.reset_interaction_epoch_by_path(file_path)
+        else:
             self.log_error(f"Failed to open {file_path} in external editor.")
 
     @pyqtSlot(int, str)
     def save_node_content(self, node_id: int, new_content: str):
+        if node_id > 0:
+            self.reset_interaction_epoch(node_id)
         is_connected = getattr(self.bridge, "_is_connected", False)
         if not is_connected or node_id <= 0:
             return
@@ -426,6 +604,10 @@ class NodeController(BaseController):
             pinned = arg2
             if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
                 self.bridge.physics_ctrl.set_node_pinned(node_id, pinned)
+            if hasattr(self.bridge, "store") and self.bridge.store:
+                node = self.bridge.store.get_node(node_id)
+                if node:
+                    node.is_pinned = pinned
         else:
             x, y_val = float(arg2), float(y)
             if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
@@ -436,9 +618,11 @@ class NodeController(BaseController):
                 if node:
                     node.x = x
                     node.y = y_val
+                    node.is_pinned = True
 
     @pyqtSlot(int, float, float)
     def update_drag_pos(self, node_id: int, x: float, y: float):
+        self.is_dragging = True
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
         if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
@@ -448,6 +632,9 @@ class NodeController(BaseController):
             if node:
                 node.x = x
                 node.y = y
+                from PyQt6.QtCore import QPointF
+                node.targetPosition = QPointF(x, y)
+                node.is_user_placed = True
 
     @pyqtSlot(int, float, float)
     def update_node_position(self, node_id: int, x: float, y: float):
@@ -455,6 +642,7 @@ class NodeController(BaseController):
 
     @pyqtSlot(int)
     def release_node(self, node_id: int):
+        self.is_dragging = False
         if hasattr(self.bridge, "_wake_physics"):
             self.bridge._wake_physics()
         if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:

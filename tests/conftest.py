@@ -52,6 +52,7 @@ def qml_engine(qapp):
 @pytest.fixture
 def mock_bridge(qapp, monkeypatch):
     """Provides a fresh CanvasBridge instance with cleanup on teardown."""
+    monkeypatch.setenv("AETHER_GEMINI_MODEL", "gemini-3.7-flash")
     monkeypatch.setattr(ConversationController, "stream_prompt", lambda *args, **kwargs: None)
     bridge = CanvasBridge()
     yield bridge

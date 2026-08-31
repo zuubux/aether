@@ -24,6 +24,8 @@ class ConversationController(BaseController):
     responseFinished = pyqtSignal(str)
     engineStateChanged = pyqtSignal(str)
     providerMetadataChanged = pyqtSignal()
+    requestAscensionToSlate = pyqtSignal(list)
+    turnHistoryChanged = pyqtSignal()
 
     def __init__(self, bridge: Any):
         """Initialize ConversationController and connect underlying ConversationEngine.
@@ -33,6 +35,7 @@ class ConversationController(BaseController):
         """
         super().__init__(bridge)
         self._engine_state: str = "IDLE"
+        self._turn_history: List[dict] = []
         if hasattr(bridge, "search_ctrl") and hasattr(bridge.search_ctrl, "router"):
             self.engine = bridge.search_ctrl.router.conversation_engine
         else:
@@ -55,9 +58,10 @@ class ConversationController(BaseController):
             return meta.to_dict() if hasattr(meta, "to_dict") else dict(meta)
         return {
             "id": "gemini_flash",
-            "display_name": "Flash",
+            "display_name": "3.7 Flash",
             "accent_color": "#38BDF8",
             "icon_glyph": "✦",
+            "icon_path": "aia_canvas/assets/icons/providers/gemini.svg",
         }
 
     @pyqtSlot(str)
@@ -141,6 +145,12 @@ class ConversationController(BaseController):
                         self.setEngineState("IDLE")
 
                 full_resp = "".join(accumulated)
+                if prompt and full_resp and not is_error:
+                    turn_record = {"prompt": prompt, "response": full_resp}
+                    self._turn_history.append(turn_record)
+                    self.turnHistoryChanged.emit()
+                    if len(self._turn_history) >= 3:
+                        self.requestAscensionToSlate.emit(list(self._turn_history))
                 self.responseFinished.emit(full_resp)
 
             task = loop.create_task(_async_stream())
@@ -157,16 +167,25 @@ class ConversationController(BaseController):
         self._active_thread = threading.Thread(target=_run_stream, daemon=True)
         self._active_thread.start()
 
+    @pyqtProperty("QVariantList", notify=turnHistoryChanged)
+    def turnHistory(self) -> List[dict]:
+        """List[dict]: Snapshot list of active dialogue turn history records."""
+        return list(self._turn_history)
+
     def get_history(self) -> List[dict]:
         """Return snapshot list of active dialogue turn history.
 
         Returns:
             List[dict]: Historical dialogue turn records.
         """
+        if self._turn_history:
+            return list(self._turn_history)
         return self.engine.get_history()
 
     def clear_history(self) -> None:
         """Clear active session dialogue turn history."""
+        self._turn_history.clear()
+        self.turnHistoryChanged.emit()
         self.engine.clear_history()
 
     def set_provider(self, provider: Any) -> None:

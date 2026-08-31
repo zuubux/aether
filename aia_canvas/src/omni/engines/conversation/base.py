@@ -10,9 +10,10 @@ from typing import Any, AsyncIterator, Dict
 @dataclass
 class ProviderMetadata:
     id: str = "gemini_flash"
-    display_name: str = "Flash"
+    display_name: str = "3.7 Flash"
     accent_color: str = "#38BDF8"
     icon_glyph: str = "✦"
+    icon_path: str = "aia_canvas/assets/icons/providers/gemini.svg"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

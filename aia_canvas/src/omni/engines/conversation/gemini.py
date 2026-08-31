@@ -9,6 +9,7 @@ from typing import Any, AsyncIterator, Dict, Optional
 
 from .base import BaseLLMProvider, ProviderMetadata
 from .persona import AETHER_SYSTEM_INSTRUCTION
+from ...context import AetherContextBuilder
 
 
 class GeminiProvider(BaseLLMProvider):
@@ -17,20 +18,71 @@ class GeminiProvider(BaseLLMProvider):
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-2.0-flash",
+        model: Optional[str] = None,
     ):
         self._explicit_api_key = api_key
-        self.model = model
-        self._metadata = ProviderMetadata(
-            id="gemini_flash",
-            display_name="Flash",
-            accent_color="#38BDF8",
-            icon_glyph="✦",
+        self._explicit_model = model
+
+    @property
+    def model(self) -> str:
+        """Return dynamically resolved Gemini model identifier."""
+        return self._resolve_model()
+
+    def _resolve_model(self) -> str:
+        """Resolve model identifier from explicit parameter, environment, config file, or default."""
+        if self._explicit_model and self._explicit_model.strip():
+            return self._explicit_model.strip()
+
+        # Check environment variable first (environment overrides settings file)
+        env_model = os.environ.get("AETHER_GEMINI_MODEL") or os.environ.get(
+            "GEMINI_MODEL"
         )
+        if env_model and env_model.strip():
+            return env_model.strip()
+
+        # Check local settings file (~/.config/aether/settings.json)
+        config_path = Path.home() / ".config" / "aether" / "settings.json"
+        if config_path.exists():
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        for key_name in (
+                            "gemini_model",
+                            "AETHER_GEMINI_MODEL",
+                            "GEMINI_MODEL",
+                        ):
+                            val = data.get(key_name)
+                            if isinstance(val, str) and val.strip():
+                                return val.strip()
+            except Exception:
+                pass
+
+        return "gemini-3.7-flash"
+
+    @staticmethod
+    def _format_display_name(model_str: str) -> str:
+        """Format model string (e.g. 'gemini-3.7-flash') into user-facing display name ('3.7 Flash')."""
+        if not model_str:
+            return "3.7 Flash"
+        parts = model_str.split("-")
+        if parts[0].lower() == "gemini" and len(parts) > 1:
+            parts = parts[1:]
+        formatted_parts = [
+            p.capitalize() if not (p and p[0].isdigit()) else p for p in parts
+        ]
+        return " ".join(formatted_parts)
 
     @property
     def metadata(self) -> ProviderMetadata:
-        return self._metadata
+        display_name = self._format_display_name(self.model)
+        return ProviderMetadata(
+            id="gemini_flash",
+            display_name=display_name,
+            accent_color="#38BDF8",
+            icon_glyph="✦",
+            icon_path="aia_canvas/assets/icons/providers/gemini.svg",
+        )
 
     def _resolve_api_key(self) -> Optional[str]:
         """Resolve API key from explicit param, environment vars, or local config file."""
@@ -84,6 +136,15 @@ class GeminiProvider(BaseLLMProvider):
             )
             return
 
+        # Isolate spatial workspace telemetry context from raw user prompt if prepended
+        user_prompt = prompt
+        extracted_telemetry = ""
+        if prompt and prompt.startswith("[Spatial Context]"):
+            parts = prompt.split("\n\n", 1)
+            if len(parts) == 2:
+                extracted_telemetry = parts[0].strip()
+                user_prompt = parts[1].strip()
+
         # Prepare request contents array with history if available
         contents = []
         history = context.get("history", []) if isinstance(context, dict) else []
@@ -97,23 +158,54 @@ class GeminiProvider(BaseLLMProvider):
                     {"role": role, "parts": [{"text": content_text}]}
                 )
 
-        contents.append({"role": "user", "parts": [{"text": prompt}]})
+        contents.append({"role": "user", "parts": [{"text": user_prompt}]})
 
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self.model}:streamGenerateContent?alt=sse&key={api_key}"
         )
         headers = {"Content-Type": "application/json"}
-        payload = {"contents": contents}
 
-        system_instruction = (
+        base_system_instruction = (
             context.get("system_instruction")
             if isinstance(context, dict) and context.get("system_instruction")
             else AETHER_SYSTEM_INSTRUCTION
         )
-        if system_instruction:
-            payload["systemInstruction"] = {
-                "parts": [{"text": system_instruction}]
+
+        telemetry_dict = {}
+        if isinstance(context, dict):
+            if "telemetry" in context and isinstance(context["telemetry"], dict):
+                telemetry_dict.update(context["telemetry"])
+            for key in (
+                "node_count",
+                "focused_node_id",
+                "focused_node_type",
+                "attached_context_ids",
+                "context_pills",
+            ):
+                if key in context and context[key] is not None:
+                    telemetry_dict[key] = context[key]
+
+        builder = AetherContextBuilder(
+            telemetry=telemetry_dict if telemetry_dict else None
+        )
+        full_system_instruction = builder.build_system_instruction(
+            base_instruction=base_system_instruction
+        )
+
+        if extracted_telemetry and extracted_telemetry not in full_system_instruction:
+            full_system_instruction = (
+                f"{full_system_instruction}\n\nWorkspace Telemetry Context:\n{extracted_telemetry}"
+            )
+
+        payload = {
+            "contents": contents,
+            "generationConfig": {"maxOutputTokens": 350},
+        }
+
+        if full_system_instruction:
+            payload["system_instruction"] = {
+                "parts": [{"text": full_system_instruction}]
             }
 
         try:

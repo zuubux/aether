@@ -1,0 +1,22 @@
+graph TD
+    subgraph Input Phase
+        OIB[OmniInputBuffer] -->|Key Events / Text| OB[OmniBar]
+    end
+
+    subgraph Routing Phase
+        OB -->|Command String| SC[SearchController]
+        SC -->|Check Prefix| Router{Is CLI or Query?}
+    end
+
+    subgraph Execution Phase
+        Router -->|CLI Mode >| SE[ShellEngine]
+        Router -->|Query Mode ?| QE[QueryEngine]
+        
+        SE -->|QRunnable / Background| Proc[Subprocess shell=False]
+        Proc -->|Stdout/Stderr| SE
+    end
+
+    subgraph Render Phase
+        SE -->|PyQt Signals| SC
+        SC -->|Update Model| SOD[ShellOutputDrawer]
+    end

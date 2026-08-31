@@ -3,14 +3,17 @@ Aether Canvas - Data Models
 Reactive QObject wrapper classes for nodes and relational edges.
 """
 
+import time
 from pathlib import Path
 import os
 
-from PyQt6.QtCore import QObject, pyqtProperty, pyqtSignal
+from PyQt6.QtCore import QObject, QPointF, pyqtProperty, pyqtSignal
 
 
 class Node(QObject):
     positionChanged = pyqtSignal()
+    targetPositionChanged = pyqtSignal()
+    zoneChanged = pyqtSignal()
     focusChanged = pyqtSignal()
     filePathChanged = pyqtSignal()
     clusterIdChanged = pyqtSignal(int)
@@ -19,6 +22,10 @@ class Node(QObject):
     archetypeChanged = pyqtSignal()
     snippetChanged = pyqtSignal()
     thumbnailUrlChanged = pyqtSignal()
+
+    isUserPlacedChanged = pyqtSignal()
+    lastInteractionEpochChanged = pyqtSignal()
+    isPinnedChanged = pyqtSignal()
 
     def __init__(
         self,
@@ -32,12 +39,21 @@ class Node(QObject):
         snippet: str = "",
         size_bytes: int = 0,
         thumbnail_url: str = "",
+        zone: str = "ZONE_HORIZON",
+        target_x: float | None = None,
+        target_y: float | None = None,
+        is_user_placed: bool = False,
+        last_interaction_epoch: float | None = None,
+        is_pinned: bool = False,
     ):
         super().__init__()
         self._id = id
         self._file_path = file_path
         self._x = x
         self._y = y
+        self._target_x = target_x if target_x is not None else x
+        self._target_y = target_y if target_y is not None else y
+        self._zone = zone
         self._vx = 0.0
         self._vy = 0.0
         self._focus = focus
@@ -49,10 +65,17 @@ class Node(QObject):
         self._size_bytes = size_bytes
         self._thumbnail_url = thumbnail_url
         self._is_deleted = False
+        self._is_user_placed = is_user_placed
+        self._last_interaction_epoch = float(last_interaction_epoch) if last_interaction_epoch is not None else time.time()
+        self._is_pinned = bool(is_pinned)
 
     # --- ID ---
     @pyqtProperty(int, constant=True)
     def id(self) -> int:
+        return self._id
+
+    @pyqtProperty(int, constant=True)
+    def nodeId(self) -> int:
         return self._id
 
     # --- File Path & Name ---
@@ -148,6 +171,12 @@ class Node(QObject):
             "y": self._y,
             "focus": self._focus,
             "clusterId": self._cluster_id,
+            "is_user_placed": self._is_user_placed,
+            "isUserPlaced": self._is_user_placed,
+            "last_interaction_epoch": getattr(self, "_last_interaction_epoch", 0.0),
+            "lastInteractionEpoch": getattr(self, "_last_interaction_epoch", 0.0),
+            "is_pinned": getattr(self, "_is_pinned", False),
+            "isPinned": getattr(self, "_is_pinned", False),
         }
 
     def __getitem__(self, item: str):
@@ -194,6 +223,36 @@ class Node(QObject):
         if self._y != val:
             self._y = val
             self.positionChanged.emit()
+
+    # --- Zone & Target Position ---
+    @pyqtProperty(str, notify=zoneChanged)
+    def zone(self) -> str:
+        return self._zone
+
+    @zone.setter
+    def zone(self, val: str):
+        if self._zone != val:
+            self._zone = val
+            self.zoneChanged.emit()
+
+    @pyqtProperty(QPointF, notify=targetPositionChanged)
+    def targetPosition(self) -> QPointF:
+        return QPointF(self._target_x, self._target_y)
+
+    @targetPosition.setter
+    def targetPosition(self, val: object):
+        tx, ty = self._target_x, self._target_y
+        if isinstance(val, QPointF):
+            tx, ty = val.x(), val.y()
+        elif isinstance(val, (tuple, list)) and len(val) >= 2:
+            tx, ty = float(val[0]), float(val[1])
+        elif isinstance(val, dict):
+            tx, ty = float(val.get("x", tx)), float(val.get("y", ty))
+
+        if abs(self._target_x - tx) > 0.001 or abs(self._target_y - ty) > 0.001:
+            self._target_x = tx
+            self._target_y = ty
+            self.targetPositionChanged.emit()
 
     @property
     def vx(self) -> float:
@@ -253,6 +312,64 @@ class Node(QObject):
         if self._is_deleted != val:
             self._is_deleted = val
             self.isDeletedChanged.emit()
+
+    @pyqtProperty(bool, notify=isUserPlacedChanged)
+    def is_user_placed(self) -> bool:
+        return getattr(self, "_is_user_placed", False)
+
+    @is_user_placed.setter
+    def is_user_placed(self, val: bool):
+        bval = bool(val)
+        if getattr(self, "_is_user_placed", False) != bval:
+            self._is_user_placed = bval
+            self.isUserPlacedChanged.emit()
+
+    @pyqtProperty(bool, notify=isUserPlacedChanged)
+    def isUserPlaced(self) -> bool:
+        return self.is_user_placed
+
+    @isUserPlaced.setter
+    def isUserPlaced(self, val: bool):
+        self.is_user_placed = val
+
+    # --- Temporal Decay & Pinning ---
+    @pyqtProperty(float, notify=lastInteractionEpochChanged)
+    def last_interaction_epoch(self) -> float:
+        return getattr(self, "_last_interaction_epoch", 0.0)
+
+    @last_interaction_epoch.setter
+    def last_interaction_epoch(self, val: float):
+        fval = float(val)
+        if abs(getattr(self, "_last_interaction_epoch", 0.0) - fval) > 1e-4:
+            self._last_interaction_epoch = fval
+            self.lastInteractionEpochChanged.emit()
+
+    @pyqtProperty(float, notify=lastInteractionEpochChanged)
+    def lastInteractionEpoch(self) -> float:
+        return self.last_interaction_epoch
+
+    @lastInteractionEpoch.setter
+    def lastInteractionEpoch(self, val: float):
+        self.last_interaction_epoch = val
+
+    @pyqtProperty(bool, notify=isPinnedChanged)
+    def is_pinned(self) -> bool:
+        return getattr(self, "_is_pinned", False)
+
+    @is_pinned.setter
+    def is_pinned(self, val: bool):
+        bval = bool(val)
+        if getattr(self, "_is_pinned", False) != bval:
+            self._is_pinned = bval
+            self.isPinnedChanged.emit()
+
+    @pyqtProperty(bool, notify=isPinnedChanged)
+    def isPinned(self) -> bool:
+        return self.is_pinned
+
+    @isPinned.setter
+    def isPinned(self, val: bool):
+        self.is_pinned = val
 
 
 class Edge(QObject):
