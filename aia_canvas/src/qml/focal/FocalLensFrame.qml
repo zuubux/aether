@@ -1,14 +1,23 @@
 import QtQuick
 import QtQuick.Controls
 import ".."
+import "../hud"
 
 Item {
     id: root
     objectName: "focalLensFrame"
     property bool active: false
-    property real targetCenterY: 100
+    property real targetCenterY: lensContainer ? lensContainer.targetCenterY : Math.round((root.height - (lensContainer ? lensContainer.height : 0)) / 2)
     property string activeContext: ""
     property var turnHistory: []
+    property string engineState: {
+        var convEngine = (typeof bridge !== "undefined" && bridge && bridge.conversation) ? bridge.conversation : (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.conversation ? canvasBridge.conversation : null);
+        var s = (convEngine && convEngine.engineState !== undefined && convEngine.engineState !== "") ? convEngine.engineState : ((typeof bridge !== "undefined" && bridge && bridge.engineState !== undefined && bridge.engineState !== "") ? bridge.engineState : ((typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.engineState !== undefined && canvasBridge.engineState !== "") ? canvasBridge.engineState : "LATENT"));
+        if (s === "STREAMING" || s === "WORKING" || s === "SYNTHESIZING") return "WORKING";
+        if (s === "IDLE" || s === "LATENT") return "LATENT";
+        if (s === "ERROR") return "OFFLINE";
+        return s;
+    }
     property var providerMeta: {
         var b = (typeof bridge !== "undefined" && bridge) ? bridge : ((typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null);
         if (b && b.providerMetadata) return b.providerMetadata;
@@ -30,10 +39,13 @@ Item {
     Rectangle {
         id: lensContainer
         objectName: "lensContainer"
-        width: 800; height: 600
-        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(1380, Math.max(960, Math.round(root.width * 0.68)))
+        height: Math.min(940, Math.round(root.height * 0.82))
+        x: Math.round((root.width - width) / 2)
+        property real targetCenterY: Math.round((root.height - height) / 2)
+        y: targetCenterY
         
-        scale: 0.88; opacity: 0.0; y: root.targetCenterY + 32; visible: false
+        scale: 0.88; opacity: 0.0; visible: false
         color: Theme.surfaceElevated; border.color: Theme.borderSubtle
         border.width: 1; radius: 12
 
@@ -43,9 +55,24 @@ Item {
             anchors.fill: parent
         }
 
-        Item {
-            id: header
-            anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: 48
+        Rectangle {
+            id: headerBar
+            objectName: "headerBar"
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 52
+            color: Theme.surfaceGlass
+            topLeftRadius: 12
+            topRightRadius: 12
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: Theme.borderSubtle
+            }
 
             Row {
                 id: titleBreadcrumbRow
@@ -162,11 +189,10 @@ Item {
         ScrollView {
             id: slateScrollView
             objectName: "slateScrollView"
-            anchors.top: header.bottom
+            anchors.top: headerBar.bottom
+            anchors.bottom: footerDock.top
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.margins: 16
             clip: true
             ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
@@ -174,79 +200,202 @@ Item {
                 id: slateListView
                 objectName: "slateListView"
                 width: parent.width
+                topMargin: 16
+                bottomMargin: 16
                 model: root.turnHistory
                 spacing: 16
+                onCountChanged: { slateListView.positionViewAtEnd() }
 
-                delegate: Column {
+                delegate: Item {
+                    id: turnDelegate
                     width: slateListView.width
-                    spacing: 8
+                    height: turnContentColumn.height + 24
                     visible: (modelData.prompt && modelData.prompt.trim().length > 0) || (modelData.response && modelData.response.trim().length > 0)
 
-                    Rectangle {
-                        id: userBubble
-                        width: parent.width
-                        implicitHeight: userCol.implicitHeight + 20
-                        height: implicitHeight
-                        visible: modelData.prompt && modelData.prompt.trim().length > 0
-                        color: Qt.rgba(30/255, 41/255, 59/255, 0.5)
-                        radius: 8
-
-                        Column {
-                            id: userCol
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.top: parent.top
-                            anchors.margins: 10
-                            spacing: 4
-
-                            Text {
-                                text: "User"
-                                font.bold: true
-                                font.pixelSize: 12
-                                font.family: Theme.fontCode
-                                color: Theme.accentCyan
-                            }
-                            Text {
-                                width: parent.width
-                                text: (modelData.prompt || "").replace(/^[\?\s]+/, "")
-                                wrapMode: Text.Wrap
-                                font.pixelSize: 14
-                                color: Theme.textPrimary
-                            }
-                        }
+                    TextMetrics {
+                        id: promptMetrics
+                        font.pixelSize: 13
+                        font.family: Theme.fontSans
+                        text: (modelData.prompt || "").replace(/^[\?\s]+/, "")
                     }
 
                     Column {
-                        id: aetherTurn
+                        id: turnContentColumn
                         width: parent.width
-                        spacing: 4
-                        topPadding: 12
-                        bottomPadding: 12
-                        visible: modelData.response && modelData.response.trim().length > 0
+                        spacing: 16
 
-                        Text {
-                            text: "Aether"
-                            font.bold: true
-                            font.pixelSize: 12
-                            font.family: Theme.fontCode
-                            color: Theme.accentAI
+                        Column {
+                            anchors.right: parent.right
+                            anchors.rightMargin: 16
+                            spacing: 4
+                            visible: modelData.prompt && modelData.prompt.trim().length > 0
+
+                            // External Right-Aligned Label
+                            Text {
+                                text: "User"
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                color: Theme.accentCyan
+                                opacity: 0.85
+                                anchors.right: parent.right
+                                anchors.rightMargin: 4
+                            }
+
+                            // User Message Bubble (contains ONLY the message)
+                            Rectangle {
+                                id: userBubble
+                                anchors.right: parent.right
+                                width: Math.min(Math.max(promptMetrics.boundingRect.width + 28, 60), (turnContentColumn ? turnContentColumn.width : parent.width) * 0.72)
+                                height: promptText.implicitHeight + 18
+                                radius: 12
+                                color: Theme.chatBubbleUserBg
+                                border.color: Theme.chatBubbleUserBorder
+                                border.width: 1
+
+                                Text {
+                                    id: promptText
+                                    anchors.fill: parent
+                                    anchors.margins: 10
+                                    anchors.leftMargin: 14
+                                    anchors.rightMargin: 14
+                                    text: promptMetrics.text
+                                    font.pixelSize: 13
+                                    font.family: Theme.fontSans
+                                    color: Theme.textPrimary
+                                    wrapMode: Text.Wrap
+                                }
+                            }
                         }
-                        Text {
-                            width: parent.width
-                            text: modelData.response || ""
-                            wrapMode: Text.Wrap
-                            textFormat: Text.MarkdownText
-                            font.pixelSize: 14
-                            color: Theme.textPrimary
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 16
+                            width: parent.width * 0.92
+                            spacing: 6
+                            visible: modelData.response && modelData.response.trim().length > 0
+
+                            // External Left-Aligned Label
+                            Text {
+                                text: "Aether"
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                                color: Theme.accentAI
+                            }
+
+                            // Aether Content Area in Glass Bubble
+                            Rectangle {
+                                id: aetherBubble
+                                width: Math.min(aetherText.implicitWidth + 32, parent.width * 0.88)
+                                height: aetherText.implicitHeight + 24
+                                radius: 12
+                                color: Theme.chatBubbleAetherBg
+                                border.color: Theme.chatBubbleAetherBorder
+                                border.width: 1
+
+                                Rectangle {
+                                    id: accentBar
+                                    width: 2
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    anchors.margins: 6
+                                    color: Theme.accentAI
+                                    radius: 1
+                                }
+
+                                Text {
+                                    id: aetherText
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 16
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 14
+                                    anchors.top: parent.top
+                                    anchors.topMargin: 12
+                                    text: modelData.response || ""
+                                    textFormat: Text.MarkdownText
+                                    font.family: Theme.fontAiVoice
+                                    font.pixelSize: 13
+                                    lineHeight: 1.45
+                                    color: Theme.aiVoiceGlacial
+                                    wrapMode: Text.Wrap
+                                }
+                            }
                         }
                     }
+                }
+            }
+        }
 
-                    Rectangle {
-                        width: parent.width
-                        height: 1
-                        color: Theme.borderSubtle
-                        opacity: 0.3
+        Rectangle {
+            id: footerDock
+            objectName: "footerDock"
+            height: 68
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            color: Theme.surfaceGlass
+            bottomLeftRadius: 12
+            bottomRightRadius: 12
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: 1
+                color: Theme.borderSubtle
+            }
+
+            Rectangle {
+                id: chatInputCapsule
+                objectName: "chatInputCapsule"
+                anchors.centerIn: parent
+                width: parent.width - 32
+                height: 42
+                radius: 21
+                color: Theme.surfaceHovered
+                border.color: Theme.borderSubtle
+                border.width: 1
+
+                TextInput {
+                    id: chatInput
+                    objectName: "chatInput"
+                    anchors.left: parent.left
+                    anchors.leftMargin: 18
+                    anchors.right: chatRadar.left
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.textPrimary
+                    font.pixelSize: 13
+                    font.family: Theme.fontSans
+                    activeFocusOnTab: true
+                    selectByMouse: true
+                    clip: true
+
+                    Text {
+                        text: "Reply to Aether..."
+                        color: Theme.textMuted
+                        opacity: 0.6
+                        visible: !parent.text && !parent.activeFocus
+                        anchors.verticalCenter: parent.verticalCenter
+                        font: parent.font
                     }
+
+                    onAccepted: {
+                        if (text.trim().length > 0) {
+                            root.submitFollowUp(text.trim());
+                            text = "";
+                        }
+                    }
+                }
+
+                AmbientRadarHUD {
+                    id: chatRadar
+                    objectName: "chatRadar"
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    compact: true
+                    engineState: root.engineState
                 }
             }
         }
@@ -254,7 +403,7 @@ Item {
         StateGroup {
             id: lensStateGroup
             states: [
-                State { name: "opened"; when: root.active; PropertyChanges { target: lensContainer; scale: 1.0; opacity: 1.0; y: root.targetCenterY; visible: true } },
+                State { name: "opened"; when: root.active; PropertyChanges { target: lensContainer; scale: 1.0; opacity: 1.0; y: lensContainer.targetCenterY; visible: true } },
                 State { name: "closed"; when: !root.active; PropertyChanges { target: lensContainer; scale: 0.88; opacity: 0.0; y: root.targetCenterY + 32; visible: false } }
             ]
             transitions: [
@@ -284,6 +433,44 @@ Item {
         }
     }
 
+    Connections {
+        target: (typeof bridge !== "undefined" && bridge && bridge.conversation) ? bridge.conversation : (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.conversation ? canvasBridge.conversation : ((typeof bridge !== "undefined" && bridge) ? bridge : ((typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null)))
+        ignoreUnknownSignals: true
+        function onEngineStateChanged(state) {
+            if (state === "STREAMING" || state === "WORKING" || state === "SYNTHESIZING") {
+                root.engineState = "WORKING";
+            } else if (state === "IDLE" || state === "LATENT") {
+                root.engineState = "LATENT";
+            } else if (state === "ERROR") {
+                root.engineState = "OFFLINE";
+            } else {
+                root.engineState = state;
+            }
+        }
+        function onTokenReceived(chunk) {
+            root.engineState = "WORKING";
+            if (!root.turnHistory || root.turnHistory.length === 0) return;
+            var hist = root.turnHistory ? (Array.isArray(root.turnHistory) ? root.turnHistory.slice() : Array.from(root.turnHistory)) : [];
+            var lastIdx = hist.length - 1;
+            var lastTurn = Object.assign({}, hist[lastIdx]);
+            lastTurn.response = (lastTurn.response || "") + chunk;
+            hist[lastIdx] = lastTurn;
+            root.turnHistory = hist;
+            Qt.callLater(function() { slateListView.positionViewAtEnd(); });
+        }
+        function onResponseFinished(fullText) {
+            root.engineState = "LATENT";
+            if (!root.turnHistory || root.turnHistory.length === 0) return;
+            var hist = root.turnHistory ? (Array.isArray(root.turnHistory) ? root.turnHistory.slice() : Array.from(root.turnHistory)) : [];
+            var lastIdx = hist.length - 1;
+            var lastTurn = Object.assign({}, hist[lastIdx]);
+            lastTurn.response = fullText || lastTurn.response || "";
+            hist[lastIdx] = lastTurn;
+            root.turnHistory = hist;
+            Qt.callLater(function() { slateListView.positionViewAtEnd(); });
+        }
+    }
+
     function open(context, turns) {
         if (context) root.activeContext = context;
         if (turns) root.turnHistory = turns;
@@ -291,4 +478,25 @@ Item {
     }
 
     function close() { root.active = false; }
+
+    function submitFollowUp(query) {
+        if (!query || query.trim().length === 0) return;
+        var q = query.trim();
+        var hist = root.turnHistory ? (Array.isArray(root.turnHistory) ? root.turnHistory.slice() : Array.from(root.turnHistory)) : [];
+        hist.push({ "prompt": q, "response": "" });
+        root.turnHistory = hist;
+        root.engineState = "WORKING";
+        Qt.callLater(function() { slateListView.positionViewAtEnd(); });
+
+        var b = (typeof bridge !== "undefined" && bridge) ? bridge : ((typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null);
+        if (b) {
+            if (typeof b.ask === "function") {
+                b.ask(q, root.activeContext);
+            } else if (b.conversation && typeof b.conversation.ask === "function") {
+                b.conversation.ask(q, root.activeContext);
+            } else if (b.conversation && typeof b.conversation.stream_prompt === "function") {
+                b.conversation.stream_prompt(q, root.activeContext);
+            }
+        }
+    }
 }

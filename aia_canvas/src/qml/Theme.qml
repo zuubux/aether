@@ -84,6 +84,12 @@ QtObject {
     readonly property color accentRed: "#EF4444"
     readonly property color surfaceDialogue: Qt.rgba(0.07, 0.08, 0.10, 0.85)
 
+    // Conversational Chat Bubble Tokens
+    readonly property color chatBubbleUserBg: Qt.rgba(30/255, 41/255, 59/255, 0.75)
+    readonly property color chatBubbleUserBorder: Qt.rgba(148/255, 163/255, 184/255, 0.2)
+    readonly property color chatBubbleAetherBg: Qt.rgba(15/255, 23/255, 42/255, 0.6)
+    readonly property color chatBubbleAetherBorder: Qt.rgba(0/255, 242/255, 254/255, 0.15)
+
     // ANSI Palette Tokens
     readonly property color ansiRed: "#EF4444"
     readonly property color ansiGreen: "#10B981"
