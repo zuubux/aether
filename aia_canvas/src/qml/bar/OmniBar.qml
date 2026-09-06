@@ -421,6 +421,7 @@ Item {
                     isConversationalMode: root.isConversationalMode
                     isShellMode: root.isShellMode
                     shelfExpanded: root.shelfExpanded
+                    isThinking: root.engineState === "STREAMING"
                     
                     onInputTextChanged: {
                         if (inputCapsule.text !== root.tabLastQuery) {
@@ -620,6 +621,9 @@ Item {
         function onEngineStateChanged(state) {
             root.engineState = state;
         }
+        function onRequestAscensionToSlate(history) {
+            root.ascendToLens();
+        }
         function onResponseFinished(fullText) {
             var prompt = root.lastExecutedPrompt;
             var response = fullText || (barShell.dialogueDrawer ? barShell.dialogueDrawer.dialogueFullText : "");
@@ -628,8 +632,8 @@ Item {
                 var hist = root.turnHistory ? root.turnHistory.slice() : [];
                 hist.push(turn);
                 root.turnHistory = hist;
-                if (hist.length >= 3) {
-                    root.requestAscensionToSlate(hist);
+                if (root.turnHistory.length >= 3) {
+                    root.ascendToLens();
                 }
             }
         }

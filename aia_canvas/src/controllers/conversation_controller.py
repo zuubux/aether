@@ -55,6 +55,11 @@ class ConversationController(BaseController):
         """str: Current conversation execution state ('IDLE', 'STREAMING', 'ERROR')."""
         return self._engine_state
 
+    @pyqtProperty(bool, notify=engineStateChanged)
+    def isThinking(self) -> bool:
+        """bool: True if conversation engine is actively streaming or generating."""
+        return self._engine_state == "STREAMING"
+
     @pyqtProperty("QVariantMap", notify=providerMetadataChanged)
     def providerMetadata(self) -> dict:
         """dict: Metadata dictionary describing active LLM provider display attributes."""
@@ -101,6 +106,12 @@ class ConversationController(BaseController):
         self._active_task = None
         if self._engine_state == "STREAMING":
             self.setEngineState("IDLE")
+
+    @pyqtSlot(str)
+    @pyqtSlot(str, str)
+    def ask(self, prompt: str, context: Optional[Any] = None) -> None:
+        """Alias to stream_prompt for direct invocation."""
+        self.stream_prompt(prompt, context=context)
 
     @pyqtSlot(str)
     @pyqtSlot(str, str)

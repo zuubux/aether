@@ -17,6 +17,7 @@ Item {
     property bool isConversationalMode: false
     property bool isShellMode: false
     property bool shelfExpanded: false
+    property bool isThinking: false
     
     // Properties that will be manipulated directly or read
     property alias inputField: inputField
@@ -117,7 +118,7 @@ Item {
         TextField {
             id: inputField
             objectName: "inputField"
-            width: parent.width - (root.isSpecialMode ? (modeBadge.width + modeSigil.implicitWidth + 20) : prefixIcon.width) - 22
+            width: parent.width - (root.isSpecialMode ? (modeBadge.width + modeSigil.implicitWidth + 20) : prefixIcon.width) - 54
             height: parent.height
             anchors.verticalCenter: parent.verticalCenter
             clip: true
@@ -196,6 +197,57 @@ Item {
                     root.returnPressed(event.modifiers & Qt.ShiftModifier);
                     event.accepted = true;
                 }
+            }
+        }
+
+        Item {
+            id: radarContainer
+            width: 24
+            height: 24
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.isConversationalMode
+
+            // Outer glowing ripple ring
+            Rectangle {
+                id: radarOuterRing
+                anchors.centerIn: parent
+                width: parent.width
+                height: parent.height
+                radius: width / 2
+                color: "transparent"
+                border.color: Theme.accentAI
+                border.width: 1.5
+                opacity: 0.0
+
+                NumberAnimation on scale {
+                    running: root.isThinking
+                    loops: Animation.Infinite
+                    from: 0.6
+                    to: 1.3
+                    duration: 1200
+                    easing.type: Easing.OutQuad
+                }
+                NumberAnimation on opacity {
+                    running: root.isThinking
+                    loops: Animation.Infinite
+                    from: 0.8
+                    to: 0.0
+                    duration: 1200
+                    easing.type: Easing.OutQuad
+                }
+            }
+
+            // Inner core beacon
+            Rectangle {
+                id: radarInnerDot
+                anchors.centerIn: parent
+                width: 8
+                height: 8
+                radius: 4
+                color: root.isThinking ? Theme.accentAI : Theme.textMuted
+                opacity: root.isThinking ? 1.0 : 0.4
+                Behavior on color { ColorAnimation { duration: 200 } }
+                Behavior on opacity { NumberAnimation { duration: 200 } }
             }
         }
     }
