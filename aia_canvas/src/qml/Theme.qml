@@ -43,12 +43,12 @@ QtObject {
     readonly property int touchHitboxMin: 44
     readonly property FontLoader fontLoaderAiVoice: FontLoader {
         objectName: "fontLoaderAiVoice"
-        source: Qt.resolvedUrl("../../assets/fonts/Epilogue-VariableFont_wght.ttf")
+        source: Qt.resolvedUrl("../../assets/fonts/CabinetGrotesk-Regular.ttf")
     }
-    readonly property string fontAiVoice: fontLoaderAiVoice.name ? fontLoaderAiVoice.name : "'Epilogue', 'Source Serif 4', sans-serif"
+    readonly property string fontAiVoice: fontLoaderAiVoice.name ? fontLoaderAiVoice.name : "Inter, sans-serif"
 
     // Synthetic AI Voice Context Tints (Text & Glyphs)
-    readonly property color aiVoiceGlacial: "#F1F5F9"  // Dialogue / Primary Reasoning (Crisp neutral slate)
+    readonly property color aiVoiceGlacial: "#BAE6FD"  // Sky-200, crisp readable cyan-white
     readonly property color aiVoiceMist: "#E2E8F0"     // Node Diagnostics / Analytical
     readonly property color aiVoiceEmerald: "#A7F3D0"  // Code Diffs / Additions / Proposals
     readonly property color aiVoiceAmber: "#FEF3C7"    // Advisory / Cautionary notes

@@ -16,7 +16,7 @@ DEFAULT_IDENTITY: dict[str, Any] = {
     "collaboration_style": {
         "tone": "direct_authentic_peer",
         "conciseness": "high",
-        "structural_scaffolding": True,
+        "structural_scaffolding": False,
     },
 }
 
@@ -46,6 +46,16 @@ class ProfileManager:
         """Seed default configuration files if they do not exist."""
         if not self.identity_path.exists():
             self._atomic_save_json(self.identity_path, DEFAULT_IDENTITY)
+        else:
+            try:
+                data = self.get_identity()
+                if isinstance(data, dict):
+                    collab = data.get("collaboration_style")
+                    if isinstance(collab, dict) and collab.get("structural_scaffolding") is True:
+                        collab["structural_scaffolding"] = False
+                        self.save_identity(data)
+            except (json.JSONDecodeError, OSError):
+                pass
         if not self.working_state_path.exists():
             self._atomic_save_json(self.working_state_path, DEFAULT_WORKING_STATE)
 

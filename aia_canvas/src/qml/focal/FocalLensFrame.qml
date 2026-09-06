@@ -10,6 +10,9 @@ Item {
     property real targetCenterY: lensContainer ? lensContainer.targetCenterY : Math.round((root.height - (lensContainer ? lensContainer.height : 0)) / 2)
     property string activeContext: ""
     property var turnHistory: []
+    property string pendingStreamBuffer: ""
+    property bool isStreamingActive: false
+    property string pendingFinalText: ""
     property string engineState: {
         var convEngine = (typeof bridge !== "undefined" && bridge && bridge.conversation) ? bridge.conversation : (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.conversation ? canvasBridge.conversation : null);
         var s = (convEngine && convEngine.engineState !== undefined && convEngine.engineState !== "") ? convEngine.engineState : ((typeof bridge !== "undefined" && bridge && bridge.engineState !== undefined && bridge.engineState !== "") ? bridge.engineState : ((typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.engineState !== undefined && canvasBridge.engineState !== "") ? canvasBridge.engineState : "LATENT"));
@@ -27,6 +30,61 @@ Item {
     }
 
     anchors.fill: parent
+
+    ListModel {
+        id: conversationModel
+    }
+
+    Timer {
+        id: streamDripTimer
+        interval: 16 // 60fps cadence
+        repeat: true
+        running: root.pendingStreamBuffer.length > 0 || root.isStreamingActive
+        onTriggered: {
+            if (root.pendingStreamBuffer.length === 0) {
+                if (!root.isStreamingActive) {
+                    stop();
+                    root.engineState = "LATENT";
+                    if (conversationModel.count > 0 && root.pendingFinalText) {
+                        var lastIdx = conversationModel.count - 1;
+                        conversationModel.setProperty(lastIdx, "response", root.pendingFinalText);
+                        root.pendingFinalText = "";
+                    }
+                    _syncTurnHistory();
+                    slateListView.positionViewAtEnd();
+                }
+                return;
+            }
+
+            if (conversationModel.count === 0) return;
+
+            // Dynamic drain rate: 2-3 chars normally, accelerate if queue backs up
+            var burst = 2;
+            if (root.pendingStreamBuffer.length > 80) {
+                burst = 8;
+            } else if (root.pendingStreamBuffer.length > 30) {
+                burst = 4;
+            }
+
+            var slice = root.pendingStreamBuffer.substring(0, burst);
+            root.pendingStreamBuffer = root.pendingStreamBuffer.substring(burst);
+
+            var lastIdx = conversationModel.count - 1;
+            var current = conversationModel.get(lastIdx).response || "";
+            conversationModel.setProperty(lastIdx, "response", current + slice);
+            slateListView.positionViewAtEnd();
+
+            if (root.pendingStreamBuffer.length === 0 && !root.isStreamingActive) {
+                stop();
+                root.engineState = "LATENT";
+                if (conversationModel.count > 0 && root.pendingFinalText) {
+                    conversationModel.setProperty(lastIdx, "response", root.pendingFinalText);
+                    root.pendingFinalText = "";
+                }
+                _syncTurnHistory();
+            }
+        }
+    }
 
     MouseArea {
         id: backdropArea
@@ -202,7 +260,7 @@ Item {
                 width: parent.width
                 topMargin: 16
                 bottomMargin: 16
-                model: root.turnHistory
+                model: conversationModel
                 spacing: 16
                 onCountChanged: { slateListView.positionViewAtEnd() }
 
@@ -210,13 +268,17 @@ Item {
                     id: turnDelegate
                     width: slateListView.width
                     height: turnContentColumn.height + 24
-                    visible: (modelData.prompt && modelData.prompt.trim().length > 0) || (modelData.response && modelData.response.trim().length > 0)
+
+                    readonly property string p: (typeof model !== "undefined" && model.prompt !== undefined) ? model.prompt : (typeof modelData !== "undefined" ? modelData.prompt : "")
+                    readonly property string r: (typeof model !== "undefined" && model.response !== undefined) ? model.response : (typeof modelData !== "undefined" ? modelData.response : "")
+
+                    visible: (turnDelegate.p && turnDelegate.p.trim().length > 0) || (turnDelegate.r && turnDelegate.r.trim().length > 0)
 
                     TextMetrics {
                         id: promptMetrics
                         font.pixelSize: 13
                         font.family: Theme.fontSans
-                        text: (modelData.prompt || "").replace(/^[\?\s]+/, "")
+                        text: (turnDelegate.p || "").replace(/^[\?\s]+/, "")
                     }
 
                     Column {
@@ -228,7 +290,7 @@ Item {
                             anchors.right: parent.right
                             anchors.rightMargin: 16
                             spacing: 4
-                            visible: modelData.prompt && modelData.prompt.trim().length > 0
+                            visible: turnDelegate.p && turnDelegate.p.trim().length > 0
 
                             // External Right-Aligned Label
                             Text {
@@ -272,7 +334,7 @@ Item {
                             anchors.leftMargin: 16
                             width: parent.width * 0.92
                             spacing: 6
-                            visible: modelData.response && modelData.response.trim().length > 0
+                            visible: turnDelegate.r && turnDelegate.r.trim().length > 0
 
                             // External Left-Aligned Label
                             Text {
@@ -311,9 +373,10 @@ Item {
                                     anchors.rightMargin: 14
                                     anchors.top: parent.top
                                     anchors.topMargin: 12
-                                    text: modelData.response || ""
+                                    text: turnDelegate.r || ""
                                     textFormat: Text.MarkdownText
                                     font.family: Theme.fontAiVoice
+                                    font.weight: Font.Normal
                                     font.pixelSize: 13
                                     lineHeight: 1.45
                                     color: Theme.aiVoiceGlacial
@@ -440,7 +503,9 @@ Item {
             if (state === "STREAMING" || state === "WORKING" || state === "SYNTHESIZING") {
                 root.engineState = "WORKING";
             } else if (state === "IDLE" || state === "LATENT") {
-                root.engineState = "LATENT";
+                if (root.pendingStreamBuffer.length === 0) {
+                    root.engineState = "LATENT";
+                }
             } else if (state === "ERROR") {
                 root.engineState = "OFFLINE";
             } else {
@@ -448,32 +513,59 @@ Item {
             }
         }
         function onTokenReceived(chunk) {
+            root.isStreamingActive = true;
             root.engineState = "WORKING";
-            if (!root.turnHistory || root.turnHistory.length === 0) return;
-            var hist = root.turnHistory ? (Array.isArray(root.turnHistory) ? root.turnHistory.slice() : Array.from(root.turnHistory)) : [];
-            var lastIdx = hist.length - 1;
-            var lastTurn = Object.assign({}, hist[lastIdx]);
-            lastTurn.response = (lastTurn.response || "") + chunk;
-            hist[lastIdx] = lastTurn;
-            root.turnHistory = hist;
-            Qt.callLater(function() { slateListView.positionViewAtEnd(); });
+            root.pendingStreamBuffer += chunk;
+            if (!streamDripTimer.running) streamDripTimer.start();
         }
         function onResponseFinished(fullText) {
-            root.engineState = "LATENT";
-            if (!root.turnHistory || root.turnHistory.length === 0) return;
-            var hist = root.turnHistory ? (Array.isArray(root.turnHistory) ? root.turnHistory.slice() : Array.from(root.turnHistory)) : [];
-            var lastIdx = hist.length - 1;
-            var lastTurn = Object.assign({}, hist[lastIdx]);
-            lastTurn.response = fullText || lastTurn.response || "";
-            hist[lastIdx] = lastTurn;
-            root.turnHistory = hist;
-            Qt.callLater(function() { slateListView.positionViewAtEnd(); });
+            root.isStreamingActive = false;
+            if (fullText) {
+                root.pendingFinalText = fullText;
+            }
+            if (root.pendingStreamBuffer.length === 0) {
+                root.engineState = "LATENT";
+                if (conversationModel.count > 0 && root.pendingFinalText) {
+                    var lastIdx = conversationModel.count - 1;
+                    conversationModel.setProperty(lastIdx, "response", root.pendingFinalText);
+                    root.pendingFinalText = "";
+                }
+                _syncTurnHistory();
+                Qt.callLater(function() { slateListView.positionViewAtEnd(); });
+            }
         }
     }
 
+    function _syncTurnHistory() {
+        var arr = [];
+        for (var i = 0; i < conversationModel.count; i++) {
+            var item = conversationModel.get(i);
+            arr.push({
+                "prompt": item.prompt || "",
+                "response": item.response || ""
+            });
+        }
+        root.turnHistory = arr;
+    }
+
     function open(context, turns) {
-        if (context) root.activeContext = context;
-        if (turns) root.turnHistory = turns;
+        if (root.active && conversationModel.count > 0) {
+            return;
+        }
+        root.pendingStreamBuffer = "";
+        root.pendingFinalText = "";
+        root.isStreamingActive = false;
+        root.activeContext = context || "";
+        conversationModel.clear();
+        if (turns && turns.length > 0) {
+            for (var i = 0; i < turns.length; i++) {
+                conversationModel.append({
+                    "prompt": turns[i].prompt || "",
+                    "response": turns[i].response || ""
+                });
+            }
+        }
+        root.turnHistory = turns || [];
         root.active = true;
     }
 
@@ -482,9 +574,11 @@ Item {
     function submitFollowUp(query) {
         if (!query || query.trim().length === 0) return;
         var q = query.trim();
-        var hist = root.turnHistory ? (Array.isArray(root.turnHistory) ? root.turnHistory.slice() : Array.from(root.turnHistory)) : [];
-        hist.push({ "prompt": q, "response": "" });
-        root.turnHistory = hist;
+        root.pendingStreamBuffer = "";
+        root.pendingFinalText = "";
+        root.isStreamingActive = false;
+        conversationModel.append({ "prompt": q, "response": "" });
+        _syncTurnHistory();
         root.engineState = "WORKING";
         Qt.callLater(function() { slateListView.positionViewAtEnd(); });
 

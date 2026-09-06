@@ -10,16 +10,10 @@ try:
 except ModuleNotFoundError:
     from memory.profile_manager import ProfileManager
 
-
 class PromptAssembler:
     """Assembles bounded runtime system prompts from profile and spatial context."""
 
-    CORE_PERSONA: str = (
-        "You are Aether, an adaptive spatial intelligence and collaborative peer.\n"
-        "Communicate with directness, authenticity, precision, and high signal clarity.\n"
-        "Provide concise markdown responses without robotic meta-announcements, "
-        "filler preamble, or unnecessary conversational delimiters."
-    )
+    CORE_PERSONA: str = ""
 
     def __init__(self, profile_manager: ProfileManager | None = None) -> None:
         if profile_manager is not None:
@@ -247,4 +241,14 @@ class PromptAssembler:
 
         # 4. Final safety net: if even core + ground_truth exceeds max_tokens
         return self._truncate_to_tokens(prompt, max_tokens)
+
+
+try:
+    from aia_canvas.src.omni.engines.conversation.persona import AETHER_SYSTEM_INSTRUCTION
+except ModuleNotFoundError:
+    from omni.engines.conversation.persona import AETHER_SYSTEM_INSTRUCTION
+
+CORE_PERSONA: str = AETHER_SYSTEM_INSTRUCTION
+PromptAssembler.CORE_PERSONA = AETHER_SYSTEM_INSTRUCTION
+
 

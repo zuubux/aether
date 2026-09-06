@@ -146,13 +146,13 @@ Item {
                     width: dialogueListView.width
                     textFormat: Text.MarkdownText
                     text: root.formatDialogueMarkdown(modelData)
-                    font.family: Theme.fontAiBody
-                    font.pixelSize: 14
+                    font.family: Theme.fontAiVoice
+                    font.pixelSize: 13
                     font.weight: Font.Normal
-                    lineHeight: 1.4
+                    lineHeight: 1.45
                     wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                     elide: Text.ElideNone
-                    color: Theme.aiTextColorForRole("dialogue")
+                    color: Theme.aiVoiceGlacial
                 }
 
                 onCountChanged: {
