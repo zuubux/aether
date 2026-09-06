@@ -8,7 +8,8 @@
 ## 1. Operating Rules & Pre-Flight Check
 - Surgical, minimal diffs only. Zero unsolicited refactoring.
 - Check `docs/SYSTEM_MAP.md` before altering cross-module boundaries or adding files.
-- If a task introduces a module or shifts an IPC boundary, update `docs/SYSTEM_MAP.md` as the final step.
+- Single Responsibility Invariant: Consult `docs/SYSTEM_MAP.md` to ensure functionality is not duplicated across components (e.g., prompt assembly, SQLite connections, token buffering).
+- If a task introduces a file, deprecates a module, or shifts an IPC/signal boundary, update `docs/SYSTEM_MAP.md` as the final step.
 - Zero zombie code: delete replaced or superseded stubs immediately.
 
 ## 2. Dynamic Geometry & Layout
