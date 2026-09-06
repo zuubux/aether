@@ -5,6 +5,7 @@ Holds query text, active selection state, and spatial file/graph telemetry conte
 
 from dataclasses import dataclass, field
 import datetime
+import json
 import mimetypes
 import os
 from pathlib import Path
@@ -35,12 +36,14 @@ class AetherContextBuilder:
         telemetry: Optional[Dict[str, Any]] = None,
         timestamp: Optional[str] = None,
         platform_info: Optional[str] = None,
+        profile_manager: Optional[Any] = None,
     ):
         self.cwd = cwd or os.getcwd()
         self.workspace_path = (
             workspace_path or os.environ.get("AETHER_WORKSPACE") or self.cwd
         )
         self.telemetry = telemetry or {}
+        self.profile_manager = profile_manager
 
         if timestamp is not None:
             self.timestamp = timestamp
@@ -56,6 +59,134 @@ class AetherContextBuilder:
                 f"{platform.system()} {platform.release()} ({platform.machine()})"
             )
 
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Returns approximate token count (max(1, len(text) // 4))."""
+        if not text:
+            return 0
+        return max(1, len(text) // 4)
+
+    @staticmethod
+    def _truncate_to_tokens(text: str, max_tokens: int) -> str:
+        """Truncate string to fit within max_tokens budget."""
+        if max_tokens <= 0:
+            return ""
+        if AetherContextBuilder._estimate_tokens(text) <= max_tokens:
+            return text
+        char_limit = max_tokens * 4
+        if char_limit <= 3:
+            return text[:char_limit]
+        return text[: char_limit - 3].rstrip() + "..."
+
+    @staticmethod
+    def _format_field(val: Any) -> str:
+        """Format an identity or state value cleanly into a readable string."""
+        if val is None or val == "" or val == {} or val == []:
+            return "None"
+        if isinstance(val, dict):
+            items = []
+            for k, v in val.items():
+                if isinstance(v, dict):
+                    if v:
+                        items.append(f"{k}: {json.dumps(v, ensure_ascii=False)}")
+                elif isinstance(v, (list, tuple)):
+                    if v:
+                        items.append(f"{k}: [{', '.join(str(x) for x in v)}]")
+                elif v is not None and v != "":
+                    items.append(f"{k}: {v}")
+            return ", ".join(items) if items else "None"
+        if isinstance(val, (list, tuple)):
+            return ", ".join(str(x) for x in val) if val else "None"
+        return str(val)
+
+    def format_ground_truth(
+        self, identity_data: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Extracts entities, system_environment, and collaboration_style into a ground truth block."""
+        if identity_data is None:
+            identity_data = (
+                self.profile_manager.get_identity() if self.profile_manager else {}
+            )
+        if not isinstance(identity_data, dict):
+            identity_data = {}
+
+        env = identity_data.get("system_environment", {})
+        style = identity_data.get("collaboration_style", {})
+        entities = identity_data.get("entities", {})
+
+        lines = [
+            "[GROUND TRUTH MEMORY]",
+            f"- Environment: {self._format_field(env)}",
+            f"- Style: {self._format_field(style)}",
+            f"- Known Entities: {self._format_field(entities)}",
+        ]
+        block = "\n".join(lines)
+        return self._truncate_to_tokens(block, 450)
+
+    def format_working_state(
+        self, working_data: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Formats active project, top 5 hot topics, and staged nodes."""
+        if working_data is None:
+            working_data = (
+                self.profile_manager.get_working_state()
+                if self.profile_manager
+                else {}
+            )
+        if not isinstance(working_data, dict):
+            working_data = {}
+
+        project = working_data.get("active_project", "")
+        hot_topics = working_data.get("hot_topics", [])
+        if isinstance(hot_topics, list):
+            hot_topics = hot_topics[:5]
+        staged_nodes = working_data.get("staged_nodes", [])
+
+        node_titles = []
+        if isinstance(staged_nodes, list):
+            for n in staged_nodes:
+                if isinstance(n, dict):
+                    title = n.get("title") or n.get("name") or n.get("id") or str(n)
+                    node_titles.append(str(title))
+                elif n is not None:
+                    node_titles.append(str(n))
+
+        lines = [
+            "[ACTIVE WORKING STATE]",
+            f"- Current Objective / Project: {self._format_field(project)}",
+            f"- Hot Topics: {self._format_field(hot_topics)}",
+            f"- Staged Nodes: {self._format_field(node_titles)}",
+        ]
+        block = "\n".join(lines)
+        return self._truncate_to_tokens(block, 400)
+
+    def format_focal_context(
+        self, focal_nodes: Optional[List[Dict[str, Any]]] = None
+    ) -> str:
+        """Formats list of actively focused or clearing nodes."""
+        if not focal_nodes:
+            return ""
+
+        node_strs = []
+        for n in focal_nodes:
+            if isinstance(n, dict):
+                val = n.get("title") or n.get("name") or n.get("id") or n.get("path")
+                if val:
+                    node_strs.append(str(val))
+            elif n is not None:
+                node_strs.append(str(n))
+
+        if not node_strs:
+            return ""
+
+        nodes_str = ", ".join(node_strs)
+        lines = [
+            "[FOCAL CONTEXT]",
+            f"- In Clearing: {nodes_str}",
+        ]
+        block = "\n".join(lines)
+        return self._truncate_to_tokens(block, 250)
+
     def get_environment_context(self) -> Dict[str, Any]:
         """Returns runtime environment metadata dictionary."""
         return {
@@ -66,17 +197,115 @@ class AetherContextBuilder:
             "telemetry": self.telemetry,
         }
 
+    def assemble_system_prompt(
+        self,
+        focal_nodes: Optional[List[Dict[str, Any]]] = None,
+        max_tokens: int = 1300,
+        base_instruction: Optional[str] = None,
+    ) -> str:
+        """Combines CORE_PERSONA + Ground Truth + Working State + Focal Context with token budgeting.
+
+        Enforces the hard max_tokens ceiling (default 1300 tokens). If total exceeds the budget,
+        trims focal context first, then working state, preserving CORE_PERSONA and Ground Truth.
+        """
+        from .engines.conversation.persona import AETHER_SYSTEM_INSTRUCTION
+
+        core = base_instruction or AETHER_SYSTEM_INSTRUCTION
+        identity_data = (
+            self.profile_manager.get_identity() if self.profile_manager else {}
+        )
+        working_data = (
+            self.profile_manager.get_working_state() if self.profile_manager else {}
+        )
+
+        ground_truth = self.format_ground_truth(identity_data)
+        working_state = self.format_working_state(working_data)
+        focal_context = self.format_focal_context(focal_nodes)
+
+        # 1. Attempt full assembly
+        sections = [core, ground_truth, working_state]
+        if focal_context:
+            sections.append(focal_context)
+        prompt = "\n\n".join(s for s in sections if s)
+
+        if self._estimate_tokens(prompt) <= max_tokens:
+            return prompt
+
+        # 2. Exceeds budget: trim focal context first
+        if focal_context:
+            base_without_focal = "\n\n".join(
+                s for s in [core, ground_truth, working_state] if s
+            )
+            base_tokens = self._estimate_tokens(base_without_focal)
+            avail_fc = max_tokens - base_tokens - 1
+            if avail_fc >= 15:
+                focal_context = self._truncate_to_tokens(focal_context, avail_fc)
+            else:
+                focal_context = ""
+
+            sections = [core, ground_truth, working_state]
+            if focal_context:
+                sections.append(focal_context)
+            prompt = "\n\n".join(s for s in sections if s)
+
+            if self._estimate_tokens(prompt) <= max_tokens:
+                return prompt
+
+        # If still exceeding budget, focal context is completely dropped
+        focal_context = ""
+
+        # 3. Next, trim working state
+        base_without_ws = "\n\n".join(s for s in [core, ground_truth] if s)
+        base_tokens = self._estimate_tokens(base_without_ws)
+        avail_ws = max_tokens - base_tokens - 1
+        if avail_ws >= 15:
+            working_state = self._truncate_to_tokens(working_state, avail_ws)
+        else:
+            working_state = ""
+
+        sections = [core, ground_truth]
+        if working_state:
+            sections.append(working_state)
+        prompt = "\n\n".join(s for s in sections if s)
+
+        if self._estimate_tokens(prompt) <= max_tokens:
+            return prompt
+
+        # 4. Final safety net: if even core + ground_truth exceeds max_tokens
+        return self._truncate_to_tokens(prompt, max_tokens)
+
     def build_system_instruction(
         self,
         base_instruction: Optional[str] = None,
         canvas_telemetry: Optional[Dict[str, Any]] = None,
+        focal_nodes: Optional[List[Dict[str, Any]]] = None,
+        include_user_context: bool = False,
     ) -> str:
-        """Formats base persona instruction with structured runtime environment & telemetry context blocks."""
+        """Formats base persona instruction with living user context, structured runtime environment & telemetry context blocks."""
         from .engines.conversation.persona import AETHER_SYSTEM_INSTRUCTION
 
         base = base_instruction or AETHER_SYSTEM_INSTRUCTION
         if "[RUNTIME ENVIRONMENT]" in base:
             return base
+
+        user_context_parts = []
+        if include_user_context and self.profile_manager:
+            if "[GROUND TRUTH MEMORY]" not in base:
+                gt = self.format_ground_truth()
+                if gt:
+                    user_context_parts.append(gt)
+            if "[ACTIVE WORKING STATE]" not in base:
+                ws = self.format_working_state()
+                if ws:
+                    user_context_parts.append(ws)
+
+        if focal_nodes and "[FOCAL CONTEXT]" not in base:
+            fc = self.format_focal_context(focal_nodes)
+            if fc:
+                user_context_parts.append(fc)
+
+        if user_context_parts:
+            base = f"{base}\n\n" + "\n\n".join(user_context_parts)
 
         telemetry = (
             canvas_telemetry if canvas_telemetry is not None else self.telemetry
@@ -188,6 +417,7 @@ def _query_graph_db(
         uri = f"file:{db_abs}?mode=ro"
         conn = sqlite3.connect(uri, uri=True, timeout=1.0)
         cursor = conn.cursor()
+        cursor.execute("PRAGMA foreign_keys = ON;")
 
         try:
             cursor.execute("SELECT COUNT(*) FROM nodes")

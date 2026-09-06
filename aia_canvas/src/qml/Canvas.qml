@@ -499,8 +499,12 @@ Window {
                 engineState: {
                     var b = (typeof bridge !== "undefined" && bridge) ? bridge : ((typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null);
                     if (!b || !b.isConnected) return "OFFLINE";
-                    if (b.conversation && b.conversation.isThinking) return "WORKING";
-                    return "LATENT";
+                    var s = (b.conversation && b.conversation.engineState) ? b.conversation.engineState : (b.engineState || "");
+                    if (s === "STREAMING" || s === "WORKING") return "WORKING";
+                    if (s === "SYNTHESIZING" || s === "DISTILLING") return "DISTILLING";
+                    if (s === "ERROR" || s === "OFFLINE") return "OFFLINE";
+                    if (s === "IDLE" || s === "LATENT") return "LATENT";
+                    return s ? s : "LATENT";
                 }
             }
         }

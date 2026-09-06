@@ -43,6 +43,7 @@ class ContextLedger:
         # PRAGMAs for performance
         cursor.execute("PRAGMA journal_mode=WAL;")
         cursor.execute("PRAGMA synchronous=NORMAL;")
+        cursor.execute("PRAGMA foreign_keys = ON;")
         
         # ledger_events
         cursor.execute("""

@@ -97,8 +97,8 @@ Item {
     Rectangle {
         id: lensContainer
         objectName: "lensContainer"
-        width: Math.min(1380, Math.max(960, Math.round(root.width * 0.68)))
-        height: Math.min(940, Math.round(root.height * 0.82))
+        width: Math.min(1600, Math.max(1040, Math.round(root.width * 0.76)))
+        height: Math.round(root.height * 0.85)
         x: Math.round((root.width - width) / 2)
         property real targetCenterY: Math.round((root.height - height) / 2)
         y: targetCenterY

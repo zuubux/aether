@@ -25,6 +25,73 @@ from content.streamer import MmapTextStreamer
 from aia_intent import IntentEngine
 from controllers.conversation_controller import ConversationController
 
+import time
+
+
+class SignalBlocker:
+    def __init__(self, signal, app, timeout=1000):
+        self.signal = signal
+        self.app = app
+        self.timeout = timeout
+        self.signal_triggered = False
+        self.args = []
+
+    def _on_signal(self, *args):
+        self.signal_triggered = True
+        self.args = args
+
+    def __enter__(self):
+        self.signal.connect(self._on_signal)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            start = time.monotonic()
+            while not self.signal_triggered:
+                self.app.processEvents()
+                if (time.monotonic() - start) * 1000 > self.timeout:
+                    raise TimeoutError(f"Signal not emitted within {self.timeout}ms")
+                time.sleep(0.002)
+        finally:
+            try:
+                self.signal.disconnect(self._on_signal)
+            except Exception:
+                pass
+
+
+class QtBot:
+    """Deterministic headless Qt testing helper conforming to pytest-qt contracts."""
+
+    def __init__(self, app):
+        self._app = app
+
+    def waitUntil(self, callback, timeout=1000):
+        start = time.monotonic()
+        while True:
+            self._app.processEvents()
+            try:
+                if callback():
+                    return
+            except Exception:
+                pass
+            if (time.monotonic() - start) * 1000 > timeout:
+                raise TimeoutError(f"Condition not met within {timeout}ms")
+            time.sleep(0.002)
+
+    def waitSignal(self, signal, timeout=1000):
+        return SignalBlocker(signal, self._app, timeout)
+
+    def wait(self, ms):
+        start = time.monotonic()
+        while (time.monotonic() - start) * 1000 < ms:
+            self._app.processEvents()
+            time.sleep(0.002)
+
+
+@pytest.fixture
+def qtbot(qapp):
+    return QtBot(qapp)
+
 
 @pytest.fixture(scope="session")
 def qapp():

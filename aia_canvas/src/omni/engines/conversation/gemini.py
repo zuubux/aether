@@ -166,32 +166,31 @@ class GeminiProvider(BaseLLMProvider):
         )
         headers = {"Content-Type": "application/json"}
 
-        base_system_instruction = (
-            context.get("system_instruction")
-            if isinstance(context, dict) and context.get("system_instruction")
-            else AETHER_SYSTEM_INSTRUCTION
-        )
+        # Single authoritative injection boundary: if system_instruction is already supplied
+        # by the caller (e.g. ConversationEngine), use it directly without re-wrapping.
+        if isinstance(context, dict) and context.get("system_instruction"):
+            full_system_instruction = context["system_instruction"]
+        else:
+            telemetry_dict = {}
+            if isinstance(context, dict):
+                if "telemetry" in context and isinstance(context["telemetry"], dict):
+                    telemetry_dict.update(context["telemetry"])
+                for key in (
+                    "node_count",
+                    "focused_node_id",
+                    "focused_node_type",
+                    "attached_context_ids",
+                    "context_pills",
+                ):
+                    if key in context and context[key] is not None:
+                        telemetry_dict[key] = context[key]
 
-        telemetry_dict = {}
-        if isinstance(context, dict):
-            if "telemetry" in context and isinstance(context["telemetry"], dict):
-                telemetry_dict.update(context["telemetry"])
-            for key in (
-                "node_count",
-                "focused_node_id",
-                "focused_node_type",
-                "attached_context_ids",
-                "context_pills",
-            ):
-                if key in context and context[key] is not None:
-                    telemetry_dict[key] = context[key]
-
-        builder = AetherContextBuilder(
-            telemetry=telemetry_dict if telemetry_dict else None
-        )
-        full_system_instruction = builder.build_system_instruction(
-            base_instruction=base_system_instruction
-        )
+            builder = AetherContextBuilder(
+                telemetry=telemetry_dict if telemetry_dict else None
+            )
+            full_system_instruction = builder.build_system_instruction(
+                base_instruction=AETHER_SYSTEM_INSTRUCTION
+            )
 
         if extracted_telemetry and extracted_telemetry not in full_system_instruction:
             full_system_instruction = (

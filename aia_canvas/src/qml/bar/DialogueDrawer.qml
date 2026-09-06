@@ -59,7 +59,7 @@ Item {
         }
     }
 
-    Rectangle {
+    ProviderBadge {
         id: providerHeaderPill
         objectName: "providerHeaderPill"
         anchors.top: parent.top
@@ -67,38 +67,10 @@ Item {
         anchors.right: ascendBtn.left
         anchors.rightMargin: 8
         height: 24
-        radius: 12
-        color: Theme.surfaceGlass
-        border.color: Theme.borderSubtle
-        border.width: 1
-        width: modelRow.implicitWidth + 16
-
-        Row {
-            id: modelRow
-            objectName: "modelRow"
-            anchors.centerIn: parent
-            spacing: 6
-
-            Text {
-                id: providerGlyph
-                objectName: "providerGlyph"
-                text: root.providerMeta ? (root.providerMeta.icon_glyph || "✦") : "✦"
-                font.pixelSize: 11
-                color: root.providerMeta ? (root.providerMeta.accent_color || Theme.accentAI) : Theme.accentAI
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-                id: modelNameText
-                objectName: "modelNameText"
-                text: root.providerMeta ? (root.providerMeta.display_name || "Flash") : "Flash"
-                font.family: (typeof Theme !== "undefined" && Theme.fontSans) ? Theme.fontSans : undefined
-                font.weight: Font.Medium
-                font.pixelSize: 11
-                color: Theme.accentAI
-                anchors.verticalCenter: parent.verticalCenter
-            }
-        }
+        engineState: root.engineState
+        providerMeta: root.providerMeta
+        isConversationalMode: root.isConversationalMode
+        showDialogueOutput: root.showDialogueOutput
     }
 
     Rectangle {

@@ -31,8 +31,13 @@ class EventLedger:
             return
 
         cursor = self.conn.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL;")
-        cursor.execute("PRAGMA synchronous=NORMAL;")
+        cursor.execute("PRAGMA journal_mode = WAL;")
+        cursor.execute("PRAGMA synchronous = NORMAL;")
+        cursor.execute("PRAGMA foreign_keys = ON;")
+        cursor.execute("PRAGMA auto_vacuum;")
+        if cursor.fetchone()[0] != 2:
+            cursor.execute("PRAGMA auto_vacuum = INCREMENTAL;")
+            cursor.execute("VACUUM;")
 
         cursor.execute(
             """
@@ -96,6 +101,8 @@ class EventLedger:
             (cutoff,),
         )
         deleted_count = cursor.rowcount
+        self.conn.commit()
+        cursor.execute("PRAGMA incremental_vacuum(50);")
         self.conn.commit()
         return deleted_count
 

@@ -4,7 +4,6 @@ Tests Tab/Shift+Tab traversal, shelf expand/collapse (Up/Down arrow), Enter/Esc 
 glass readability, placeholder contrast, and mode badges/sigils.
 """
 
-import time
 from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtQml import QQmlComponent, QQmlExpression
@@ -50,7 +49,7 @@ def test_omnibar_glass_readability_and_placeholder(qapp, qml_engine, canvas_qml_
     assert placeholder_text.property("color").name() == theme_inst.property("textMuted").name()
 
 
-def test_omnibar_key_events_and_shelf_expansion(qapp, qml_engine, canvas_qml_root):
+def test_omnibar_key_events_and_shelf_expansion(qapp, qml_engine, canvas_qml_root, qtbot):
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
     ribbon_container = omni_bar.findChild(object, "ribbonContainer")
@@ -88,9 +87,7 @@ def test_omnibar_key_events_and_shelf_expansion(qapp, qml_engine, canvas_qml_roo
     # Press Up Arrow to expand
     up_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Up, Qt.KeyboardModifier.NoModifier)
     qapp.sendEvent(input_field, up_evt)
-    for _ in range(6):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("shelfExpanded") and abs(ribbon_container.property("height") - 240) < 5.0, timeout=1000)
 
     assert omni_bar.property("shelfExpanded")
     assert abs(ribbon_container.property("height") - 240) < 5.0
@@ -100,9 +97,7 @@ def test_omnibar_key_events_and_shelf_expansion(qapp, qml_engine, canvas_qml_roo
     qapp.sendEvent(input_field, down_evt)
     qapp.processEvents()
     qapp.sendEvent(input_field, down_evt)
-    for _ in range(10):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: not omni_bar.property("shelfExpanded") and abs(ribbon_container.property("height") - 52) < 5.0, timeout=1000)
 
     assert not omni_bar.property("shelfExpanded")
     assert abs(ribbon_container.property("height") - 52) < 5.0
@@ -117,7 +112,7 @@ def test_omnibar_key_events_and_shelf_expansion(qapp, qml_engine, canvas_qml_roo
     assert not omni_bar.property("active")
 
 
-def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root):
+def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root, qtbot):
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     prefix_icon = omni_bar.findChild(object, "prefixIcon")
     mode_badge = omni_bar.findChild(object, "modeBadge")
@@ -126,18 +121,16 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root):
     input_field = omni_bar.findChild(object, "inputField")
 
     omni_bar.open()
-    for _ in range(10):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("visible") and omni_bar.property("opacity") > 0.1, timeout=1000)
 
     # Standard query
     input_field.setProperty("text", "hello world")
-    qapp.processEvents()
+    qtbot.waitUntil(lambda: prefix_icon.property("visible") is True, timeout=1000)
     assert prefix_icon.property("visible") is True
 
     # '>' Shell Execution mode
     input_field.setProperty("text", "> git status")
-    qapp.processEvents()
+    qtbot.waitUntil(lambda: mode_badge.property("visible") is True, timeout=1000)
     assert prefix_icon.property("visible") is False
     assert mode_badge.property("visible") is True
     assert mode_text.property("text") == "CLI"
@@ -148,9 +141,7 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root):
     search_shelf = canvas_qml_root.findChild(object, "searchShelf")
     bar_shell = omni_bar.findChild(object, "barShell")
     input_field.setProperty("text", "? explain quantum")
-    for _ in range(12):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode") and bar_shell.property("borderColor").name().lower() == "#38bdf8", timeout=1000)
     assert prefix_icon.property("visible") is False
     assert mode_badge.property("visible") is True
     assert omni_bar.property("isConversationalMode") is True
@@ -183,7 +174,7 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root):
     assert input_field.property("color").name() == theme_inst.property("textPrimary").name()
 
 
-def test_omnibar_shell_drawer_rendering(qapp, qml_engine, canvas_qml_root):
+def test_omnibar_shell_drawer_rendering(qapp, qml_engine, canvas_qml_root, qtbot):
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
     ribbon_container = omni_bar.findChild(object, "ribbonContainer")
@@ -193,9 +184,7 @@ def test_omnibar_shell_drawer_rendering(qapp, qml_engine, canvas_qml_root):
     system_status_footer = omni_bar.findChild(object, "systemStatusFooter")
 
     omni_bar.open()
-    for _ in range(12):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("visible") and omni_bar.property("opacity") > 0.1, timeout=1000)
 
     # Enter shell query
     input_field.setProperty("text", "> git status")
@@ -205,9 +194,7 @@ def test_omnibar_shell_drawer_rendering(qapp, qml_engine, canvas_qml_root):
         {"id": "shell_sys_1", "title": "✗ exit 1 • /home/nic", "stream": "system", "exit_code": 1},
     ]
     omni_bar.setProperty("resultsList", results)
-    for _ in range(12):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: shell_drawer.property("visible") and bar_shell.property("borderColor").name().lower() == "#f59e0b", timeout=1000)
 
     # Ribbon container suppressed in shell mode
     assert ribbon_container.property("visible") is False
@@ -234,7 +221,7 @@ def test_omnibar_shell_drawer_rendering(qapp, qml_engine, canvas_qml_root):
     assert shell_drawer.property("visible") is False
 
 
-def test_omnibar_shell_no_premature_exec_and_tab_completion(qapp, qml_engine, canvas_qml_root, mock_bridge):
+def test_omnibar_shell_no_premature_exec_and_tab_completion(qapp, qml_engine, canvas_qml_root, mock_bridge, qtbot):
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
 
@@ -245,15 +232,11 @@ def test_omnibar_shell_no_premature_exec_and_tab_completion(qapp, qml_engine, ca
     omni_bar.querySubmitted.connect(on_query)
 
     omni_bar.open()
-    for _ in range(5):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("active"), timeout=1000)
 
     # 1. Verify typing shell query (> ec) does not trigger premature execution
     input_field.setProperty("text", "> ec")
     input_field.setProperty("cursorPosition", 4)
-    qapp.processEvents()
-    time.sleep(0.2)  # Wait longer than 150ms debounce
     qapp.processEvents()
 
     # Verify no search query submitted during typing
@@ -362,7 +345,7 @@ def test_omnibar_outer_border_and_viewport_clip(qapp, qml_engine, canvas_qml_roo
     assert val == 36
 
 
-def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_root):
+def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_root, qtbot):
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
     bar_shell = omni_bar.findChild(object, "barShell")
@@ -372,15 +355,12 @@ def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_ro
     ribbon_container = omni_bar.findChild(object, "ribbonContainer")
 
     omni_bar.open()
-    qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("visible") and omni_bar.property("opacity") > 0.1, timeout=1000)
 
     # 1. Type conversational query
     input_field.setProperty("text", "? Explain Aether")
-    for _ in range(12):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode") and bar_shell.property("borderColor").name().lower() == "#38bdf8", timeout=1000)
 
-    assert omni_bar.property("isConversationalMode") is True
     assert bar_shell.property("borderColor").name().lower() == "#38bdf8"
     assert search_shelf.property("opacity") < 0.01
     assert ribbon_container.property("visible") is False
@@ -391,9 +371,7 @@ def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_ro
         {"title": "It combines PyQt6, QML, and numerical graph dynamics."}
     ]
     omni_bar.setProperty("resultsList", stream_results)
-    for _ in range(12):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("showDialogueOutput") and dialogue_drawer.property("visible") and omni_bar.property("dialogueDrawerHeight") > 0 and omni_bar.property("height") > 48, timeout=1000)
 
     # 3. Verify dialogue output drawer opens and expands
     assert omni_bar.property("showDialogueOutput") is True
@@ -428,7 +406,7 @@ def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_ro
     assert dialogue_scroll_view.property("clip") is True
 
 
-def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch):
+def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch, qtbot):
     monkeypatch.setattr(ConversationController, "stream_prompt", lambda *args, **kwargs: None)
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
@@ -449,9 +427,7 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
 
     # Type a conversational query starting with ?
     input_field.setProperty("text", "? What is the architecture?")
-    for _ in range(10):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode") and not mock_bridge.searchActive, timeout=1000)
 
     # Verify search shelf opacity is 0, bridge searchActive is False (node highlights cleared), debounceTimer stopped, provider pill opacity 0.3
     assert omni_bar.property("isConversationalMode") is True
@@ -469,9 +445,7 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
     assert mock_bridge.searchActive is True
 
     input_field.setProperty("text", "> ls -la")
-    for _ in range(5):
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("isShellMode") and not mock_bridge.searchActive, timeout=1000)
 
     assert omni_bar.property("isShellMode") is True
     assert search_shelf.property("opacity") < 0.01
@@ -479,7 +453,7 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
     assert debounce_timer.property("running") is False
 
 
-def test_omnibar_ai_auto_send_debounce_and_idempotency(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch):
+def test_omnibar_ai_auto_send_debounce_and_idempotency(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch, qtbot):
     monkeypatch.setattr(ConversationController, "stream_prompt", lambda *args, **kwargs: None)
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
@@ -512,12 +486,7 @@ def test_omnibar_ai_auto_send_debounce_and_idempotency(qapp, qml_engine, canvas_
     # Manually trigger timer to simulate 1200ms trigger without waiting
     auto_send_timer.metaObject().invokeMethod(auto_send_timer, "triggered")
     # Wait for the thread to reach STREAMING or ERROR state to avoid teardown crash
-    import time
-    for _ in range(50):
-        if mock_bridge.engineState in ("STREAMING", "ERROR", "IDLE"):
-            break
-        import PyQt6.QtTest as QtTest; QtTest.QTest.qWait(50)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: mock_bridge.engineState in ("STREAMING", "ERROR", "IDLE"), timeout=1000)
     qapp.processEvents()
 
     assert len(submitted_queries) == 1
@@ -546,7 +515,7 @@ def test_omnibar_ai_auto_send_debounce_and_idempotency(qapp, qml_engine, canvas_
     qapp.processEvents()
 
 
-def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas_qml_root):
+def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas_qml_root, qtbot):
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
     placeholder_text = input_field.findChild(object, "customPlaceholderText")
@@ -554,11 +523,11 @@ def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas
     dialogue_drawer = omni_bar.findChild(object, "dialogueDrawer")
 
     omni_bar.open()
-    qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("visible") and omni_bar.property("opacity") > 0.1, timeout=1000)
 
     # 1. Start in Conversational Mode ('?')
     input_field.setProperty("text", "? Tell me about Aether")
-    qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode"), timeout=1000)
 
     assert omni_bar.property("isConversationalMode") is True
     assert omni_bar.property("isShellMode") is False
@@ -569,9 +538,7 @@ def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas
         {"title": "Aether is a real-time spatial graph canvas."}
     ]
     omni_bar.setProperty("resultsList", stream_results)
-    for _ in range(6):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("showDialogueOutput") and dialogue_drawer.property("visible"), timeout=1000)
 
     assert omni_bar.property("showDialogueOutput") is True
     assert dialogue_drawer.property("visible") is True
@@ -581,9 +548,7 @@ def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas
 
     # 2. Transition directly to Shell Mode ('>')
     input_field.setProperty("text", "> ls -la")
-    for _ in range(6):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("isShellMode"), timeout=1000)
 
     assert omni_bar.property("isShellMode") is True
     assert omni_bar.property("isConversationalMode") is False
@@ -602,9 +567,7 @@ def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas
         {"line": "Command exited with code 0", "stream": "system", "exit_code": 0}
     ]
     omni_bar.setProperty("resultsList", shell_results)
-    for _ in range(6):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("showShellOutput"), timeout=1000)
 
     assert omni_bar.property("showShellOutput") is True
     assert shell_drawer.property("visible") is True
@@ -615,9 +578,7 @@ def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas
 
     # 4. Transition directly back to Conversational Mode ('?')
     input_field.setProperty("text", "? Summarize logs")
-    for _ in range(6):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode"), timeout=1000)
 
     assert omni_bar.property("isConversationalMode") is True
     assert omni_bar.property("isShellMode") is False
@@ -632,9 +593,7 @@ def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas
 
     # 5. Transition to standard search mode (empty prefix)
     input_field.setProperty("text", "architecture")
-    for _ in range(6):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: not omni_bar.property("isShellMode") and not omni_bar.property("isConversationalMode"), timeout=1000)
 
     assert omni_bar.property("isShellMode") is False
     assert omni_bar.property("isConversationalMode") is False
@@ -645,7 +604,7 @@ def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas
 
 
 
-def test_omnibar_enter_key_triggers_conversation_execution(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch):
+def test_omnibar_enter_key_triggers_conversation_execution(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch, qtbot):
     monkeypatch.setattr(ConversationController, "stream_prompt", lambda *args, **kwargs: None)
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
@@ -655,21 +614,17 @@ def test_omnibar_enter_key_triggers_conversation_execution(qapp, qml_engine, can
     assert mock_bridge.focusedNodeId == "2"
 
     omni_bar.open()
-    qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("visible") and omni_bar.property("opacity") > 0.1, timeout=1000)
 
     input_field.setProperty("text", "? What is the system state?")
-    for _ in range(6):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode"), timeout=1000)
 
     assert omni_bar.property("isConversationalMode") is True
 
     # Press Enter key in AI mode
     enter_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
     qapp.sendEvent(input_field, enter_evt)
-    for _ in range(6):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("showDialogueOutput") and dialogue_drawer.property("visible"), timeout=1000)
 
     # OmniBar must NOT close on Enter in AI mode
     assert omni_bar.property("active") is True
@@ -686,7 +641,7 @@ def test_omnibar_enter_key_triggers_conversation_execution(qapp, qml_engine, can
     assert "System is operational." in full_text
 
 
-def test_focused_node_retained_and_lit_in_conversational_mode(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch):
+def test_focused_node_retained_and_lit_in_conversational_mode(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch, qtbot):
     monkeypatch.setattr(ConversationController, "stream_prompt", lambda *args, **kwargs: None)
     from store import Node
     n1 = Node(id=1, file_path="/docs/aether.md", x=100.0, y=100.0, archetype="document")
@@ -707,9 +662,7 @@ def test_focused_node_retained_and_lit_in_conversational_mode(qapp, qml_engine, 
     # 2. Transition into AI mode (?)
     omni_bar.open()
     input_field.setProperty("text", "? Tell me about this node")
-    for _ in range(50):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode"), timeout=1000)
 
     # 3. Verify focusedNodeId is retained and not cleared
     assert mock_bridge.focusedNodeId == "1"
@@ -729,12 +682,13 @@ def test_focused_node_retained_and_lit_in_conversational_mode(qapp, qml_engine, 
     assert node1.property("z") == 20
 
     assert node2.property("isFocusedTarget") is False
-    assert node2.property("opacity") == 0.15
+    qtbot.waitUntil(lambda: abs(node2.property("opacity") - 0.15) < 0.02, timeout=1000)
+    assert abs(node2.property("opacity") - 0.15) < 0.02
     assert node2.property("z") == 15
 
 
 
-def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch):
+def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch, qtbot):
     monkeypatch.setattr(ConversationController, "stream_prompt", lambda *args, **kwargs: None)
     # 0. Verify bridge.providerMetadata contract
     provider_meta = mock_bridge.property("providerMetadata")
@@ -774,9 +728,7 @@ def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qm
 
     # Emit token response
     mock_bridge.conversation.tokenReceived.emit("A graph database stores nodes and edges.")
-    for _ in range(10):
-        time.sleep(0.01)
-        qapp.processEvents()
+    qtbot.waitUntil(lambda: omni_bar.property("showDialogueOutput") and omni_bar.property("dialogueFullText") != "", timeout=1000)
 
     assert omni_bar.property("showDialogueOutput") is True
     assert omni_bar.property("dialogueFullText") == "A graph database stores nodes and edges."
@@ -826,11 +778,3 @@ def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qm
     assert omni_bar.property("engineState") == "ERROR"
     assert status_dot.property("color").name().lower() == "#ef4444"
     assert status_dot.property("opacity") == 1.0
-
-
-
-
-
-
-    time.sleep(0.1)
-    qapp.processEvents()

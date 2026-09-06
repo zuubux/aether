@@ -41,6 +41,16 @@ def test_schema_initialization(db_path: Path):
         assert "idx_events_timestamp" in indices
         assert "idx_events_type" in indices
 
+        # Verify PRAGMAs
+        cursor.execute("PRAGMA journal_mode;")
+        assert cursor.fetchone()[0].lower() == "wal"
+
+        cursor.execute("PRAGMA auto_vacuum;")
+        assert cursor.fetchone()[0] == 2  # INCREMENTAL
+
+        cursor.execute("PRAGMA foreign_keys;")
+        assert cursor.fetchone()[0] == 1  # ON
+
 
 def test_record_event(db_path: Path):
     with EventLedger(db_path) as ledger:
