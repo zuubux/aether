@@ -72,6 +72,67 @@ Item {
             }
         }
 
+        ScrollView {
+            id: slateScrollView
+            objectName: "slateScrollView"
+            anchors.top: header.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 16
+            clip: true
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+            ListView {
+                id: slateListView
+                objectName: "slateListView"
+                width: parent.width
+                model: root.turnHistory
+                spacing: 16
+
+                delegate: Column {
+                    width: slateListView.width
+                    spacing: 8
+
+                    Text {
+                        text: "User"
+                        font.bold: true
+                        font.pixelSize: 12
+                        font.family: Theme.fontCode
+                        color: Theme.accentCyan
+                    }
+                    Text {
+                        width: parent.width
+                        text: modelData.prompt || ""
+                        wrapMode: Text.Wrap
+                        font.pixelSize: 14
+                        color: Theme.textPrimary
+                    }
+                    Text {
+                        text: "Aether"
+                        font.bold: true
+                        font.pixelSize: 12
+                        font.family: Theme.fontCode
+                        color: Theme.accentAI
+                    }
+                    Text {
+                        width: parent.width
+                        text: modelData.response || ""
+                        wrapMode: Text.Wrap
+                        textFormat: Text.MarkdownText
+                        font.pixelSize: 14
+                        color: Theme.textPrimary
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: Theme.borderSubtle
+                        opacity: 0.3
+                    }
+                }
+            }
+        }
+
         StateGroup {
             id: lensStateGroup
             states: [

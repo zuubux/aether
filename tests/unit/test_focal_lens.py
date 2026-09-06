@@ -73,6 +73,12 @@ def test_focal_lens_backdrop_and_absorber(focal_lens_component):
     interior = lens.findChild(QObject, "interiorAbsorber")
     assert interior is not None
 
+    scroll = lens.findChild(QObject, "slateScrollView")
+    assert scroll is not None
+
+    list_view = lens.findChild(QObject, "slateListView")
+    assert list_view is not None
+
 def test_omni_bar_ascension(omni_bar_component):
     omni = omni_bar_component
     assert omni is not None
@@ -83,6 +89,12 @@ def test_omni_bar_ascension(omni_bar_component):
     btn = drawer.findChild(QObject, "ascendBtn")
     assert btn is not None
 
+    # Verify capsuleRadar is mounted in input capsule
+    radar = omni.findChild(QObject, "capsuleRadar")
+    assert radar is not None
+    assert radar.property("compact") is True
+    assert radar.property("engineState") == "LATENT"
+
     # Test shift+enter wiring via ascendToLens call behavior implicitly via properties
     lens = omni.findChild(QObject, "focalLensFrame")
     assert lens is not None
@@ -90,3 +102,20 @@ def test_omni_bar_ascension(omni_bar_component):
 
     omni.ascendToLens()
     assert lens.property("active") == True
+
+@pytest.mark.parametrize(
+    "state",
+    ["LATENT", "DISTILLING", "WORKING", "OFFLINE"],
+)
+def test_ambient_radar_hud_states(qml_engine, state):
+    path = os.path.abspath("aia_canvas/src/qml/hud/AmbientRadarHUD.qml")
+    comp = QQmlComponent(qml_engine, QUrl.fromLocalFile(path))
+    assert comp.status() == QQmlComponent.Status.Ready, f"Error: {comp.errors()}"
+    radar = comp.create()
+    try:
+        assert radar is not None
+        radar.setProperty("engineState", state)
+        assert radar.property("engineState") == state
+    finally:
+        if radar:
+            radar.deleteLater()

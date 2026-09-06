@@ -487,6 +487,22 @@ Window {
                 showDiagnostics: canvasRoot.showDiagnostics
                 z: 5
             }
+
+            AmbientRadarHUD {
+                id: globalRadarHUD
+                objectName: "globalRadarHUD"
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                anchors.margins: 24
+                compact: false
+                z: 6
+                engineState: {
+                    var b = (typeof bridge !== "undefined" && bridge) ? bridge : ((typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null);
+                    if (!b || !b.isConnected) return "OFFLINE";
+                    if (b.conversation && b.conversation.isThinking) return "WORKING";
+                    return "LATENT";
+                }
+            }
         }
     }
 }
