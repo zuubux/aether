@@ -11,7 +11,11 @@ from ...context import OmniContext, assemble_spatial_context, format_spatial_env
 from ..llm import LLMEngine
 from .base import BaseLLMProvider, ProviderMetadata
 from .gemini import GeminiProvider
-from .persona import AETHER_SYSTEM_INSTRUCTION
+
+try:
+    from memory.prompt_assembler import PromptAssembler
+except ModuleNotFoundError:
+    from aia_canvas.src.memory.prompt_assembler import PromptAssembler
 
 
 class ConversationEngine(LLMEngine):
@@ -28,6 +32,7 @@ class ConversationEngine(LLMEngine):
         self.max_history: int = max_history
         self._history: deque = deque(maxlen=max_history)
         self.bridge: Optional[Any] = bridge
+        self.prompt_assembler = PromptAssembler()
 
     @property
     def provider_metadata(self) -> ProviderMetadata:
@@ -117,7 +122,10 @@ class ConversationEngine(LLMEngine):
         provider_ctx = dict(ctx_dict)
         provider_ctx["history"] = list(self._history)
         if "system_instruction" not in provider_ctx:
-            provider_ctx["system_instruction"] = AETHER_SYSTEM_INSTRUCTION
+            focal_nodes = [{"id": target, "path": focused_node_path}] if target else []
+            provider_ctx["system_instruction"] = self.prompt_assembler.assemble_system_prompt(
+                focal_nodes=focal_nodes
+            )
 
         # Record user's clean prompt query in sliding history buffer (no envelope pollution)
         self._history.append({"role": "user", "content": clean_prompt})

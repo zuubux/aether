@@ -11,6 +11,11 @@ from workers.media_worker import CsvWorker, ImageWorker, PdfWorker
 
 from .base_controller import BaseController
 
+try:
+    from memory.event_ledger import EventLedger
+except ModuleNotFoundError:
+    from aia_canvas.src.memory.event_ledger import EventLedger
+
 weaver_src = str(Path(__file__).resolve().parents[3] / "aia_weaver" / "src")
 if weaver_src not in sys.path and os.path.exists(weaver_src):
     sys.path.insert(0, weaver_src)
@@ -34,6 +39,7 @@ class NodeController(BaseController):
         super().__init__(bridge, parent)
         self._is_dragging: bool = False
         self._constellation_active_node_id: int = 0
+        self.event_ledger = EventLedger()
 
     @pyqtProperty(int, notify=constellationActiveNodeIdChanged)
     def constellationActiveNodeId(self) -> int:
@@ -188,6 +194,17 @@ class NodeController(BaseController):
             
         if node_id > 0:
             self.reset_interaction_epoch(node_id)
+            try:
+                node = self.bridge.store.get_node(node_id) if hasattr(self.bridge, "store") else None
+                arch = getattr(node, "archetype", "") if node else ""
+                self.event_ledger.record_event(
+                    event_type="select",
+                    target_id=node_id,
+                    archetype=arch,
+                    payload={"node_id": node_id, "path": getattr(node, "filePath", "") if node else ""}
+                )
+            except Exception:
+                pass
 
         selected_id = getattr(self.bridge, "_selected_node_id", 0)
         if selected_id != node_id:

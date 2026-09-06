@@ -93,36 +93,51 @@ Item {
                 delegate: Column {
                     width: slateListView.width
                     spacing: 8
+                    visible: (modelData.prompt && modelData.prompt.trim().length > 0) || (modelData.response && modelData.response.trim().length > 0)
 
-                    Text {
-                        text: "User"
-                        font.bold: true
-                        font.pixelSize: 12
-                        font.family: Theme.fontCode
-                        color: Theme.accentCyan
-                    }
-                    Text {
+                    Column {
                         width: parent.width
-                        text: modelData.prompt || ""
-                        wrapMode: Text.Wrap
-                        font.pixelSize: 14
-                        color: Theme.textPrimary
+                        spacing: 4
+                        visible: modelData.prompt && modelData.prompt.trim().length > 0
+
+                        Text {
+                            text: "User"
+                            font.bold: true
+                            font.pixelSize: 12
+                            font.family: Theme.fontCode
+                            color: Theme.accentCyan
+                        }
+                        Text {
+                            width: parent.width
+                            text: modelData.prompt || ""
+                            wrapMode: Text.Wrap
+                            font.pixelSize: 14
+                            color: Theme.textPrimary
+                        }
                     }
-                    Text {
-                        text: "Aether"
-                        font.bold: true
-                        font.pixelSize: 12
-                        font.family: Theme.fontCode
-                        color: Theme.accentAI
-                    }
-                    Text {
+
+                    Column {
                         width: parent.width
-                        text: modelData.response || ""
-                        wrapMode: Text.Wrap
-                        textFormat: Text.MarkdownText
-                        font.pixelSize: 14
-                        color: Theme.textPrimary
+                        spacing: 4
+                        visible: modelData.response && modelData.response.trim().length > 0
+
+                        Text {
+                            text: "Aether"
+                            font.bold: true
+                            font.pixelSize: 12
+                            font.family: Theme.fontCode
+                            color: Theme.accentAI
+                        }
+                        Text {
+                            width: parent.width
+                            text: modelData.response || ""
+                            wrapMode: Text.Wrap
+                            textFormat: Text.MarkdownText
+                            font.pixelSize: 14
+                            color: Theme.textPrimary
+                        }
                     }
+
                     Rectangle {
                         width: parent.width
                         height: 1
