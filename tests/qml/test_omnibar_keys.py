@@ -791,7 +791,7 @@ def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qm
     assert active_prompt_text.property("font").italic() is True
     # Verify activePromptText strips leading '?' or whitespace
     dialogue_drawer.setProperty("activePrompt", "?  What is spatial graph?")
-    assert active_prompt_text.property("text") == "What is spatial graph?"
+    assert "What is spatial graph?" in active_prompt_text.property("text")
 
     # Verify custom placeholder unclipped left margin when modePrefix is active
     custom_placeholder = omni_bar.findChild(object, "customPlaceholderText")

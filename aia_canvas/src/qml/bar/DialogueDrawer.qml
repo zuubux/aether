@@ -37,18 +37,21 @@ Item {
         anchors.topMargin: 10
         anchors.left: parent.left
         anchors.leftMargin: 16
-        anchors.right: ascendBtn.left
+        anchors.right: providerHeaderPill.left
         anchors.rightMargin: 12
         height: 24
         visible: activePromptText.text !== ""
+
+        readonly property string derivedTopicPrompt: root.activePrompt ? root.activePrompt.replace(/^[\?\s]+/, "").trim() : ""
 
         Text {
             id: activePromptText
             objectName: "activePromptText"
             anchors.fill: parent
             verticalAlignment: Text.AlignVCenter
-            text: root.activePrompt ? root.activePrompt.replace(/^[\?\s]+/, "") : ""
-            font.family: Theme.fontAiBody.family
+            readonly property string derivedTopicPrompt: activePromptHeader.derivedTopicPrompt
+            text: derivedTopicPrompt ? derivedTopicPrompt : ""
+            font.family: (typeof Theme !== "undefined" && Theme.fontSans) ? Theme.fontSans : undefined
             font.pixelSize: 12
             font.italic: true
             color: Theme.textMuted
@@ -57,11 +60,53 @@ Item {
     }
 
     Rectangle {
+        id: providerHeaderPill
+        objectName: "providerHeaderPill"
+        anchors.top: parent.top
+        anchors.topMargin: 10
+        anchors.right: ascendBtn.left
+        anchors.rightMargin: 8
+        height: 24
+        radius: 12
+        color: Theme.surfaceGlass
+        border.color: Theme.borderSubtle
+        border.width: 1
+        width: modelRow.implicitWidth + 16
+
+        Row {
+            id: modelRow
+            objectName: "modelRow"
+            anchors.centerIn: parent
+            spacing: 6
+
+            Text {
+                id: providerGlyph
+                objectName: "providerGlyph"
+                text: root.providerMeta ? (root.providerMeta.icon_glyph || "✦") : "✦"
+                font.pixelSize: 11
+                color: root.providerMeta ? (root.providerMeta.accent_color || Theme.accentAI) : Theme.accentAI
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+                id: modelNameText
+                objectName: "modelNameText"
+                text: root.providerMeta ? (root.providerMeta.display_name || "Flash") : "Flash"
+                font.family: (typeof Theme !== "undefined" && Theme.fontSans) ? Theme.fontSans : undefined
+                font.weight: Font.Medium
+                font.pixelSize: 11
+                color: Theme.accentAI
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+    }
+
+    Rectangle {
         id: ascendBtn
         objectName: "ascendBtn"
         anchors.verticalCenter: providerHeaderPill.verticalCenter
-        anchors.right: providerHeaderPill.left
-        anchors.rightMargin: 8
+        anchors.right: parent.right
+        anchors.rightMargin: 14
         width: 22
         height: 22
         radius: 4
@@ -87,19 +132,6 @@ Item {
             cursorShape: Qt.PointingHandCursor
             onClicked: root.ascendRequested()
         }
-    }
-
-    ProviderBadge {
-        id: providerHeaderPill
-        objectName: "providerHeaderPill"
-        anchors.top: parent.top
-        anchors.topMargin: 10
-        anchors.right: parent.right
-        anchors.rightMargin: 14
-        engineState: root.engineState
-        providerMeta: root.providerMeta
-        isConversationalMode: root.isConversationalMode
-        showDialogueOutput: root.showDialogueOutput
     }
 
     ScrollView {

@@ -219,6 +219,7 @@ Item {
         anchors.leftMargin: 12
         anchors.rightMargin: 12
         visible: !previewRoot.isAnimatedGif && (!mediaContainer.visible || previewImg.status === Image.Error)
+        clip: true
         z: 10
 
         // Archive Manifest Tree View
@@ -338,6 +339,7 @@ Item {
             wrapMode: Text.NoWrap
             elide: Text.ElideRight
             textFormat: previewRoot.isHtmlSnippet ? Text.RichText : Text.PlainText
+            clip: true
             z: 5
         }
 
@@ -353,6 +355,7 @@ Item {
             wrapMode: Text.Wrap
             elide: Text.ElideRight
             textFormat: previewRoot.isHtmlSnippet ? Text.RichText : (previewRoot.fileExt === ".md" ? Text.MarkdownText : Text.PlainText)
+            clip: true
             z: 5
         }
     }

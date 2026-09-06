@@ -372,11 +372,13 @@ FocusScope {
 
         // Body
         Item {
+            id: bodyContainer
             anchors.top: header.bottom
             anchors.bottom: parent.bottom
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.margins: 12
+            clip: true
 
             // Case 1: Document / Code
             FocusScope {
@@ -384,6 +386,7 @@ FocusScope {
                 visible: !root.isBinaryFile && (root.archetype === "document" || root.archetype === "code")
                 anchors.fill: parent
                 focus: true
+                clip: true
 
                 Flickable {
                     id: previewFlickable
@@ -476,14 +479,14 @@ FocusScope {
 
                         TextArea {
                             id: editor
-                            width: Math.max(flickable.width - 36, implicitWidth)
+                            width: flickable.width - 36
                             text: root.initialText !== "" ? root.initialText : root.snippet
                             focus: true
                             readOnly: false
                             selectByMouse: true
                             mouseSelectionMode: TextEdit.SelectCharacters
                             cursorVisible: activeFocus
-                            wrapMode: TextEdit.NoWrap
+                            wrapMode: Text.Wrap
                             color: Theme.textSecondary
                             font.family: Theme.fontCode
                             font.pixelSize: 12

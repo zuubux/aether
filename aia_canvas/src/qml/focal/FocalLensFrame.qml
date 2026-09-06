@@ -9,6 +9,13 @@ Item {
     property real targetCenterY: 100
     property string activeContext: ""
     property var turnHistory: []
+    property var providerMeta: {
+        var b = (typeof bridge !== "undefined" && bridge) ? bridge : ((typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null);
+        if (b && b.providerMetadata) return b.providerMetadata;
+        var ce = b ? b.conversation : null;
+        if (ce && ce.providerMetadata) return ce.providerMetadata;
+        return { "id": "gemini_flash", "display_name": "Flash", "accent_color": "#38BDF8", "icon_glyph": "✦" };
+    }
 
     anchors.fill: parent
 
@@ -40,33 +47,113 @@ Item {
             id: header
             anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: 48
 
-            Text {
-                anchors.verticalCenter: parent.verticalCenter; anchors.left: parent.left; anchors.leftMargin: 20
-                text: root.activeContext || "Focal Lens"
-                color: Theme.textPrimary
-            }
-
-            Rectangle {
-                id: pinBtn
-                objectName: "pinBtn"
-                width: 32; height: 32
-                anchors.verticalCenter: parent.verticalCenter; anchors.right: parent.right; anchors.rightMargin: 12
-                color: pinMouseArea.containsMouse ? Theme.surfaceHovered : "transparent"
-                border.color: pinMouseArea.containsMouse ? Theme.borderHover : "transparent"; border.width: 1
+            Row {
+                id: titleBreadcrumbRow
+                anchors.left: parent.left
+                anchors.leftMargin: 16
+                anchors.verticalCenter: headerRightControls.verticalCenter
+                anchors.right: headerRightControls.left
+                anchors.rightMargin: 16
+                spacing: 8
 
                 Text {
-                    anchors.centerIn: parent
-                    text: "⚲"; font.pixelSize: 18
-                    color: pinMouseArea.containsMouse ? Theme.accentCyan : Theme.textMuted
+                    text: "Aether — Conversation"
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                    color: Theme.accentCyan
+                    opacity: 0.85
                 }
 
-                MouseArea {
-                    id: pinMouseArea
-                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (typeof bridge !== "undefined" && bridge) bridge.pin_conversation(root.activeContext)
-                        else if (typeof canvasBridge !== "undefined" && canvasBridge) canvasBridge.pin_conversation(root.activeContext)
-                        root.close()
+                Text {
+                    text: "—"
+                    font.pixelSize: 12
+                    color: Theme.textMuted
+                    opacity: 0.5
+                    visible: topicText.text.length > 0
+                }
+
+                Text {
+                    id: topicText
+                    text: root.activeContext && root.activeContext.length > 0 ? root.activeContext : ""
+                    font.pixelSize: 12
+                    font.italic: true
+                    font.weight: Font.Normal
+                    color: Theme.textMuted
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, parent.width - 200)
+                }
+            }
+
+            Row {
+                id: headerRightControls
+                objectName: "headerRightControls"
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.right: parent.right
+                anchors.rightMargin: 14
+                spacing: 8
+
+                Rectangle {
+                    id: modelIndicatorPill
+                    objectName: "modelIndicatorPill"
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: 24
+                    radius: 12
+                    color: Theme.surfaceGlass
+                    border.color: Theme.borderSubtle
+                    border.width: 1
+                    width: modelRow.implicitWidth + 16
+
+                    Row {
+                        id: modelRow
+                        objectName: "modelRow"
+                        anchors.centerIn: parent
+                        spacing: 6
+
+                        Text {
+                            id: providerGlyph
+                            objectName: "providerGlyph"
+                            text: root.providerMeta ? (root.providerMeta.icon_glyph || "✦") : "✦"
+                            font.pixelSize: 11
+                            color: root.providerMeta ? (root.providerMeta.accent_color || Theme.accentAI) : Theme.accentAI
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Text {
+                            id: modelNameText
+                            objectName: "modelNameText"
+                            text: root.providerMeta ? (root.providerMeta.display_name || "Flash") : "Flash"
+                            font.family: (typeof Theme !== "undefined" && Theme.fontSans) ? Theme.fontSans : undefined
+                            font.weight: Font.Medium
+                            font.pixelSize: 11
+                            color: Theme.accentAI
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                }
+
+                Rectangle {
+                    id: pinBtn
+                    objectName: "pinBtn"
+                    width: 32; height: 32
+                    anchors.verticalCenter: parent.verticalCenter
+                    radius: 4
+                    color: pinMouseArea.containsMouse ? Theme.surfaceHovered : "transparent"
+                    border.color: pinMouseArea.containsMouse ? Theme.borderHover : "transparent"; border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "⚲"; font.pixelSize: 18
+                        color: pinMouseArea.containsMouse ? Theme.accentCyan : Theme.textMuted
+                    }
+
+                    MouseArea {
+                        id: pinMouseArea
+                        anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (typeof bridge !== "undefined" && bridge) bridge.pin_conversation(root.activeContext)
+                            else if (typeof canvasBridge !== "undefined" && canvasBridge) canvasBridge.pin_conversation(root.activeContext)
+                            root.close()
+                        }
                     }
                 }
             }

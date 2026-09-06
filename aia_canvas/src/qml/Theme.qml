@@ -270,6 +270,22 @@ QtObject {
         return e.substring(0, 3).toUpperCase();
     }
 
+    // Rune Telemetry Tokens
+    readonly property color runeColorLatent: accentCyan
+    readonly property color runeColorDistilling: "#F59E0B"
+    readonly property color runeColorSynthesizing: accentAI
+    readonly property color runeColorOffline: "#EF4444"
+
+    readonly property int runeAnimColorDuration: 300
+    readonly property int runeAnimIrisDuration: 320
+    readonly property int runeAnimSweepDuration: 280
+    readonly property int runeAnimElasticDuration: 500
+
+    readonly property int runeSpinSynthInnerPeriod: 1400
+    readonly property int runeSpinSynthOuterPeriod: 2200
+    readonly property int runeSpinDistillOuterPeriod: 4500
+    readonly property int runePulseDistillPeriod: 1200
+
     function getOmniGlowColor(query) {
         if (!query) return borderSubtle;
         var q = (query || "").trim();

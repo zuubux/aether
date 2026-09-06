@@ -40,7 +40,7 @@ Item {
     Row {
         anchors.fill: parent
         anchors.leftMargin: 20
-        anchors.rightMargin: 20
+        anchors.rightMargin: root.isConversationalMode ? 40 : 20
         spacing: 10
 
         // Search Icon when no mode prefix is active
@@ -200,17 +200,19 @@ Item {
                 }
             }
         }
+    }
 
-        AmbientRadarHUD {
-            id: capsuleRadar
-            objectName: "capsuleRadar"
-            compact: true
-            anchors.verticalCenter: parent.verticalCenter
-            visible: root.isConversationalMode
-            engineState: {
-                if (root.isThinking) return "WORKING";
-                return "LATENT";
-            }
+    AmbientRadarHUD {
+        id: capsuleRadar
+        objectName: "capsuleRadar"
+        compact: true
+        anchors.right: parent.right
+        anchors.rightMargin: 12
+        anchors.verticalCenter: parent.verticalCenter
+        visible: root.isConversationalMode
+        engineState: {
+            if (root.isThinking) return "WORKING";
+            return "LATENT";
         }
     }
 
