@@ -95,30 +95,46 @@ Item {
                     spacing: 8
                     visible: (modelData.prompt && modelData.prompt.trim().length > 0) || (modelData.response && modelData.response.trim().length > 0)
 
-                    Column {
+                    Rectangle {
+                        id: userBubble
                         width: parent.width
-                        spacing: 4
+                        implicitHeight: userCol.implicitHeight + 20
+                        height: implicitHeight
                         visible: modelData.prompt && modelData.prompt.trim().length > 0
+                        color: Qt.rgba(30/255, 41/255, 59/255, 0.5)
+                        radius: 8
 
-                        Text {
-                            text: "User"
-                            font.bold: true
-                            font.pixelSize: 12
-                            font.family: Theme.fontCode
-                            color: Theme.accentCyan
-                        }
-                        Text {
-                            width: parent.width
-                            text: modelData.prompt || ""
-                            wrapMode: Text.Wrap
-                            font.pixelSize: 14
-                            color: Theme.textPrimary
+                        Column {
+                            id: userCol
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.margins: 10
+                            spacing: 4
+
+                            Text {
+                                text: "User"
+                                font.bold: true
+                                font.pixelSize: 12
+                                font.family: Theme.fontCode
+                                color: Theme.accentCyan
+                            }
+                            Text {
+                                width: parent.width
+                                text: (modelData.prompt || "").replace(/^[\?\s]+/, "")
+                                wrapMode: Text.Wrap
+                                font.pixelSize: 14
+                                color: Theme.textPrimary
+                            }
                         }
                     }
 
                     Column {
+                        id: aetherTurn
                         width: parent.width
                         spacing: 4
+                        topPadding: 12
+                        bottomPadding: 12
                         visible: modelData.response && modelData.response.trim().length > 0
 
                         Text {

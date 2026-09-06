@@ -683,7 +683,20 @@ Item {
             }
             inputCapsule.text = "";
         }
-        var activeCtx = root.lastExecutedPrompt ? root.lastExecutedPrompt.replace(/^[\?\s]+/, "") : "Focal Context";
+        var activeCtx = "";
+        if (root.lastExecutedPrompt && root.lastExecutedPrompt.trim().length > 0) {
+            activeCtx = root.lastExecutedPrompt;
+        } else if (root.turnHistory && root.turnHistory.length > 0 && root.turnHistory[0].prompt) {
+            activeCtx = root.turnHistory[0].prompt;
+        } else if (hist && hist.length > 0 && hist[0].prompt) {
+            activeCtx = hist[0].prompt;
+        } else {
+            activeCtx = "Conversation";
+        }
+        activeCtx = activeCtx.replace(/^[\?\s]+/, "");
+        if (!activeCtx) {
+            activeCtx = "Conversation";
+        }
         focalLensFrame.open(activeCtx, hist);
         root.dismiss();
     }

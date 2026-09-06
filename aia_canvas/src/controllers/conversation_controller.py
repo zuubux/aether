@@ -162,7 +162,8 @@ class ConversationController(BaseController):
 
                 full_resp = "".join(accumulated)
                 if prompt and full_resp and not is_error:
-                    turn_record = {"prompt": prompt, "response": full_resp}
+                    clean_user_prompt = prompt.lstrip("?").strip()
+                    turn_record = {"prompt": clean_user_prompt, "response": full_resp}
                     self._turn_history.append(turn_record)
                     self.turnHistoryChanged.emit()
                     if len(self._turn_history) >= 3:
@@ -234,10 +235,12 @@ class ConversationController(BaseController):
     def _derive_title(self, topic_hint: str) -> str:
         """Determine a clean title string from hint or history."""
         clean_hint = topic_hint.lstrip("?").strip()
-        if clean_hint:
+        if clean_hint and clean_hint not in ("Focal Context", "Conversation"):
             return clean_hint
         if self._turn_history:
-            return self._turn_history[0].get("prompt", "Conversation")
+            first_prompt = self._turn_history[0].get("prompt", "").lstrip("?").strip()
+            if first_prompt:
+                return first_prompt
         return "Conversation"
 
     def _format_conversation_markdown(self, turns: list, topic_hint: str) -> str:
