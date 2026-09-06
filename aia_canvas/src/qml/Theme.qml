@@ -134,6 +134,10 @@ QtObject {
     readonly property int animCollapseDuration: 280
     readonly property int animEasing: Easing.OutCubic
     readonly property int animCollapseEasing: Easing.InOutQuad
+    readonly property int animLensOpenDuration: 300
+    readonly property int animLensCloseDuration: 200
+    readonly property int animLensOpenEasing: Easing.OutCubic
+    readonly property int animLensCloseEasing: Easing.OutQuad
 
     // Semantic Badge Colors for file archetypes
     readonly property color badgePdf: "#EF4444"      // Crimson

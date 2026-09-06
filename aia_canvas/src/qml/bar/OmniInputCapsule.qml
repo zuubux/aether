@@ -33,7 +33,7 @@ Item {
     signal downPressed()
     signal leftPressed()
     signal rightPressed()
-    signal returnPressed()
+    signal returnPressed(bool shiftModifier)
 
     Row {
         anchors.fill: parent
@@ -193,7 +193,7 @@ Item {
                     root.escapePressed();
                     event.accepted = true;
                 } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                    root.returnPressed();
+                    root.returnPressed(event.modifiers & Qt.ShiftModifier);
                     event.accepted = true;
                 }
             }

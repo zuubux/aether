@@ -17,6 +17,8 @@ Item {
     property bool isConversationalMode: false
     property alias dialogueListView: dialogueListView
 
+    signal ascendRequested()
+
     visible: showDialogueOutput
 
     Behavior on height { NumberAnimation { duration: Theme.animCollapseDuration; easing.type: Theme.animCollapseEasing } }
@@ -35,7 +37,7 @@ Item {
         anchors.topMargin: 10
         anchors.left: parent.left
         anchors.leftMargin: 16
-        anchors.right: providerHeaderPill.left
+        anchors.right: ascendBtn.left
         anchors.rightMargin: 12
         height: 24
         visible: activePromptText.text !== ""
@@ -51,6 +53,39 @@ Item {
             font.italic: true
             color: Theme.textMuted
             elide: Text.ElideRight
+        }
+    }
+
+    Rectangle {
+        id: ascendBtn
+        objectName: "ascendBtn"
+        anchors.verticalCenter: providerHeaderPill.verticalCenter
+        anchors.right: providerHeaderPill.left
+        anchors.rightMargin: 8
+        width: 22
+        height: 22
+        radius: 4
+        color: ascendMouseArea.containsMouse ? Theme.surfaceHovered : "transparent"
+        border.color: ascendMouseArea.containsMouse ? Theme.borderHover : "transparent"
+        border.width: 1
+
+        Text {
+            anchors.centerIn: parent
+            text: "⤢"
+            font.pixelSize: 14
+            color: ascendMouseArea.containsMouse ? Theme.accentCyan : Theme.textMuted
+        }
+
+        ToolTip.visible: ascendMouseArea.containsMouse
+        ToolTip.text: "Ascend to Focal Lens (Shift+Enter)"
+        ToolTip.delay: 500
+
+        MouseArea {
+            id: ascendMouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.ascendRequested()
         }
     }
 

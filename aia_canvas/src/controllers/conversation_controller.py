@@ -17,6 +17,11 @@ from .base_controller import BaseController
 logger = logging.getLogger("aia_canvas.conversation_controller")
 
 
+import os
+import re
+from datetime import datetime
+from pathlib import Path
+
 class ConversationController(BaseController):
     """Controller managing streaming dialogue execution, token emissions, and LLM provider state."""
 
@@ -196,3 +201,77 @@ class ConversationController(BaseController):
         """
         self.engine.set_provider(provider)
         self.providerMetadataChanged.emit()
+
+    def _resolve_sandbox_dir(self) -> Path:
+        """Resolve the target conversations directory within the sandbox."""
+        sandbox_env = os.environ.get("WEAVER_SANDBOX") or os.environ.get("AETHER_SANDBOX_DIR")
+        if sandbox_env:
+            base_dir = Path(sandbox_env)
+        else:
+            base_dir = Path.cwd() / "aia_weaver" / "sandbox"
+        conv_dir = base_dir / "conversations"
+        conv_dir.mkdir(parents=True, exist_ok=True)
+        return conv_dir
+
+    def _slugify(self, text: str) -> str:
+        """Strip punctuation and format text into a clean slug string."""
+        text = text.lstrip("?")
+        text = re.sub(r'[^\w\s-]', '', text)
+        text = re.sub(r'[-\s]+', '_', text)
+        return text.lower()[:48].strip("_")
+
+    def _derive_title(self, topic_hint: str) -> str:
+        """Determine a clean title string from hint or history."""
+        clean_hint = topic_hint.lstrip("?").strip()
+        if clean_hint:
+            return clean_hint
+        if self._turn_history:
+            return self._turn_history[0].get("prompt", "Conversation")
+        return "Conversation"
+
+    def _format_conversation_markdown(self, turns: list, topic_hint: str) -> str:
+        """Generate strictly clean markdown for the conversation slate."""
+        title = self._derive_title(topic_hint)
+        # Format date as 'Sep 2026' or similar, e.g., 'Sep 06, 2026'
+        date_str = datetime.now().strftime("%b %d, %Y")
+        
+        md_lines = []
+        md_lines.append(f"### {title}")
+        md_lines.append(f"*{date_str}*")
+        
+        for turn in turns:
+            md_lines.append("")
+            md_lines.append("**User**")
+            md_lines.append(turn.get("prompt", "").strip())
+            md_lines.append("")
+            md_lines.append("**Aether**")
+            md_lines.append(turn.get("response", "").strip())
+            
+        return "\n".join(md_lines)
+
+    def pin_conversation_to_slate(self, topic_hint: str = "") -> str:
+        """Generate and save the conversation to a markdown file in the sandbox."""
+        title = self._derive_title(topic_hint)
+        slug = self._slugify(title)
+        if not slug:
+            slug = "conversation"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{slug}.md"
+        
+        out_dir = self._resolve_sandbox_dir()
+        out_path = out_dir / filename
+        
+        markdown_content = self._format_conversation_markdown(self._turn_history, topic_hint)
+        # Separate turns/sections with double newlines logic is mostly handled by "\n".join() with empty strings
+        # We ensure it replaces single newlines with double where needed or simply formats cleanly.
+        # Actually our md_lines generation appends empty lines, resulting in \n\n between paragraphs.
+        
+        out_path.write_text(markdown_content, encoding="utf-8")
+        
+        return str(out_path.absolute())
+
+    @pyqtSlot(result=str)
+    @pyqtSlot(str, result=str)
+    def pin_conversation(self, context_title: str = "") -> str:
+        """Slot to pin the conversation to the slate."""
+        return self.pin_conversation_to_slate(context_title)

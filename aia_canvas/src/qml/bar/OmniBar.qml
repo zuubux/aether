@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import ".."
+import "../focal"
 
 /**
  * OmniBar.qml
@@ -395,6 +396,7 @@ Item {
                     engineState: root.engineState
                     providerMeta: root.providerMeta
                     isConversationalMode: root.isConversationalMode
+                    onAscendRequested: root.ascendToLens()
                 }
 
                 Rectangle {
@@ -580,10 +582,14 @@ Item {
                         else root.dismiss();
                     }
 
-                    onReturnPressed: {
+                    onReturnPressed: function(shiftModifier) {
                         var count = root.resultsList ? root.resultsList.length : 0;
                         debounceTimer.stop();
                         aiAutoSendTimer.stop();
+                        if (shiftModifier && root.isConversationalMode) {
+                            root.ascendToLens();
+                            return;
+                        }
                         if (root.isShellMode) {
                             root.submitShellCommand();
                         } else if (root.isConversationalMode) {
@@ -651,5 +657,30 @@ Item {
                 root.submitConversationalQuery();
             }
         }
+    }
+
+    FocalLensFrame {
+        id: focalLensFrame
+        parent: root.parent ? root.parent : root
+        z: 999
+        targetCenterY: parent ? (parent.height / 2) - 300 : 200
+    }
+
+    function ascendToLens() {
+        if (!focalLensFrame) return;
+        var hist = root.turnHistory ? root.turnHistory.slice() : [];
+        var rawInput = inputCapsule.text.trim();
+        if (rawInput.length > 0 && root.isConversationalMode) {
+            var cleanPrompt = rawInput.replace(/^[\?\s]+/, "");
+            hist.push({"prompt": cleanPrompt, "response": ""});
+            var b = (typeof bridge !== "undefined" && bridge) ? bridge : ((typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null);
+            if (b && typeof b.ask === "function") {
+                b.ask(rawInput);
+            }
+            inputCapsule.text = "";
+        }
+        var activeCtx = root.lastExecutedPrompt ? root.lastExecutedPrompt.replace(/^[\?\s]+/, "") : "Focal Context";
+        focalLensFrame.open(activeCtx, hist);
+        root.dismiss();
     }
 }

@@ -448,6 +448,22 @@ class CanvasBridge(QObject):
         """dict: LLM provider metadata description dictionary."""
         return self.conversation_ctrl.providerMetadata
 
+    @pyqtSlot(str, result=str)
+    def pin_conversation(self, context_title: str = "") -> str:
+        """Forward conversation pinning request to ConversationController."""
+        return self.conversation_ctrl.pin_conversation(context_title)
+
+    @pyqtSlot(str)
+    @pyqtSlot(str, str)
+    def ask(self, prompt: str, context: str = ""):
+        """Forward conversational queries from QML to ConversationController."""
+        if hasattr(self, "conversation_ctrl") and self.conversation_ctrl:
+            if hasattr(self.conversation_ctrl, "ask"):
+                self.conversation_ctrl.ask(prompt, context)
+            elif hasattr(self.conversation_ctrl, "stream_prompt"):
+                self.conversation_ctrl.stream_prompt(prompt)
+
+
     @pyqtProperty(int, notify=hoveredNodeChanged)
     def hoveredNodeId(self) -> int:
         """int: ID of currently hovered node (0 if none)."""
