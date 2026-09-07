@@ -182,6 +182,10 @@ Item {
             event.accepted = true;
         } else if (event.key === Qt.Key_Escape) {
             searchShelfRoot.isSearchActiveExplicit = false;
+            if (viewport && (!canvasBridge || canvasBridge.selectedNodeId <= 0)) {
+                viewport.targetX = 0;
+                viewport.targetY = 0;
+            }
             if (canvasBridge) {
                 canvasBridge.search.clear_search();
             }
@@ -238,6 +242,10 @@ Item {
             searchShelfRoot.isSearchActiveExplicit = false;
             searchShelfRoot.searchResultIds = [];
             searchShelfRoot.focusedIndex = 0;
+            if (viewport && (!canvasBridge || canvasBridge.selectedNodeId <= 0)) {
+                viewport.targetX = 0;
+                viewport.targetY = 0;
+            }
         }
     }
 }

@@ -3,7 +3,7 @@ import QtQuick.Controls
 import "hud"
 import "search"
 import "bar"
-
+import "slate"
 import "background"
 Window {
     id: canvasRoot
@@ -22,6 +22,7 @@ Window {
 
     readonly property alias omniBar: omniBar
     readonly property alias unloadModal: unloadModal
+    readonly property alias workspaceSlates: workspaceSlates
 
     readonly property int nodeCount: (canvasBridge && canvasBridge.nodes) ? Math.max(1, canvasBridge.nodes.length) : 1
     readonly property real viewportArea: width * height
@@ -233,6 +234,10 @@ Window {
                     if (nodeId > 0) {
                         canvasViewport.isCameraCached = false;
                         canvasViewport.steerCameraToNode(nodeId, true);
+                        var ws = (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.workingSetCtrl) ? canvasBridge.workingSetCtrl : ((typeof bridge !== "undefined" && bridge && bridge.workingSetCtrl) ? bridge.workingSetCtrl : null);
+                        if (ws) {
+                            ws.openSlate(nodeId, "", "");
+                        }
                     } else {
                         canvasViewport.targetX = 0;
                         canvasViewport.targetY = 0;
@@ -435,6 +440,15 @@ Window {
             readonly property alias searchShelf: searchShelf
             readonly property alias previewCard: searchShelf
             readonly property alias omniBar: omniBar
+            readonly property alias workspaceSlates: workspaceSlates
+
+            // Companion Workspace Satellite Slates (Working Set Repeater)
+            WorkspaceSlates {
+                id: workspaceSlates
+                objectName: "workspaceSlates"
+                anchors.fill: parent
+                z: 2
+            }
 
             // Ambient Canvas Dimming Scrim
             Rectangle {

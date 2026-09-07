@@ -43,6 +43,8 @@ class CanvasBridge(QObject):
     nodeRemoved = pyqtSignal(int)
     focalCardDimensionsChanged = pyqtSignal()
     canvasInteractingChanged = pyqtSignal(bool)
+    activeSlatesChanged = pyqtSignal()
+    focalSlateChanged = pyqtSignal(int)
     sig_constellation_active = pyqtSignal(int, bool, arguments=['node_id', 'active'])
 
     # Async Media Signals
@@ -67,6 +69,10 @@ class CanvasBridge(QObject):
         from controllers.node_controller import NodeController
         from controllers.physics_controller import PhysicsController
         from controllers.search_controller import SearchController
+        try:
+            from .controllers.working_set_controller import WorkingSetController
+        except (ImportError, ValueError):
+            from controllers.working_set_controller import WorkingSetController
         from core.intent_dispatcher import IntentDispatcher
         from core.completion_engine import CompletionEngine
 
@@ -76,6 +82,7 @@ class CanvasBridge(QObject):
         self.conversation_ctrl = ConversationController(self)
         self.node_ctrl = NodeController(self)
         self.physics_ctrl = PhysicsController(self)
+        self.working_set_ctrl = WorkingSetController(self)
         self.completion_engine = CompletionEngine(self)
 
         # Start physics controller worker simulation loop during initialization
@@ -109,6 +116,8 @@ class CanvasBridge(QObject):
         self.physics_ctrl.connectionStatusChanged.connect(self.connectionStatusChanged)
         self.conversation_ctrl.engineStateChanged.connect(self.engineStateChanged)
         self.conversation_ctrl.providerMetadataChanged.connect(self.providerMetadataChanged)
+        self.working_set_ctrl.activeSlatesChanged.connect(self.activeSlatesChanged)
+        self.working_set_ctrl.focalSlateChanged.connect(self.focalSlateChanged)
 
         self._SUPPORTED_IMAGE_EXTS = {
             "bmp", "gif", "ico", "jpeg", "jpg", "png", "pbm", "pgm", "ppm", "xbm", "xpm",
@@ -437,6 +446,16 @@ class CanvasBridge(QObject):
     def physics(self) -> QObject:
         """QObject: PhysicsController instance route for QML."""
         return getattr(self, "physics_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def workingSetCtrl(self) -> QObject:
+        """QObject: WorkingSetController instance route for QML."""
+        return getattr(self, "working_set_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def workingSet(self) -> QObject:
+        """QObject: WorkingSetController instance route for QML."""
+        return getattr(self, "working_set_ctrl", None)
 
     @pyqtProperty(str, notify=engineStateChanged)
     def engineState(self) -> str:
@@ -1026,3 +1045,8 @@ class CanvasBridge(QObject):
 
         self._recalculate_focal_weights(self._selected_node_id)
         self.edgesChanged.emit()
+
+
+# Alias for CanvasBridge
+Bridge = CanvasBridge
+

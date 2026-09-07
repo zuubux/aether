@@ -3,6 +3,7 @@ import QtQuick.Controls
 import ".."
 import "../hud"
 import "../bar"
+import "../slate"
 
 Item {
     id: root
@@ -96,132 +97,59 @@ Item {
         onClicked: root.close()
     }
 
-    Rectangle {
+    SlateFrame {
         id: lensContainer
         objectName: "lensContainer"
-        width: Math.min(1040, (parent && parent.width > 0) ? parent.width * 0.70 : 1040)
-        height: Math.min(820, (parent && parent.height > 0) ? parent.height * 0.80 : 820)
+        tierState: "TIER_1_FOCAL"
+        titleText: "Aether — Conversation"
+        subtitleText: root.activeContext
         x: Math.round((root.width - width) / 2)
-        property real targetCenterY: Math.round((root.height - height) / 2)
         y: targetCenterY
-        
         scale: 0.88; opacity: 0.0; visible: false
-        color: Theme.surfaceElevated; border.color: Theme.borderSubtle
-        border.width: 1; radius: 12
 
-        MouseArea {
-            id: interiorAbsorber
-            objectName: "interiorAbsorber"
-            anchors.fill: parent
-        }
-
-        Rectangle {
-            id: headerBar
-            objectName: "headerBar"
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            height: 52
-            color: Theme.surfaceGlass
-            topLeftRadius: 12
-            topRightRadius: 12
+        headerRightContent: [
+            ProviderBadge {
+                id: modelIndicatorPill
+                objectName: "modelIndicatorPill"
+                anchors.verticalCenter: parent.verticalCenter
+                engineState: root.engineState
+                providerMeta: root.providerMeta
+                isConversationalMode: true
+                showDialogueOutput: true
+                showAscendAction: false
+            },
 
             Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: 1
-                color: Theme.borderSubtle
-            }
-
-            Row {
-                id: titleBreadcrumbRow
-                anchors.left: parent.left
-                anchors.leftMargin: 16
-                anchors.verticalCenter: headerRightControls.verticalCenter
-                anchors.right: headerRightControls.left
-                anchors.rightMargin: 16
-                spacing: 8
-
-                Text {
-                    text: "Aether — Conversation"
-                    font.pixelSize: 12
-                    font.weight: Font.DemiBold
-                    color: Theme.accentCyan
-                    opacity: 0.85
-                }
-
-                Text {
-                    text: "—"
-                    font.pixelSize: 12
-                    color: Theme.textMuted
-                    opacity: 0.5
-                    visible: topicText.text.length > 0
-                }
-
-                Text {
-                    id: topicText
-                    text: root.activeContext && root.activeContext.length > 0 ? root.activeContext : ""
-                    font.pixelSize: 12
-                    font.italic: true
-                    font.weight: Font.Normal
-                    color: Theme.textMuted
-                    elide: Text.ElideRight
-                    width: Math.min(implicitWidth, parent.width - 200)
-                }
-            }
-
-            Row {
-                id: headerRightControls
-                objectName: "headerRightControls"
+                id: pinBtn
+                objectName: "pinBtn"
+                width: 32; height: 32
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.right: parent.right
-                anchors.rightMargin: 14
-                spacing: 8
+                radius: 4
+                color: pinMouseArea.containsMouse ? Theme.surfaceHovered : "transparent"
+                border.color: pinMouseArea.containsMouse ? Theme.borderHover : "transparent"; border.width: 1
 
-                ProviderBadge {
-                    id: modelIndicatorPill
-                    objectName: "modelIndicatorPill"
-                    anchors.verticalCenter: parent.verticalCenter
-                    engineState: root.engineState
-                    providerMeta: root.providerMeta
-                    isConversationalMode: true
-                    showDialogueOutput: true
-                    showAscendAction: false
+                Text {
+                    anchors.centerIn: parent
+                    text: "⚲"; font.pixelSize: 18
+                    color: pinMouseArea.containsMouse ? Theme.accentCyan : Theme.textMuted
                 }
 
-                Rectangle {
-                    id: pinBtn
-                    objectName: "pinBtn"
-                    width: 32; height: 32
-                    anchors.verticalCenter: parent.verticalCenter
-                    radius: 4
-                    color: pinMouseArea.containsMouse ? Theme.surfaceHovered : "transparent"
-                    border.color: pinMouseArea.containsMouse ? Theme.borderHover : "transparent"; border.width: 1
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "⚲"; font.pixelSize: 18
-                        color: pinMouseArea.containsMouse ? Theme.accentCyan : Theme.textMuted
-                    }
-
-                    MouseArea {
-                        id: pinMouseArea
-                        anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (typeof bridge !== "undefined" && bridge) bridge.pin_conversation(root.activeContext)
-                            else if (typeof canvasBridge !== "undefined" && canvasBridge) canvasBridge.pin_conversation(root.activeContext)
-                            root.close()
-                        }
+                MouseArea {
+                    id: pinMouseArea
+                    anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (typeof bridge !== "undefined" && bridge) bridge.pin_conversation(root.activeContext)
+                        else if (typeof canvasBridge !== "undefined" && canvasBridge) canvasBridge.pin_conversation(root.activeContext)
+                        root.close()
                     }
                 }
             }
-        }
+        ]
 
         ScrollView {
             id: slateScrollView
             objectName: "slateScrollView"
-            anchors.top: headerBar.bottom
+            anchors.top: parent.top
             anchors.bottom: footerDock.top
             anchors.left: parent.left
             anchors.right: parent.right
@@ -438,110 +366,38 @@ Item {
                 }
             }
         }
+    }
 
-        Item {
-            id: resizeCorner
-            objectName: "resizeCorner"
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            width: 24
-            height: 24
-            z: 100
-
-            Item {
-                id: resizeGrip
-                objectName: "resizeGrip"
-                anchors.fill: parent
-
-                Rectangle {
-                    width: 13
-                    height: 1.5
-                    rotation: -45
-                    transformOrigin: Item.Center
-                    x: 7; y: 15
-                    color: (typeof Theme !== "undefined" && Theme.borderSubtle) ? Theme.borderSubtle : "#33FFFFFF"
+    StateGroup {
+        id: lensStateGroup
+        states: [
+            State { name: "opened"; when: root.active; PropertyChanges { target: lensContainer; scale: 1.0; opacity: 1.0; y: lensContainer.targetCenterY; visible: true } },
+            State { name: "closed"; when: !root.active; PropertyChanges { target: lensContainer; scale: 0.88; opacity: 0.0; y: root.targetCenterY + 32; visible: false } }
+        ]
+        transitions: [
+            Transition {
+                from: "closed"; to: "opened"
+                SequentialAnimation {
+                    PropertyAction { target: lensContainer; property: "visible"; value: true }
+                    ParallelAnimation {
+                        NumberAnimation { target: lensContainer; property: "opacity"; duration: Theme.animLensOpenDuration; easing.type: Theme.animLensOpenEasing }
+                        NumberAnimation { target: lensContainer; property: "scale"; duration: Theme.animLensOpenDuration; easing.type: Theme.animLensOpenEasing }
+                        NumberAnimation { target: lensContainer; property: "y"; duration: Theme.animLensOpenDuration; easing.type: Theme.animLensOpenEasing }
+                    }
                 }
-
-                Rectangle {
-                    width: 7
-                    height: 1.5
-                    rotation: -45
-                    transformOrigin: Item.Center
-                    x: 14; y: 18
-                    color: (typeof Theme !== "undefined" && Theme.borderSubtle) ? Theme.borderSubtle : "#33FFFFFF"
+            },
+            Transition {
+                from: "opened"; to: "closed"
+                SequentialAnimation {
+                    ParallelAnimation {
+                        NumberAnimation { target: lensContainer; property: "opacity"; duration: Theme.animLensCloseDuration; easing.type: Theme.animLensCloseEasing }
+                        NumberAnimation { target: lensContainer; property: "scale"; duration: Theme.animLensCloseDuration; easing.type: Theme.animLensCloseEasing }
+                        NumberAnimation { target: lensContainer; property: "y"; duration: Theme.animLensCloseDuration; easing.type: Theme.animLensCloseEasing }
+                    }
+                    PropertyAction { target: lensContainer; property: "visible"; value: false }
                 }
             }
-
-            MouseArea {
-                id: resizeMouseArea
-                objectName: "resizeMouseArea"
-                anchors.fill: parent
-                cursorShape: Qt.SizeFDiagCursor
-                hoverEnabled: true
-
-                property real startRootX: 0
-                property real startRootY: 0
-                property real startWidth: 0
-                property real startHeight: 0
-
-                onPressed: function(mouse) {
-                    var pt = mapToItem(root, mouse.x, mouse.y);
-                    startRootX = pt.x;
-                    startRootY = pt.y;
-                    startWidth = lensContainer.width;
-                    startHeight = lensContainer.height;
-                }
-
-                onPositionChanged: function(mouse) {
-                    if (pressed) {
-                        var pt = mapToItem(root, mouse.x, mouse.y);
-                        var deltaX = pt.x - startRootX;
-                        var deltaY = pt.y - startRootY;
-                        var pw = (lensContainer.parent && lensContainer.parent.width > 0) ? lensContainer.parent.width : (root.width > 0 ? root.width : 1600);
-                        var ph = (lensContainer.parent && lensContainer.parent.height > 0) ? lensContainer.parent.height : (root.height > 0 ? root.height : 1200);
-                        var minW = 640;
-                        var maxW = pw * 0.94;
-                        var minH = 460;
-                        var maxH = ph * 0.92;
-
-                        lensContainer.width = Math.max(minW, Math.min(maxW, startWidth + deltaX));
-                        lensContainer.height = Math.max(minH, Math.min(maxH, startHeight + deltaY));
-                    }
-                }
-            }
-        }
-
-        StateGroup {
-            id: lensStateGroup
-            states: [
-                State { name: "opened"; when: root.active; PropertyChanges { target: lensContainer; scale: 1.0; opacity: 1.0; y: lensContainer.targetCenterY; visible: true } },
-                State { name: "closed"; when: !root.active; PropertyChanges { target: lensContainer; scale: 0.88; opacity: 0.0; y: root.targetCenterY + 32; visible: false } }
-            ]
-            transitions: [
-                Transition {
-                    from: "closed"; to: "opened"
-                    SequentialAnimation {
-                        PropertyAction { target: lensContainer; property: "visible"; value: true }
-                        ParallelAnimation {
-                            NumberAnimation { target: lensContainer; property: "opacity"; duration: Theme.animLensOpenDuration; easing.type: Theme.animLensOpenEasing }
-                            NumberAnimation { target: lensContainer; property: "scale"; duration: Theme.animLensOpenDuration; easing.type: Theme.animLensOpenEasing }
-                            NumberAnimation { target: lensContainer; property: "y"; duration: Theme.animLensOpenDuration; easing.type: Theme.animLensOpenEasing }
-                        }
-                    }
-                },
-                Transition {
-                    from: "opened"; to: "closed"
-                    SequentialAnimation {
-                        ParallelAnimation {
-                            NumberAnimation { target: lensContainer; property: "opacity"; duration: Theme.animLensCloseDuration; easing.type: Theme.animLensCloseEasing }
-                            NumberAnimation { target: lensContainer; property: "scale"; duration: Theme.animLensCloseDuration; easing.type: Theme.animLensCloseEasing }
-                            NumberAnimation { target: lensContainer; property: "y"; duration: Theme.animLensCloseDuration; easing.type: Theme.animLensCloseEasing }
-                        }
-                        PropertyAction { target: lensContainer; property: "visible"; value: false }
-                    }
-                }
-            ]
-        }
+        ]
     }
 
     Connections {

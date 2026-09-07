@@ -14,6 +14,8 @@
     System diagnostics, engine status, and telemetry overlays (AmbientRadarHUD).
   - `aia_canvas/src/qml/node/`: 
     Spatial memory clusters and file visualizers (cards, auras, pills).
+  - `aia_canvas/src/qml/slate/`: 
+    Reusable window containers and visual shells (SlateFrame) supporting focal and satellite tiering.
 
 ### IPC & Orchestration Boundary (PyQt6 Bridge / Controllers)
 - **Central Event Bus (`aia_canvas/src/bridge.py`):** 
@@ -23,6 +25,7 @@
   - `NodeController`: Orchestrates file parsing, visual node state, file drops, and staging.
   - `PhysicsController`: Safely wraps `PhysicsWorker` QThread interactions without blocking.
   - `SearchController`: Bridges local UI query routing to external vector/title databases.
+  - `WorkingSetController`: Manages active working set slates, coordinating Tier 1 focal focus and Tier 1.25 companion satellites with LRU capacity management.
 
 ### Domain Engines & Storage (Python 3.11+, NumPy, SQLite)
 - **Physics Substrate (`aia_canvas/src/physics/engine.py`):** 
@@ -40,6 +43,14 @@
 - **Path:** `aia_canvas/src/qml/bar/OmniBar.qml`, `aia_canvas/src/qml/bar/DialogueDrawer.qml`
 - **Responsibility:** Primary user input capsule, quick-exec prefix detection (`?`, `>`), and smooth conversational surface expansion upon multi-turn engagement.
 - **Signal Boundary:** QML `accepted` trigger maps to `SearchController.submit_query(str)` and `ConversationController` dispatch.
+
+### SlateFrame
+- **Path:** `aia_canvas/src/qml/slate/SlateFrame.qml`
+- **Responsibility:** Reusable window container enforcing the Single-Stroke Rule; supports Tier 1 (Focal) and Tier 1.25 (Satellite) geometry, interactive resizing, and header drag translation.
+
+### WorkspaceSlates
+- **Path:** `aia_canvas/src/qml/slate/WorkspaceSlates.qml`
+- **Responsibility:** Dynamic working set repeater managing Tier 1.25 satellite placement, fluid density scaling, promotion to focal center stage, and dismissal.
 
 ### FocalLensFrame
 - **Path:** `aia_canvas/src/qml/focal/FocalLensFrame.qml`
@@ -65,6 +76,11 @@
 - **Path:** `aia_canvas/src/memory/synthesizer.py`, `aia_canvas/src/memory/event_ledger.py`
 - **Responsibility:** SQLite WAL ledger for deterministic interaction capture, and a background QThread compaction worker for incremental memory grooming.
 - **Signal Boundary:** Background timer polling directly against SQLite rows; relies on minimal cross-thread UI locking.
+
+### WorkingSetController
+- **Path:** `aia_canvas/src/controllers/working_set_controller.py`
+- **Responsibility:** Manages active working set slates, coordinating Tier 1 focal focus and Tier 1.25 companion satellites with LRU capacity management.
+- **Signal Boundary:** Coordinates with `bridge.selectedNodeChanged`; invoked via `openSlate(nodeId, archetype, title)` from QML `Canvas.qml` selection handlers; emits `focalSlateChanged(int)` and `activeSlatesChanged()`.
 
 ### PhysicsEngine
 - **Path:** `aia_canvas/src/physics/engine.py`
@@ -99,12 +115,21 @@
 6. **Token Extraction:** Remaining relevant data rows map into context arrays for instant consumption by `AetherContextBuilder`.
 7. **Shutdown Compaction Phase:** Upon application termination, `app.aboutToQuit` triggers `ConversationController.synthesizer.shutdown()`, executing a synchronous final compaction pass (`synthesize_sync`) to flush uncompacted ledger events and heuristic facts directly into `~/.local/share/aether/memory.db`.
 
+### Selection-to-Working-Set Pipeline
+1. **Node Selection:** User interacts with node on canvas, via Omnibar search, or via direct bridge invocation (`select_node(nodeId)`).
+2. **Signal Propagation:** `canvasBridge.selectedNodeChanged(nodeId)` fires to all connected view handlers.
+3. **Viewport & Working Set Handler:** `Canvas.qml` viewport `Connections` catches `onSelectedNodeChanged(nodeId)`. If `nodeId > 0`, it animates camera to target coordinates and calls `workingSetCtrl.openSlate(nodeId, "", "")`. If `nodeId <= 0`, camera targets reset to origin while working set slates remain preserved.
+4. **Focal & Satellite State Management:** `WorkingSetController.open_slate()` sets `_focal_slate_id`, demotes prior focal slates to Tier 1.25 companion satellites with LRU eviction (cap at 4), and signals `focalSlateChanged` and `activeSlatesChanged`.
+5. **UI Presentation:** `WorkspaceSlates.qml` re-renders active satellite slates flanking the canvas with dynamic density scaling.
+
 ---
 
 ## 4. Non-Negotiable Architectural Invariants
 
+* **Working Set Lifecycle:** Selecting an active node (`nodeId > 0`) automatically promotes it to Tier 1 focal center stage via `WorkingSetController.openSlate()`. Deselection preserves active working set state according to user intent.
 * **Typographic Identity:** All AI dialogue MUST rigidly use `Cabinet Grotesk` (Regular static cut) and `Theme.aiVoiceGlacial` (`#BAE6FD` / Sky-200) locked at a 1.45 line height.
 * **Slate Geometry (Single-Stroke Rule):** All visual slate cards must possess exactly one root element utilizing `border.width > 0`.
+* **Slate Tier Hierarchy:** Tier 1 Focal (70% vw x 80% vh, z=100) vs Tier 1.25 Satellite (~42% vw x 48% vh, z=50).
 * **Dynamic Geometry:** Absolute ban on hardcoded fallback pixels for QML bounding rectangles. Coordinate querying is mandatory.
 * **Physics Integration:** Pure Python loops are explicitly forbidden inside the physics integration step; all layout forces must be strictly NumPy vectorized.
 * **Telemetry Rules:** Telemetry ring buffers must consistently employ fixed-capacity `collections.deque(maxlen=120)` with numeric scalars only.
