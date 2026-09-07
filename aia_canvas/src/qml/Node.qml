@@ -154,21 +154,17 @@ Item {
         }
     }
 
+    readonly property real modelTier: {
+        if (typeof model !== "undefined" && model && model.tier !== undefined) return model.tier;
+        if (typeof tier !== "undefined" && tier !== undefined) return tier;
+        if (typeof nodeModel !== "undefined" && nodeModel && nodeModel.tier !== undefined) return nodeModel.tier;
+        return 4.0; // Default cold nodes to Tier 4 (star bead), not Tier 3
+    }
+
     readonly property string baseTier: {
-        if (ambientTier === "TIER_4") return "TIER_4";
-        if (ambientTier === "TIER_2") {
-            if (nodeZone === 2) return "TIER_3";
-            return "TIER_2";
-        }
-        if (canvasAperture <= 0.40) return "TIER_4";
-        if (nodeZone === 2) {
-            return (canvasAperture > 1.4) ? "TIER_3" : "TIER_4";
-        }
-        if (nodeZone === 1) {
-            return (canvasAperture > 1.4) ? "TIER_2" : "TIER_3";
-        }
-        // nodeZone === 0 (Focal / Desk void) - capped at Tier 2
-        return (canvasAperture > 1.4) ? "TIER_2" : "TIER_3";
+        if (modelTier >= 4.0) return "TIER_4";
+        if (modelTier <= 2.0) return "TIER_2";
+        return "TIER_3";
     }
 
     readonly property string effectiveTier: {

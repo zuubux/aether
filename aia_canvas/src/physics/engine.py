@@ -534,12 +534,32 @@ class PhysicsEngine:
             pos[idx, 1] += vel[idx, 1] * dt
 
         # Update node coordinates at the end of the step
+        center_y_void = self.center_y - (self.viewport_h * 0.025)
+        
+        # Zone 0 / Desk Core ellipse: proportional workspace
+        desk_a = self.viewport_w * 0.25
+        desk_b = self.viewport_h * 0.22
+
+        # Zone 1 / Mid-Shelf outer boundary: matches the ambient vignette perimeter
+        shelf_a = desk_a * 1.30  # ~0.325 viewport_w
+        shelf_b = desk_b * 1.28  # ~0.281 viewport_h
+
         for idx, n in enumerate(nodes):
             n.x = float(pos[idx, 0])
             n.y = float(pos[idx, 1])
             n.vx = float(vel[idx, 0])
             n.vy = float(vel[idx, 1])
             n.clusterId = int(comp_ids[idx])
+
+            # Dynamic Tier Computation
+            dx = n.x - self.center_x
+            dy = n.y - center_y_void
+            
+            rho = math.hypot(dx / shelf_a, dy / shelf_b) if (shelf_a > 0 and shelf_b > 0) else 0.0
+            
+            # Strict binary threshold: smooth morphing is handled by QML animations
+            n.tier = 3.0 if rho <= 1.0 else 4.0
+
             if has_active_focus and n.id == focused_node_id:
                 n.depthZ = 0.0
             else:

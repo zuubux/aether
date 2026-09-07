@@ -324,10 +324,13 @@ class CanvasBridge(QObject):
                 if store_node:
                     x_val = getattr(node, "x", None) if not isinstance(node, dict) else node.get("x")
                     y_val = getattr(node, "y", None) if not isinstance(node, dict) else node.get("y")
+                    tier_val = getattr(node, "tier", None) if not isinstance(node, dict) else node.get("tier")
                     if x_val is not None and store_node is not node:
                         store_node.x = x_val
                     if y_val is not None and store_node is not node:
                         store_node.y = y_val
+                    if tier_val is not None and store_node is not node:
+                        store_node.tier = tier_val
 
         self.update_spatial_budget()
 

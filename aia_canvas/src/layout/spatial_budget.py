@@ -329,3 +329,36 @@ class SpatialBudgetEngine:
     def is_in_focal_core(self, x: float, y: float, core_radius: float = 350.0) -> bool:
         """Returns True if (x, y) falls inside the inner focal well core (radius < core_radius)."""
         return math.hypot(x - self.center_x, y - self.center_y) < float(core_radius)
+
+    def calculate_presentation_tier(self, x: float, y: float, zone: str) -> float:
+        """
+        Determines the presentation tier for a node based strictly on physical coordinates.
+        - Zone 0 or 1: tier <= 3.0
+        - Zone 2 (Horizon):
+            d_outside = distance_from_center - zone1_outer_radius
+            if d_outside <= 50.0: tier = 3.0  # Retain capsule pill form factor in the border buffer
+            else: tier = 4.0  # Collapse into star bead deep in the Horizon
+        """
+        dx = x - self.center_x
+        dy = y - self.center_y
+        
+        # Avoid division by zero
+        if self.a_mid <= 0 or self.b_mid <= 0:
+            return 3.0
+            
+        rho = math.sqrt((dx / self.a_mid) ** 2 + (dy / self.b_mid) ** 2)
+        
+        if rho <= 1.20:
+            return 3.0
+            
+        actual_dist = math.hypot(dx, dy)
+        if actual_dist < 1e-5:
+            return 3.0
+            
+        boundary_dist = actual_dist / (rho / 1.20)
+        d_past_boundary = actual_dist - boundary_dist
+        
+        if d_past_boundary <= 50.0:
+            return 3.0
+        else:
+            return 4.0

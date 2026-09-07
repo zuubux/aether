@@ -38,6 +38,7 @@ class Node(QObject):
     isUserPlacedChanged = pyqtSignal()
     lastInteractionEpochChanged = pyqtSignal()
     isPinnedChanged = pyqtSignal()
+    tierChanged = pyqtSignal(float)
 
     def __init__(
         self,
@@ -100,6 +101,7 @@ class Node(QObject):
         self._is_user_placed = is_user_placed
         self._last_interaction_epoch = float(last_interaction_epoch) if last_interaction_epoch is not None else time.time()
         self._is_pinned = bool(is_pinned)
+        self._tier = 3.0
 
     # --- ID ---
     @pyqtProperty(int, constant=True)
@@ -407,6 +409,19 @@ class Node(QObject):
     @isPinned.setter
     def isPinned(self, val: bool):
         self.is_pinned = val
+
+    # --- Presentation Tier ---
+    @pyqtProperty(float, notify=tierChanged)
+    def tier(self) -> float:
+        return getattr(self, "_tier", 3.0)
+
+    @tier.setter
+    def tier(self, val: float):
+        fval = float(val)
+        if abs(getattr(self, "_tier", 3.0) - fval) > 0.001:
+            self._tier = fval
+            self.tierChanged.emit(self._tier)
+
 
 
 class Edge(QObject):

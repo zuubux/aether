@@ -287,6 +287,7 @@ class PhysicsWorker(QObject):
                     "id": int(getattr(n, "id", None) if not isinstance(n, dict) else n.get("id")),
                     "x": float(getattr(n, "x", 0.0) if not isinstance(n, dict) else n.get("x", 0.0)),
                     "y": float(getattr(n, "y", 0.0) if not isinstance(n, dict) else n.get("y", 0.0)),
+                    "tier": float(getattr(n, "tier", 4.0) if not isinstance(n, dict) else n.get("tier", 4.0)),
                 }
                 for n in self._nodes
             ]
