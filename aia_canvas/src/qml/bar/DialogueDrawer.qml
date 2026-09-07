@@ -59,6 +59,41 @@ Item {
         }
     }
 
+    Rectangle {
+        id: ascendBtn
+        objectName: "ascendBtn"
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        anchors.verticalCenter: providerHeaderPill.verticalCenter
+        width: 22
+        height: 22
+        radius: 4
+        color: mouseArea.containsMouse ? Theme.surfaceHovered : "transparent"
+        border.color: mouseArea.containsMouse ? Theme.borderHover : "transparent"
+        border.width: 1
+
+        Text {
+            anchors.centerIn: parent
+            text: "↗"
+            font.pixelSize: 14
+            color: mouseArea.containsMouse ? Theme.accentCyan : Theme.textMuted
+        }
+
+        ToolTip.visible: mouseArea.containsMouse
+        ToolTip.text: "Ascend to Focal Lens (Shift+Enter)"
+        ToolTip.delay: 500
+
+        MouseArea {
+            id: mouseArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                root.ascendRequested();
+            }
+        }
+    }
+
     ProviderBadge {
         id: providerHeaderPill
         objectName: "providerHeaderPill"
@@ -71,39 +106,6 @@ Item {
         providerMeta: root.providerMeta
         isConversationalMode: root.isConversationalMode
         showDialogueOutput: root.showDialogueOutput
-    }
-
-    Rectangle {
-        id: ascendBtn
-        objectName: "ascendBtn"
-        anchors.verticalCenter: providerHeaderPill.verticalCenter
-        anchors.right: parent.right
-        anchors.rightMargin: 14
-        width: 22
-        height: 22
-        radius: 4
-        color: ascendMouseArea.containsMouse ? Theme.surfaceHovered : "transparent"
-        border.color: ascendMouseArea.containsMouse ? Theme.borderHover : "transparent"
-        border.width: 1
-
-        Text {
-            anchors.centerIn: parent
-            text: "⤢"
-            font.pixelSize: 14
-            color: ascendMouseArea.containsMouse ? Theme.accentCyan : Theme.textMuted
-        }
-
-        ToolTip.visible: ascendMouseArea.containsMouse
-        ToolTip.text: "Ascend to Focal Lens (Shift+Enter)"
-        ToolTip.delay: 500
-
-        MouseArea {
-            id: ascendMouseArea
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.ascendRequested()
-        }
     }
 
     ScrollView {

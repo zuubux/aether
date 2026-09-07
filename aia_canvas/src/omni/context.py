@@ -10,10 +10,18 @@ import mimetypes
 import os
 from pathlib import Path
 import platform
+import re
 import sqlite3
 from typing import Any, Dict, List, Optional
 
 from .models import SpatialContext
+
+
+RESPONSE_CADENCE_INSTRUCTION: str = (
+    "Response Cadence: Keep conversational responses tightly bounded (1 to 3 concise sentences max) "
+    "unless the user explicitly requests a deep technical breakdown or exhaustive specification. "
+    "Favor terse, peer-level engineering candor over verbose exposition."
+)
 
 
 @dataclass
@@ -29,6 +37,9 @@ class OmniContext:
 class AetherContextBuilder:
     """Centralized builder for system instructions and runtime environment context."""
 
+    CADENCE_INSTRUCTION: str = RESPONSE_CADENCE_INSTRUCTION
+    RESPONSE_CADENCE_INSTRUCTION: str = RESPONSE_CADENCE_INSTRUCTION
+
     def __init__(
         self,
         cwd: Optional[str] = None,
@@ -37,6 +48,7 @@ class AetherContextBuilder:
         timestamp: Optional[str] = None,
         platform_info: Optional[str] = None,
         profile_manager: Optional[Any] = None,
+        memory_db_path: Optional[str | Path] = None,
     ):
         self.cwd = cwd or os.getcwd()
         self.workspace_path = (
@@ -44,6 +56,11 @@ class AetherContextBuilder:
         )
         self.telemetry = telemetry or {}
         self.profile_manager = profile_manager
+
+        if memory_db_path is not None:
+            self.memory_db_path = memory_db_path
+        else:
+            self.memory_db_path = Path.home() / ".local" / "share" / "aether" / "memory.db"
 
         if timestamp is not None:
             self.timestamp = timestamp
@@ -99,8 +116,50 @@ class AetherContextBuilder:
             return ", ".join(str(x) for x in val) if val else "None"
         return str(val)
 
+    def _query_relevant_facts(self, query_text: Optional[str] = None, limit: int = 5) -> list[dict[str, str]]:
+        if not self.memory_db_path or not Path(self.memory_db_path).exists():
+            return []
+
+        try:
+            db_uri = Path(self.memory_db_path).absolute().as_uri()
+            with sqlite3.connect(f"{db_uri}?mode=ro", uri=True, timeout=1.0) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='facts'")
+                if not cursor.fetchone():
+                    return []
+
+                keywords = []
+                if query_text:
+                    keywords = [w for w in set(re.findall(r'\b[a-zA-Z0-9]{4,}\b', query_text)) if w.isalnum()]
+
+                if keywords:
+                    clauses = []
+                    params = []
+                    for kw in keywords:
+                        clauses.append("(key LIKE ? OR value LIKE ? OR category LIKE ?)")
+                        params.extend([f"%{kw}%", f"%{kw}%", f"%{kw}%"])
+                    
+                    params.append(limit)
+                    where_clause = " OR ".join(clauses)
+                    query = f"SELECT category, key, value FROM facts WHERE {where_clause} ORDER BY updated_at DESC LIMIT ?"
+                    cursor.execute(query, params)
+                    rows = cursor.fetchall()
+                    
+                    if not rows:
+                        cursor.execute("SELECT category, key, value FROM facts ORDER BY updated_at DESC LIMIT ?", (limit,))
+                        rows = cursor.fetchall()
+                else:
+                    cursor.execute("SELECT category, key, value FROM facts ORDER BY updated_at DESC LIMIT ?", (limit,))
+                    rows = cursor.fetchall()
+
+                return [{"category": row["category"], "key": row["key"], "value": row["value"]} for row in rows]
+        except (sqlite3.Error, Exception):
+            return []
+
     def format_ground_truth(
-        self, identity_data: Optional[Dict[str, Any]] = None
+        self, identity_data: Optional[Dict[str, Any]] = None, query_text: Optional[str] = None
     ) -> str:
         """Extracts entities, system_environment, and collaboration_style into a ground truth block."""
         if identity_data is None:
@@ -120,6 +179,14 @@ class AetherContextBuilder:
             f"- Style: {self._format_field(style)}",
             f"- Known Entities: {self._format_field(entities)}",
         ]
+
+        dynamic_facts = self._query_relevant_facts(query_text=query_text, limit=5)
+        for fact in dynamic_facts:
+            k = fact.get("key", "")
+            v = fact.get("value", "")
+            if k or v:
+                lines.append(f"- Dynamic Context: {k}: {v}")
+
         block = "\n".join(lines)
         return self._truncate_to_tokens(block, 450)
 
@@ -202,6 +269,7 @@ class AetherContextBuilder:
         focal_nodes: Optional[List[Dict[str, Any]]] = None,
         max_tokens: int = 1300,
         base_instruction: Optional[str] = None,
+        query_text: Optional[str] = None,
     ) -> str:
         """Combines CORE_PERSONA + Ground Truth + Working State + Focal Context with token budgeting.
 
@@ -211,6 +279,8 @@ class AetherContextBuilder:
         from .engines.conversation.persona import AETHER_SYSTEM_INSTRUCTION
 
         core = base_instruction or AETHER_SYSTEM_INSTRUCTION
+        if RESPONSE_CADENCE_INSTRUCTION not in core:
+            core = f"{core}\n\n{RESPONSE_CADENCE_INSTRUCTION}"
         identity_data = (
             self.profile_manager.get_identity() if self.profile_manager else {}
         )
@@ -218,7 +288,7 @@ class AetherContextBuilder:
             self.profile_manager.get_working_state() if self.profile_manager else {}
         )
 
-        ground_truth = self.format_ground_truth(identity_data)
+        ground_truth = self.format_ground_truth(identity_data, query_text=query_text)
         working_state = self.format_working_state(working_data)
         focal_context = self.format_focal_context(focal_nodes)
 
@@ -280,18 +350,21 @@ class AetherContextBuilder:
         canvas_telemetry: Optional[Dict[str, Any]] = None,
         focal_nodes: Optional[List[Dict[str, Any]]] = None,
         include_user_context: bool = False,
+        query_text: Optional[str] = None,
     ) -> str:
         """Formats base persona instruction with living user context, structured runtime environment & telemetry context blocks."""
         from .engines.conversation.persona import AETHER_SYSTEM_INSTRUCTION
 
         base = base_instruction or AETHER_SYSTEM_INSTRUCTION
+        if RESPONSE_CADENCE_INSTRUCTION not in base:
+            base = f"{base}\n\n{RESPONSE_CADENCE_INSTRUCTION}"
         if "[RUNTIME ENVIRONMENT]" in base:
             return base
 
         user_context_parts = []
         if include_user_context and self.profile_manager:
             if "[GROUND TRUTH MEMORY]" not in base:
-                gt = self.format_ground_truth()
+                gt = self.format_ground_truth(query_text=query_text)
                 if gt:
                     user_context_parts.append(gt)
             if "[ACTIVE WORKING STATE]" not in base:

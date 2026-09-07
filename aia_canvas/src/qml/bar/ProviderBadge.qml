@@ -1,23 +1,29 @@
 import QtQuick
+import QtQuick.Controls
 import ".."
 
 /**
  * ProviderBadge.qml
- * Header status badge displaying active LLM provider name, SVG vector icon, and streaming indicator dot.
- * Entirely frameless/boxless container with reordered elements: Icon/Glyph -> Name -> Active Status Dot.
+ * Dedicated read-only status capsule displaying active LLM provider glyph/icon and model display name.
  */
-Item {
+Rectangle {
     id: root
 
     property string engineState: "IDLE"
     property var providerMeta: null
     property bool isConversationalMode: false
     property bool showDialogueOutput: false
+    property bool showAscendAction: false
 
-    implicitWidth: headerRow.implicitWidth
-    implicitHeight: headerRow.implicitHeight
+    height: 24
+    radius: 12
+    color: (typeof Theme !== "undefined" && Theme.surfaceRaised) ? Theme.surfaceRaised : Qt.rgba(255, 255, 255, 0.06)
+    border.width: 1
+    border.color: (typeof Theme !== "undefined" && Theme.borderSubtle) ? Theme.borderSubtle : Qt.rgba(255, 255, 255, 0.1)
+
+    implicitWidth: headerRow.implicitWidth + 16
+    implicitHeight: 24
     width: implicitWidth
-    height: implicitHeight
     z: 10
 
     function getIconSource(meta) {
@@ -52,7 +58,7 @@ Item {
         Image {
             id: providerIcon
             objectName: "providerIcon"
-            width: 12
+            width: visible ? 12 : 0
             height: 12
             sourceSize.width: 12
             sourceSize.height: 12
@@ -68,7 +74,7 @@ Item {
             objectName: "glyphText"
             text: root.providerMeta ? (root.providerMeta.icon_glyph || "✦") : "✦"
             font.pixelSize: 11
-            color: root.providerMeta ? (root.providerMeta.accent_color || "#38BDF8") : Theme.accentAI
+            color: root.providerMeta ? (root.providerMeta.accent_color || "#38BDF8") : ((typeof Theme !== "undefined" && Theme.accentAI) ? Theme.accentAI : "#38BDF8")
             anchors.verticalCenter: parent.verticalCenter
             visible: !providerIcon.visible && text !== ""
         }
@@ -77,29 +83,12 @@ Item {
             id: nameText
             objectName: "nameText"
             text: root.providerMeta ? (root.providerMeta.display_name || "Flash") : "Flash"
-            font.family: typeof Theme !== "undefined" && Theme.fontAiCode ? Theme.fontAiCode.family : ""
+            font.family: (typeof Theme !== "undefined" && Theme.fontSans) ? Theme.fontSans : ""
             font.pixelSize: 10
-            color: root.providerMeta ? (root.providerMeta.accent_color || "#38BDF8") : Theme.accentAI
+            color: root.providerMeta ? (root.providerMeta.accent_color || "#38BDF8") : ((typeof Theme !== "undefined" && Theme.accentAI) ? Theme.accentAI : "#38BDF8")
             anchors.verticalCenter: parent.verticalCenter
-        }
-
-        Rectangle {
-            id: statusIndicatorDot
-            objectName: "statusIndicatorDot"
-            width: 6
-            height: 6
-            radius: 3
-            color: root.engineState === "ERROR" ? Theme.accentRed : (root.providerMeta ? (root.providerMeta.accent_color || "#38BDF8") : Theme.accentAI)
-            opacity: root.engineState === "ERROR" ? 1.0 : (root.engineState === "IDLE" ? 0.5 : 1.0)
-            anchors.verticalCenter: parent.verticalCenter
-            visible: root.isConversationalMode && root.showDialogueOutput
-
-            SequentialAnimation on opacity {
-                running: statusIndicatorDot.visible && root.engineState === "STREAMING"
-                loops: Animation.Infinite
-                PropertyAnimation { to: 0.3; duration: 800; easing.type: Easing.InOutSine }
-                PropertyAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutSine }
-            }
         }
     }
 }
+
+

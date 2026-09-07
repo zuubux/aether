@@ -45,6 +45,7 @@ Item {
         if (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.engineState !== undefined && canvasBridge.engineState !== "") return canvasBridge.engineState;
         return "IDLE";
     }
+    property bool isThinking: root.engineState === "STREAMING"
 
     readonly property var providerMeta: {
         var b = (typeof bridge !== "undefined" && bridge) ? bridge : ((typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null);
@@ -421,6 +422,7 @@ Item {
                     isConversationalMode: root.isConversationalMode
                     isShellMode: root.isShellMode
                     shelfExpanded: root.shelfExpanded
+                    engineState: root.engineState
                     isThinking: root.engineState === "STREAMING"
                     
                     onInputTextChanged: {
@@ -620,11 +622,16 @@ Item {
         }
         function onEngineStateChanged(state) {
             root.engineState = state;
+            root.isThinking = (state === "STREAMING");
         }
         function onRequestAscensionToSlate(history) {
             root.ascendToLens();
         }
         function onResponseFinished(fullText) {
+            root.isThinking = false;
+            if (root.engineState === "STREAMING") {
+                root.engineState = "IDLE";
+            }
             var prompt = root.lastExecutedPrompt;
             var response = fullText || (barShell.dialogueDrawer ? barShell.dialogueDrawer.dialogueFullText : "");
             if (prompt !== "" && response !== "") {
@@ -635,6 +642,21 @@ Item {
                 if (root.turnHistory.length >= 3) {
                     root.ascendToLens();
                 }
+            }
+        }
+    }
+
+    Connections {
+        target: (typeof bridge !== "undefined" && bridge) ? bridge : ((typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null)
+        ignoreUnknownSignals: true
+        function onEngineStateChanged(state) {
+            root.engineState = state;
+            root.isThinking = (state === "STREAMING");
+        }
+        function onResponseFinished(fullText) {
+            root.isThinking = false;
+            if (root.engineState === "STREAMING") {
+                root.engineState = "IDLE";
             }
         }
     }

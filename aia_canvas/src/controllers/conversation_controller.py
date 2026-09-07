@@ -22,6 +22,12 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+try:
+    from aia_canvas.src.memory.synthesizer import MemorySynthesizer
+except ModuleNotFoundError:
+    from memory.synthesizer import MemorySynthesizer
+
+
 class ConversationController(BaseController):
     """Controller managing streaming dialogue execution, token emissions, and LLM provider state."""
 
@@ -32,7 +38,7 @@ class ConversationController(BaseController):
     requestAscensionToSlate = pyqtSignal(list)
     turnHistoryChanged = pyqtSignal()
 
-    def __init__(self, bridge: Any):
+    def __init__(self, bridge: Any, synthesizer: Optional[MemorySynthesizer] = None):
         """Initialize ConversationController and connect underlying ConversationEngine.
 
         Args:
@@ -40,6 +46,7 @@ class ConversationController(BaseController):
         """
         super().__init__(bridge)
         self._engine_state: str = "IDLE"
+        self._synthesizer_state: str = "LATENT"
         self._turn_history: List[dict] = []
         if hasattr(bridge, "search_ctrl") and hasattr(bridge.search_ctrl, "router"):
             self.engine = bridge.search_ctrl.router.conversation_engine
@@ -50,15 +57,23 @@ class ConversationController(BaseController):
         self._active_loop: Optional[asyncio.AbstractEventLoop] = None
         self._active_task: Optional[asyncio.Task] = None
 
+        self.synthesizer = synthesizer if synthesizer is not None else MemorySynthesizer(parent=self)
+        self.synthesizer.engineStateChanged.connect(self._on_synthesizer_state_changed)
+        self.synthesizer.start()
+
     @pyqtProperty(str, notify=engineStateChanged)
     def engineState(self) -> str:
         """str: Current conversation execution state ('IDLE', 'STREAMING', 'ERROR')."""
+        if self._engine_state == "STREAMING" or (self._active_thread and self._active_thread.is_alive()):
+            return "STREAMING"
+        elif self._synthesizer_state == "DISTILLING":
+            return "DISTILLING"
         return self._engine_state
 
     @pyqtProperty(bool, notify=engineStateChanged)
     def isThinking(self) -> bool:
         """bool: True if conversation engine is actively streaming or generating."""
-        return self._engine_state == "STREAMING"
+        return self.engineState == "STREAMING"
 
     @pyqtProperty("QVariantMap", notify=providerMetadataChanged)
     def providerMetadata(self) -> dict:
@@ -74,6 +89,11 @@ class ConversationController(BaseController):
             "icon_path": "aia_canvas/assets/icons/providers/gemini.svg",
         }
 
+    def _on_synthesizer_state_changed(self, state: str) -> None:
+        self._synthesizer_state = state
+        if not (self._engine_state == "STREAMING" or (self._active_thread and self._active_thread.is_alive())):
+            self.engineStateChanged.emit(self.engineState)
+
     @pyqtSlot(str)
     def setEngineState(self, state: str) -> None:
         """Set conversation engine state and emit notification if changed.
@@ -83,7 +103,7 @@ class ConversationController(BaseController):
         """
         if self._engine_state != state:
             self._engine_state = state
-            self.engineStateChanged.emit(state)
+            self.engineStateChanged.emit(self.engineState)
 
     @pyqtSlot()
     def stop(self) -> None:
@@ -124,6 +144,9 @@ class ConversationController(BaseController):
         """
         if not prompt or not prompt.strip():
             return
+
+        if self.synthesizer:
+            self.synthesizer.notify_event_occurred()
 
         self.stop()
 

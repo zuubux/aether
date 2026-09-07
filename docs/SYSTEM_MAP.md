@@ -30,7 +30,7 @@
 - **Conversational Intelligence (`aia_canvas/src/omni/engines/`):** 
   Streaming LLM handlers (Gemini) and dynamic workspace context aggregation.
 - **Memory & Ledgers (`aia_canvas/src/memory/`):** 
-  Persistent interaction logging and intelligent hot-context distillation via SQLite WAL.
+  Persistent interaction logging and intelligent hot-context distillation via SQLite WAL. `memory.db` holds long-term cognitive facts and episodic summaries, keeping `weaver_graph.db` strictly dedicated to POSIX file metadata and spatial physics.
 
 ---
 
@@ -43,7 +43,7 @@
 
 ### FocalLensFrame
 - **Path:** `aia_canvas/src/qml/focal/FocalLensFrame.qml`
-- **Responsibility:** Tier 1 deep conversational slate covering 85% of the viewport; handles massive context dumps and dense token rendering without visual lag.
+- **Responsibility:** Tier 1 deep conversational slate defaulting to 70% width / 80% height with interactive corner resize geometry; handles massive context dumps and dense token rendering without visual lag.
 - **Signal Boundary:** Property bindings tied directly to active search/chat UI states exposed via the central `bridge`.
 
 ### AmbientRadarHUD

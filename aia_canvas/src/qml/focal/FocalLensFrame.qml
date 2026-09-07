@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import ".."
 import "../hud"
+import "../bar"
 
 Item {
     id: root
@@ -97,8 +98,8 @@ Item {
     Rectangle {
         id: lensContainer
         objectName: "lensContainer"
-        width: Math.min(1600, Math.max(1040, Math.round(root.width * 0.76)))
-        height: Math.round(root.height * 0.85)
+        width: Math.min(1040, (parent && parent.width > 0) ? parent.width * 0.70 : 1040)
+        height: Math.min(820, (parent && parent.height > 0) ? parent.height * 0.80 : 820)
         x: Math.round((root.width - width) / 2)
         property real targetCenterY: Math.round((root.height - height) / 2)
         y: targetCenterY
@@ -177,43 +178,15 @@ Item {
                 anchors.rightMargin: 14
                 spacing: 8
 
-                Rectangle {
+                ProviderBadge {
                     id: modelIndicatorPill
                     objectName: "modelIndicatorPill"
                     anchors.verticalCenter: parent.verticalCenter
-                    height: 24
-                    radius: 12
-                    color: Theme.surfaceGlass
-                    border.color: Theme.borderSubtle
-                    border.width: 1
-                    width: modelRow.implicitWidth + 16
-
-                    Row {
-                        id: modelRow
-                        objectName: "modelRow"
-                        anchors.centerIn: parent
-                        spacing: 6
-
-                        Text {
-                            id: providerGlyph
-                            objectName: "providerGlyph"
-                            text: root.providerMeta ? (root.providerMeta.icon_glyph || "✦") : "✦"
-                            font.pixelSize: 11
-                            color: root.providerMeta ? (root.providerMeta.accent_color || Theme.accentAI) : Theme.accentAI
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-
-                        Text {
-                            id: modelNameText
-                            objectName: "modelNameText"
-                            text: root.providerMeta ? (root.providerMeta.display_name || "Flash") : "Flash"
-                            font.family: (typeof Theme !== "undefined" && Theme.fontSans) ? Theme.fontSans : undefined
-                            font.weight: Font.Medium
-                            font.pixelSize: 11
-                            color: Theme.accentAI
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                    }
+                    engineState: root.engineState
+                    providerMeta: root.providerMeta
+                    isConversationalMode: true
+                    showDialogueOutput: true
+                    showAscendAction: false
                 }
 
                 Rectangle {
@@ -307,7 +280,8 @@ Item {
                             Rectangle {
                                 id: userBubble
                                 anchors.right: parent.right
-                                width: Math.min(Math.max(promptMetrics.boundingRect.width + 28, 60), (turnContentColumn ? turnContentColumn.width : parent.width) * 0.72)
+                                readonly property real maxAllowedWidth: (turnContentColumn ? turnContentColumn.width - 32 : parent.width - 32) * 0.60
+                                width: Math.min(520, Math.min(maxAllowedWidth, Math.max(promptMetrics.boundingRect.width + 28, 60)))
                                 height: promptText.implicitHeight + 18
                                 radius: 12
                                 color: Theme.chatBubbleUserBg
@@ -324,7 +298,7 @@ Item {
                                     font.pixelSize: 13
                                     font.family: Theme.fontSans
                                     color: Theme.textPrimary
-                                    wrapMode: Text.Wrap
+                                    wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                                 }
                             }
                         }
@@ -332,7 +306,7 @@ Item {
                         Column {
                             anchors.left: parent.left
                             anchors.leftMargin: 16
-                            width: parent.width * 0.92
+                            width: aetherBubble.width
                             spacing: 6
                             visible: turnDelegate.r && turnDelegate.r.trim().length > 0
 
@@ -347,7 +321,8 @@ Item {
                             // Aether Content Area in Glass Bubble
                             Rectangle {
                                 id: aetherBubble
-                                width: Math.min(aetherText.implicitWidth + 32, parent.width * 0.88)
+                                readonly property real maxAllowedWidth: turnContentColumn ? turnContentColumn.width - 32 : parent.width - 32
+                                width: Math.min(720, Math.min(maxAllowedWidth, Math.max(100, (turnContentColumn ? turnContentColumn.width : parent.width) * 0.65)))
                                 height: aetherText.implicitHeight + 24
                                 radius: 12
                                 color: Theme.chatBubbleAetherBg
@@ -380,7 +355,7 @@ Item {
                                     font.pixelSize: 13
                                     lineHeight: 1.45
                                     color: Theme.aiVoiceGlacial
-                                    wrapMode: Text.Wrap
+                                    wrapMode: Text.WrapAtWordBoundaryOrAnywhere
                                 }
                             }
                         }
@@ -459,6 +434,78 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     compact: true
                     engineState: root.engineState
+                }
+            }
+        }
+
+        Item {
+            id: resizeCorner
+            objectName: "resizeCorner"
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            width: 24
+            height: 24
+            z: 100
+
+            Item {
+                id: resizeGrip
+                objectName: "resizeGrip"
+                anchors.fill: parent
+
+                Rectangle {
+                    width: 13
+                    height: 1.5
+                    rotation: -45
+                    transformOrigin: Item.Center
+                    x: 7; y: 15
+                    color: (typeof Theme !== "undefined" && Theme.borderSubtle) ? Theme.borderSubtle : "#33FFFFFF"
+                }
+
+                Rectangle {
+                    width: 7
+                    height: 1.5
+                    rotation: -45
+                    transformOrigin: Item.Center
+                    x: 14; y: 18
+                    color: (typeof Theme !== "undefined" && Theme.borderSubtle) ? Theme.borderSubtle : "#33FFFFFF"
+                }
+            }
+
+            MouseArea {
+                id: resizeMouseArea
+                objectName: "resizeMouseArea"
+                anchors.fill: parent
+                cursorShape: Qt.SizeFDiagCursor
+                hoverEnabled: true
+
+                property real startRootX: 0
+                property real startRootY: 0
+                property real startWidth: 0
+                property real startHeight: 0
+
+                onPressed: function(mouse) {
+                    var pt = mapToItem(root, mouse.x, mouse.y);
+                    startRootX = pt.x;
+                    startRootY = pt.y;
+                    startWidth = lensContainer.width;
+                    startHeight = lensContainer.height;
+                }
+
+                onPositionChanged: function(mouse) {
+                    if (pressed) {
+                        var pt = mapToItem(root, mouse.x, mouse.y);
+                        var deltaX = pt.x - startRootX;
+                        var deltaY = pt.y - startRootY;
+                        var pw = (lensContainer.parent && lensContainer.parent.width > 0) ? lensContainer.parent.width : (root.width > 0 ? root.width : 1600);
+                        var ph = (lensContainer.parent && lensContainer.parent.height > 0) ? lensContainer.parent.height : (root.height > 0 ? root.height : 1200);
+                        var minW = 640;
+                        var maxW = pw * 0.94;
+                        var minH = 460;
+                        var maxH = ph * 0.92;
+
+                        lensContainer.width = Math.max(minW, Math.min(maxW, startWidth + deltaX));
+                        lensContainer.height = Math.max(minH, Math.min(maxH, startHeight + deltaY));
+                    }
                 }
             }
         }

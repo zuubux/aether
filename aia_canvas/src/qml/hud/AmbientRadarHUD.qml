@@ -13,7 +13,7 @@ Item {
     height: size
 
     readonly property string runeState: {
-        if (engineState === "WORKING" || engineState === "SYNTHESIZING") return "SYNTHESIZING";
+        if (engineState === "WORKING" || engineState === "SYNTHESIZING" || engineState === "STREAMING") return "SYNTHESIZING";
         if (engineState === "DISTILLING") return "DISTILLING";
         if (engineState === "OFFLINE") return "OFFLINE";
         return "LATENT";

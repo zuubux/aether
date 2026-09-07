@@ -18,7 +18,8 @@ Item {
     property bool isConversationalMode: false
     property bool isShellMode: false
     property bool shelfExpanded: false
-    property bool isThinking: false
+    property string engineState: "IDLE"
+    property bool isThinking: root.engineState === "STREAMING"
     
     // Properties that will be manipulated directly or read
     property alias inputField: inputField
@@ -202,6 +203,27 @@ Item {
         }
     }
 
+    Connections {
+        target: {
+            var conv = (typeof bridge !== "undefined" && bridge && bridge.conversation) ? bridge.conversation : (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.conversation ? canvasBridge.conversation : null);
+            if (conv) return conv;
+            if (typeof bridge !== "undefined" && bridge) return bridge;
+            if (typeof canvasBridge !== "undefined" && canvasBridge) return canvasBridge;
+            return null;
+        }
+        ignoreUnknownSignals: true
+        function onEngineStateChanged(state) {
+            root.engineState = state;
+            root.isThinking = (state === "STREAMING");
+        }
+        function onResponseFinished(fullText) {
+            root.isThinking = false;
+            if (root.engineState === "STREAMING") {
+                root.engineState = "IDLE";
+            }
+        }
+    }
+
     AmbientRadarHUD {
         id: capsuleRadar
         objectName: "capsuleRadar"
@@ -211,7 +233,8 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         visible: root.isConversationalMode
         engineState: {
-            if (root.isThinking) return "WORKING";
+            if (root.engineState === "DISTILLING") return "DISTILLING";
+            if (root.isThinking || root.engineState === "STREAMING" || root.engineState === "WORKING") return "WORKING";
             return "LATENT";
         }
     }
