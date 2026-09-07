@@ -15,14 +15,11 @@ logger = logging.getLogger("aia_canvas.physics")
 class PhysicsEngine:
     def __init__(self):
         # Viewport and Center Anchor
-        self.viewport_w: float = 3840.0
-        self.viewport_h: float = 2160.0
-        self.center_x: float = 1920.0
-        self.center_y: float = 1080.0
+        self.viewport_w: float = 1920.0
+        self.viewport_h: float = 1080.0
+        self.center_x: float = 960.0
+        self.center_y: float = 540.0
 
-        # Focal Lens Dimensions
-        self.focal_card_w: float = 1600.0
-        self.focal_card_h: float = 1000.0
         self.aperture: float = 1.0
 
         # Interaction State
@@ -53,16 +50,69 @@ class PhysicsEngine:
 
         self._recalculate_horizons()
 
-    def set_viewport_dimensions(self, width: float, height: float):
-        self.viewport_w = max(800.0, width)
-        self.viewport_h = max(600.0, height)
-        self.center_x = self.viewport_w / 2.0
-        self.center_y = self.viewport_h / 2.0
+    @property
+    def char_dim(self) -> float:
+        """Characteristic viewport dimension for local element spacing."""
+        return math.sqrt(self.viewport_w * self.viewport_h)
+
+    @property
+    def scale_factor(self) -> float:
+        # Normalized against 1080p baseline, clamped for sensible extremes
+        return max(0.5, min(2.5, min(self.viewport_w / 1920.0, self.viewport_h / 1080.0)))
+
+    @property
+    def focal_card_w(self) -> float:
+        return self.viewport_w * 0.40
+
+    @property
+    def focal_card_h(self) -> float:
+        return self.viewport_h * 0.45
+
+    def initialize_node_position(self, node: Node):
+        """Projects cold Zone 2 nodes initialized inside the central desk void outward to the horizon."""
+        if getattr(node, 'zone', 0) != 2:
+            return
+
+        center_y_void = self.center_y - (self.viewport_h * 0.025)
+        ellipse_a = self.viewport_w * 0.35
+        ellipse_b = self.viewport_h * 0.30
+
+        norm_dx = (node.x - self.center_x) / ellipse_a
+        norm_dy = (node.y - center_y_void) / ellipse_b
+        rho = math.hypot(norm_dx, norm_dy)
+
+        if rho < 1.20:
+            if rho < 0.001:
+                # Add a small deterministic push if perfectly centered
+                node.x += 1.0 + (node.id % 5)
+                norm_dx = (node.x - self.center_x) / ellipse_a
+                rho = math.hypot(norm_dx, norm_dy) or 0.001
+
+            # Push it out to somewhere between 1.32 and 1.75
+            target_rho = 1.35 + (node.id % 40) / 100.0
+            scale = target_rho / rho
+            node.x = self.center_x + (node.x - self.center_x) * scale
+            node.y = center_y_void + (node.y - center_y_void) * scale
+
+    def set_viewport_dimensions(self, width: float, height: float, nodes: list[Node] | None = None):
+        old_w, old_h = self.viewport_w, self.viewport_h
+        old_cx, old_cy = self.center_x, self.center_y
+
+        self.viewport_w = width
+        self.viewport_h = height
+        self.center_x = width / 2.0
+        self.center_y = height / 2.0
+
+        if nodes is not None and old_w > 0 and old_h > 0:
+            ratio_x = self.viewport_w / old_w
+            ratio_y = self.viewport_h / old_h
+            for n in nodes:
+                n.x = self.center_x + (n.x - old_cx) * ratio_x
+                n.y = self.center_y + (n.y - old_cy) * ratio_y
+
         self._recalculate_horizons()
 
     def set_focal_card_dimensions(self, width: float, height: float):
-        self.focal_card_w = max(680.0, width)
-        self.focal_card_h = max(420.0, height)
         self._recalculate_horizons()
 
     def set_aperture(self, aperture: float):
@@ -102,10 +152,10 @@ class PhysicsEngine:
             return
             
         total = len(node_ids)
-        spacing_x = 266.0
+        spacing_x = self.char_dim * 0.09
         # Matching QML properties
-        card_height = 170.0
-        row_gap = 40.0
+        card_height = self.char_dim * 0.055
+        row_gap = self.char_dim * 0.015
         spacing_y = card_height + row_gap
         
         # Determine dynamic columns based on total search match count
@@ -247,8 +297,9 @@ class PhysicsEngine:
             for nid, (tpos, strength) in self.summoning_targets.items()
             if strength > 0.01
         }
-        bound_x, bound_y = (self.viewport_w / 2.0) * 0.78, (self.viewport_h / 2.0) * 0.65
-        bottom_threshold = self.viewport_h - 140.0
+        bound_x = (self.viewport_w / 2.0) - 24.0
+        bound_y = (self.viewport_h / 2.0) - 24.0
+        bottom_threshold = self.viewport_h * 0.94
         N = len(pos)
 
         if has_active_focus:
@@ -268,8 +319,8 @@ class PhysicsEngine:
                 base_angle = current_angles[0]
                 for rank, i in enumerate(first_deg_list):
                     target_angle = base_angle + rank * angle_step
-                    tx = focal_cx + 520.0 * math.cos(target_angle)
-                    ty = focal_cy + 520.0 * math.sin(target_angle)
+                    tx = focal_cx + (self.char_dim * 0.18) * math.cos(target_angle)
+                    ty = focal_cy + (self.char_dim * 0.18) * math.sin(target_angle)
                     first_deg_targets[i] = (tx, ty)
 
         for idx in range(N):
@@ -296,8 +347,8 @@ class PhysicsEngine:
                             tx, ty = first_deg_targets.get(
                                 idx,
                                 (
-                                    focal_cx + 520.0 * math.cos(math.atan2(pos[idx, 1] - focal_cy, pos[idx, 0] - focal_cx)),
-                                    focal_cy + 520.0 * math.sin(math.atan2(pos[idx, 1] - focal_cy, pos[idx, 0] - focal_cx)),
+                                    focal_cx + (self.char_dim * 0.18) * math.cos(math.atan2(pos[idx, 1] - focal_cy, pos[idx, 0] - focal_cx)),
+                                    focal_cy + (self.char_dim * 0.18) * math.sin(math.atan2(pos[idx, 1] - focal_cy, pos[idx, 0] - focal_cx)),
                                 )
                             )
                             forces[idx, 0] += (tx - pos[idx, 0]) * self.k_gutter_anchor
@@ -308,14 +359,14 @@ class PhysicsEngine:
                             if p_idx is not None:
                                 p_angle = math.atan2(pos[p_idx, 1] - focal_cy, pos[p_idx, 0] - focal_cx)
                                 sat_angle = p_angle + (((nid % 5) - 2) * 0.25)
-                                target_sat_x = focal_cx + 640.0 * math.cos(sat_angle)
-                                target_sat_y = focal_cy + 640.0 * math.sin(sat_angle)
+                                target_sat_x = focal_cx + (self.char_dim * 0.18) * math.cos(sat_angle)
+                                target_sat_y = focal_cy + (self.char_dim * 0.18) * math.sin(sat_angle)
                                 forces[idx, 0] += (target_sat_x - pos[idx, 0]) * self.k_gutter_anchor
                                 forces[idx, 1] += (target_sat_y - pos[idx, 1]) * self.k_satellite_drift
                             else:
                                 cur_angle = math.atan2(pos[idx, 1] - focal_cy, pos[idx, 0] - focal_cx)
-                                target_x = focal_cx + 640.0 * math.cos(cur_angle)
-                                target_y = focal_cy + 640.0 * math.sin(cur_angle)
+                                target_x = focal_cx + (self.char_dim * 0.18) * math.cos(cur_angle)
+                                target_y = focal_cy + (self.char_dim * 0.18) * math.sin(cur_angle)
                                 forces[idx, 0] += (target_x - pos[idx, 0]) * self.k_gutter_anchor
                                 forces[idx, 1] += (target_y - pos[idx, 1]) * self.k_horizon_anchor
                     else:
@@ -341,16 +392,25 @@ class PhysicsEngine:
                     forces[idx, 0] += (ax - pos[idx, 0]) * 4.0
                     forces[idx, 1] += (ay - pos[idx, 1]) * 4.0
 
-                if abs(dx) < 1.0 and abs(dy) < 1.0:
-                    dx, dy = 1.0 + (nid % 5), 1.0 + (nid % 7)
-                    dist_to_center = math.hypot(dx, dy)
-
                 is_recent = nid in self.recent_node_ids
-                void_r = 380.0 if is_recent else 750.0
-                if dist_to_center < void_r:
-                    ramp = ((void_r - dist_to_center) / void_r) ** 1.5
-                    forces[idx, 0] += (dx / dist_to_center) * ramp * 600.0
-                    forces[idx, 1] += (dy / dist_to_center) * ramp * 600.0
+                center_y_void = self.center_y - (self.viewport_h * 0.025)
+                dy_void = pos[idx, 1] - center_y_void
+                
+                if abs(dx) < 1.0 and abs(dy_void) < 1.0:
+                    dx = 1.0 + (nid % 5)
+                    dy_void = 1.0 + (nid % 7)
+                
+                ellipse_a = self.viewport_w * 0.35
+                ellipse_b = self.viewport_h * 0.30
+                
+                norm_dx = dx / ellipse_a
+                norm_dy = dy_void / ellipse_b
+                rho = math.hypot(norm_dx, norm_dy) or 0.001
+                
+                if rho < 1.20:
+                    ramp = ((1.20 - rho) / 1.20) ** 1.5
+                    forces[idx, 0] += (norm_dx / rho) * ramp * 600.0
+                    forces[idx, 1] += (norm_dy / rho) * ramp * 600.0
 
                 if is_recent and dist_to_center > 650.0:
                     desk_pull = (dist_to_center - 650.0) * 2.5
