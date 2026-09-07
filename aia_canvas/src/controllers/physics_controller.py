@@ -26,10 +26,12 @@ class PhysicsController(BaseController):
     request_focus = pyqtSignal(object, bool)
     request_sync = pyqtSignal(list, list)
     request_summon = pyqtSignal(list, float, float)
-    request_viewport = pyqtSignal(float, float)
+    request_viewport_dimensions = pyqtSignal(float, float)
+    request_center = pyqtSignal(float, float)
     request_focal_card = pyqtSignal(float, float)
     request_aperture = pyqtSignal(float)
     request_hover = pyqtSignal(int)
+    request_recent_nodes = pyqtSignal(list)
 
     def __init__(self, bridge, parent=None):
         super().__init__(bridge, parent)
@@ -55,10 +57,12 @@ class PhysicsController(BaseController):
         self.request_focus.connect(self.worker.set_active_focus)
         self.request_sync.connect(self.worker.sync_graph_data)
         self.request_summon.connect(self.worker.summon_nodes)
-        self.request_viewport.connect(self.worker.set_viewport_dimensions)
+        self.request_viewport_dimensions.connect(self.worker.set_viewport_dimensions)
+        self.request_center.connect(self.worker.set_center)
         self.request_focal_card.connect(self.worker.set_focal_card_dimensions)
         self.request_aperture.connect(self.worker.set_aperture)
         self.request_hover.connect(self.worker.set_hovered_node)
+        self.request_recent_nodes.connect(self.worker.set_recent_nodes)
 
         # Clean deterministic teardown on application exit
         app = QCoreApplication.instance()
@@ -111,8 +115,12 @@ class PhysicsController(BaseController):
 
     @pyqtSlot(float, float)
     def set_viewport_dimensions(self, width: float, height: float):
-        """Routes viewport dimension updates asynchronously to PhysicsWorker slot."""
-        self.request_viewport.emit(float(width), float(height))
+        self.request_viewport_dimensions.emit(float(width), float(height))
+
+    @pyqtSlot(float, float)
+    def set_center(self, cx: float, cy: float):
+        """Routes dynamic center coordinates asynchronously to PhysicsWorker slot."""
+        self.request_center.emit(float(cx), float(cy))
 
     @pyqtSlot(float, float)
     def set_focal_card_dimensions(self, width: float, height: float):
@@ -127,6 +135,10 @@ class PhysicsController(BaseController):
     @pyqtSlot(int)
     def set_hovered_node(self, node_id: int):
         self.request_hover.emit(int(node_id))
+
+    @pyqtSlot(list)
+    def set_recent_nodes(self, node_ids: list):
+        self.request_recent_nodes.emit(list(node_ids))
 
     @pyqtSlot(list, list)
     def sync_graph_data(self, nodes: list, edges: list):

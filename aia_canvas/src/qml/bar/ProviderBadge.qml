@@ -88,6 +88,31 @@ Rectangle {
             color: root.providerMeta ? (root.providerMeta.accent_color || "#38BDF8") : ((typeof Theme !== "undefined" && Theme.accentAI) ? Theme.accentAI : "#38BDF8")
             anchors.verticalCenter: parent.verticalCenter
         }
+        Rectangle {
+            id: statusIndicatorDot
+            objectName: "statusIndicatorDot"
+            width: 6
+            height: 6
+            radius: 3
+            anchors.verticalCenter: parent.verticalCenter
+            visible: true
+            color: root.engineState === "ERROR" ? 
+                   ((typeof Theme !== "undefined" && Theme.accentRed) ? Theme.accentRed : "#EF4444") : 
+                   ((typeof Theme !== "undefined" && Theme.accentAI) ? Theme.accentAI : "#38BDF8")
+            opacity: root.engineState === "ERROR" ? 1.0 : (root.engineState === "STREAMING" ? pulseAnim.pulseVal : 0.5)
+
+            QtObject {
+                id: pulseAnim
+                property real pulseVal: 0.8
+                SequentialAnimation on pulseVal {
+                    running: root.engineState === "STREAMING"
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1.0; to: 0.2; duration: 600; easing.type: Easing.InOutQuad }
+                    NumberAnimation { from: 0.2; to: 1.0; duration: 600; easing.type: Easing.InOutQuad }
+                }
+            }
+        }
+
     }
 }
 

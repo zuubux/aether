@@ -100,14 +100,30 @@ class CanvasController(BaseController):
             width: Outer viewport width in pixels.
             height: Outer viewport height in pixels.
         """
+        w = float(width)
+        h = float(height)
         if hasattr(self.bridge, '_wake_physics'):
             self.bridge._wake_physics()
-        if hasattr(self.bridge, 'physics') and self.bridge.physics:
-            self.bridge.physics_engine.set_viewport_dimensions(width, height)
+        if hasattr(self.bridge, 'physics_engine') and self.bridge.physics_engine:
+            self.bridge.physics_engine.set_viewport_dimensions(w, h)
+        elif hasattr(self.bridge, 'physics') and self.bridge.physics:
+            if hasattr(self.bridge.physics, 'set_viewport_dimensions'):
+                self.bridge.physics.set_viewport_dimensions(w, h)
         if hasattr(self.bridge, 'spatial_layout_bridge') and self.bridge.spatial_layout_bridge:
-            self.bridge.spatial_layout_bridge.set_viewport_dimensions(width, height)
+            self.bridge.spatial_layout_bridge.set_viewport_dimensions(w, h)
             if hasattr(self.bridge, 'update_spatial_budget'):
                 self.bridge.update_spatial_budget()
+
+        # Synchronize dynamic viewport dimensions and dispatch center point
+        if hasattr(self.bridge, '_viewport_width') and hasattr(self.bridge, '_viewport_height'):
+            dim_changed = (abs(self.bridge._viewport_width - w) > 1e-4 or abs(self.bridge._viewport_height - h) > 1e-4)
+            self.bridge._viewport_width = w
+            self.bridge._viewport_height = h
+            if hasattr(self.bridge, 'physics_ctrl') and self.bridge.physics_ctrl:
+                self.bridge.physics_ctrl.set_center(w * 0.5, h * 0.5)
+            if dim_changed and hasattr(self.bridge, 'viewportDimensionsChanged'):
+                self.bridge.viewportDimensionsChanged.emit()
+
         self.workbenchDimensionsChanged.emit()
 
     @pyqtSlot(float)

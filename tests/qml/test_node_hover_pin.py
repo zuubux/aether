@@ -404,3 +404,15 @@ def test_aperture_100_percent_standard_radial_lod(qapp, qml_engine, mock_bridge)
 
     assert outer_node.property("distFromCenter") > 850.0 * outer_node.property("canvasScale")
     assert outer_node.property("currentTier") == "TIER_4"
+
+    # Verify model with explicit zone binding
+    desk_node = node_comp.create()
+    desk_node.setProperty("bridge", mock_bridge)
+    desk_node.setProperty("nodeModel", {"id": 603, "x": 1280.0, "y": 720.0, "zone": 0})
+    assert desk_node.property("nodeZone") == 0
+    assert desk_node.property("currentTier") == "TIER_3"
+
+    # Verify Aperture override capped at Tier 2 (never Tier 1 or Tier 1.5)
+    mock_bridge.canvas_ctrl.set_aperture(1.8)
+    assert desk_node.property("canvasAperture") == 1.8
+    assert desk_node.property("currentTier") == "TIER_2"

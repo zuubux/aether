@@ -173,7 +173,11 @@ Window {
 
     function syncViewportDimensions() {
         if (canvasBridge) {
-            canvasBridge.canvas.update_viewport_dimensions(canvasRoot.width, canvasRoot.height)
+            if (typeof canvasBridge.update_viewport_dimensions === "function") {
+                canvasBridge.update_viewport_dimensions(canvasRoot.width, canvasRoot.height)
+            } else if (canvasBridge.canvas && typeof canvasBridge.canvas.update_viewport_dimensions === "function") {
+                canvasBridge.canvas.update_viewport_dimensions(canvasRoot.width, canvasRoot.height)
+            }
         }
     }
 
@@ -209,8 +213,8 @@ Window {
         Item {
             id: canvasViewport
             objectName: "canvasViewport"
-            width: parent ? parent.width : 2560
-            height: parent ? parent.height : 1440
+            width: parent ? parent.width : canvasRoot.width
+            height: parent ? parent.height : canvasRoot.height
             transformOrigin: Item.TopLeft
             z: 1
 

@@ -63,7 +63,7 @@ def test_physics_worker_start_stop_slots(qapp):
     assert len(stopped_emitted) == 1
 
 
-def test_physics_controller_thread_lifecycle(qapp):
+def test_physics_controller_thread_lifecycle(qapp, qtbot):
     """Verify PhysicsController moves worker to QThread and cleans up deterministically."""
     mock_bridge = MagicMock()
     mock_bridge.physics_engine = PhysicsEngine()
@@ -76,6 +76,12 @@ def test_physics_controller_thread_lifecycle(qapp):
     assert ctrl.thread.isRunning()
 
     ctrl.start(16)
+
+    # Verify set_center slot updates worker center coordinates via signal
+    ctrl.set_center(1440.0, 900.0)
+    qtbot.waitUntil(lambda: ctrl.worker.engine.center_x == 1440.0, timeout=1000)
+    assert ctrl.worker.engine.center_x == 1440.0
+    assert ctrl.worker.engine.center_y == 900.0
 
     # Verify deterministic teardown
     ctrl.stop()
@@ -244,6 +250,16 @@ def test_end_to_end_bridge_positions_update_handshake(qapp):
 
     assert node.x == 250.0
     assert node.y == 180.0
+
+    # Verify dynamic viewport and center synchronization on CanvasBridge
+    bridge.update_viewport_dimensions(1920.0, 1080.0)
+    assert bridge.viewportWidth == 1920.0
+    assert bridge.viewportHeight == 1080.0
+    assert bridge.centerX == 960.0
+    assert bridge.centerY == 540.0
+    qapp.processEvents()
+    assert bridge.physics_ctrl.worker.engine.center_x == 960.0
+    assert bridge.physics_ctrl.worker.engine.center_y == 540.0
 
     if hasattr(bridge, "physics_ctrl") and bridge.physics_ctrl:
         bridge.physics_ctrl.stop()

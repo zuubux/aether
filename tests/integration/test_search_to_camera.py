@@ -7,7 +7,7 @@ from PyQt6.QtCore import QMetaObject
 from models import Node
 
 
-def test_search_to_camera_steering_and_preview(qapp, qml_engine, mock_bridge, canvas_qml_root):
+def test_search_to_camera_steering_and_preview(qapp, qml_engine, canvas_qml_root, mock_bridge):
     # Seed nodes
     n1 = Node(id=1, file_path="/test/report.pdf", x=1280.0, y=720.0, archetype="document", size_bytes=2048)
     n2 = Node(id=2, file_path="/test/bracket_mount.step", x=4000.0, y=4000.0, archetype="model", size_bytes=8192)
@@ -72,8 +72,8 @@ def test_search_to_camera_steering_and_preview(qapp, qml_engine, mock_bridge, ca
     steered_ty = canvas_viewport.property("targetY")
     assert steered_tx != initial_tx
     assert steered_ty != initial_ty
-    assert abs(steered_tx - (-2720.0)) < 100.0
-    assert abs(steered_ty - (-3280.0)) < 100.0
+    assert abs(steered_tx - (-32.0)) < 1.0
+    assert abs(steered_ty - (-24.0)) < 1.0
 
     # f. Viewport root translation (x, y) updates to match camera target
     assert canvas_viewport.property("x") == steered_tx

@@ -29,6 +29,7 @@ class CanvasBridge(QObject):
     hoveredNodeChanged = pyqtSignal(int)
     connectionStatusChanged = pyqtSignal(bool)
     workbenchDimensionsChanged = pyqtSignal()
+    viewportDimensionsChanged = pyqtSignal()
     apertureChanged = pyqtSignal(float)
     clusterHalosChanged = pyqtSignal()
     telemetryChanged = pyqtSignal()
@@ -60,6 +61,8 @@ class CanvasBridge(QObject):
         self._t0 = time.perf_counter()
         self._qml_ready_time = 0.0
         self._canvas_is_interacting: bool = False
+        self._viewport_width: float = 2560.0
+        self._viewport_height: float = 1440.0
         self.store = GraphStore()
         self.physics_engine = PhysicsEngine()
         self.spatial_layout_bridge = PhysicsBridgeLayout()
@@ -118,6 +121,8 @@ class CanvasBridge(QObject):
         self.conversation_ctrl.providerMetadataChanged.connect(self.providerMetadataChanged)
         self.working_set_ctrl.activeSlatesChanged.connect(self.activeSlatesChanged)
         self.working_set_ctrl.focalSlateChanged.connect(self.focalSlateChanged)
+        self.working_set_ctrl.activeSlatesChanged.connect(self._sync_working_set_to_physics)
+        self.working_set_ctrl.focalSlateChanged.connect(self._sync_working_set_to_physics)
 
         self._SUPPORTED_IMAGE_EXTS = {
             "bmp", "gif", "ico", "jpeg", "jpg", "png", "pbm", "pgm", "ppm", "xbm", "xpm",
@@ -271,6 +276,11 @@ class CanvasBridge(QObject):
     def canvasIsInteracting(self, val: bool):
         self.canvas_is_interacting = val
 
+    def _sync_working_set_to_physics(self, *args):
+        if hasattr(self, "physics_ctrl") and self.physics_ctrl and hasattr(self, "working_set_ctrl") and self.working_set_ctrl:
+            recent = getattr(self.working_set_ctrl, "recent_node_ids", [])
+            self.physics_ctrl.set_recent_nodes(recent)
+
     def update_spatial_budget(self):
         """
         Evaluates spatial budget zoning and target positions across all nodes in GraphStore.
@@ -281,7 +291,13 @@ class CanvasBridge(QObject):
         if not nodes:
             return
         pinned_id = getattr(self, "_selected_node_id", 0)
-        recent = getattr(self.physics_engine, "recent_node_ids", [])
+        recent = (
+            getattr(self.working_set_ctrl, "recent_node_ids", [])
+            if hasattr(self, "working_set_ctrl") and self.working_set_ctrl
+            else []
+        )
+        if hasattr(self, "physics_ctrl") and self.physics_ctrl:
+            self.physics_ctrl.set_recent_nodes(recent)
         is_interacting = (
             getattr(self, "_canvas_is_interacting", False) or
             getattr(self.node_ctrl, "is_dragging", False)
@@ -494,6 +510,42 @@ class CanvasBridge(QObject):
     def isConnected(self) -> bool:
         """bool: Weaver IPC connection state status."""
         return self.physics_ctrl.isConnected
+
+    @pyqtProperty(float, notify=viewportDimensionsChanged)
+    def viewportWidth(self) -> float:
+        """float: Current dynamic viewport width."""
+        return getattr(self, "_viewport_width", 2560.0)
+
+    @pyqtProperty(float, notify=viewportDimensionsChanged)
+    def viewportHeight(self) -> float:
+        """float: Current dynamic viewport height."""
+        return getattr(self, "_viewport_height", 1440.0)
+
+    @pyqtProperty(float, notify=viewportDimensionsChanged)
+    def centerX(self) -> float:
+        """float: Derived dynamic viewport center X."""
+        return self.viewportWidth * 0.5
+
+    @pyqtProperty(float, notify=viewportDimensionsChanged)
+    def centerY(self) -> float:
+        """float: Derived dynamic viewport center Y."""
+        return self.viewportHeight * 0.5
+
+    @pyqtSlot(float, float)
+    def update_viewport_dimensions(self, width: float, height: float):
+        """Update physical viewport canvas bounds and dispatch dynamic center coordinates."""
+        w = float(width)
+        h = float(height)
+        dim_changed = (abs(getattr(self, "_viewport_width", 0.0) - w) > 1e-4 or abs(getattr(self, "_viewport_height", 0.0) - h) > 1e-4)
+        self._viewport_width = w
+        self._viewport_height = h
+        if hasattr(self, "physics_ctrl") and self.physics_ctrl:
+            self.physics_ctrl.set_viewport_dimensions(w, h)
+            self.physics_ctrl.set_center(w * 0.5, h * 0.5)
+        if hasattr(self, "canvas_ctrl") and self.canvas_ctrl:
+            self.canvas_ctrl.update_viewport_dimensions(w, h)
+        if dim_changed:
+            self.viewportDimensionsChanged.emit()
 
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def workbenchWidth(self) -> float:
@@ -821,6 +873,9 @@ class CanvasBridge(QObject):
             new_node.vx = math.cos(angle) * 40.0
             new_node.vy = math.sin(angle) * 40.0
             
+            if hasattr(self, "physics_engine") and self.physics_engine:
+                self.physics_engine.initialize_node_position(new_node)
+
             self.store.upsert_node(new_node)
             self.nodesChanged.emit()
         else:

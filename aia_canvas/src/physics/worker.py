@@ -162,6 +162,12 @@ class PhysicsWorker(QObject):
         if self._timer and not self._timer.isActive():
             self._timer.start(8)
 
+    @pyqtSlot(list)
+    def set_recent_nodes(self, node_ids: list):
+        self.engine.recent_node_ids = [int(nid) for nid in node_ids]
+        if self._timer and not self._timer.isActive():
+            self._timer.start(8)
+
     @pyqtSlot(list, float, float)
     @pyqtSlot(list, float, float, float)
     def summon_nodes(self, node_ids: list, target_x: float, target_y: float, strength: float = 0.6):
@@ -174,6 +180,21 @@ class PhysicsWorker(QObject):
     def set_viewport_dimensions(self, width: float, height: float):
         """Updates viewport dimensions on the simulation engine."""
         self.engine.set_viewport_dimensions(width, height)
+        if self._timer and not self._timer.isActive() and len(self._nodes) > 0:
+            self._timer.start(8)
+
+    @pyqtSlot(float, float)
+    def set_center(self, cx: float, cy: float):
+        """Updates dynamic center coordinates on the simulation engine and wakes loop if needed."""
+        self.engine.center_x = float(cx)
+        self.engine.center_y = float(cy)
+        if hasattr(self.engine, "_recalculate_horizons"):
+            self.engine._recalculate_horizons()
+        if self._timer is None:
+            self._timer = QTimer(self)
+            self._timer.timeout.connect(self._on_timer_tick)
+        if not self._timer.isActive() and len(self._nodes) > 0:
+            self._timer.start(8)
 
     @pyqtSlot(float, float)
     def set_focal_card_dimensions(self, width: float, height: float):

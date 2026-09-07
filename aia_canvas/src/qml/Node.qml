@@ -25,11 +25,57 @@ Item {
     property real projectedX: nodeX
     property real projectedY: nodeY
 
-    readonly property real distFromCenter: {
-        var canvasW = viewportContainer ? viewportContainer.width : (parent ? parent.width : 2560);
-        var canvasH = viewportContainer ? viewportContainer.height : (parent ? parent.height : 1440);
-        return Math.hypot(nodeX - (canvasW * 0.5), nodeY - (canvasH * 0.5));
+    readonly property real dynamicCenterX: {
+        if (bridge && bridge.centerX !== undefined && bridge.centerX > 0) return bridge.centerX;
+        if (bridge && bridge.centerPoint && bridge.centerPoint.x !== undefined && bridge.centerPoint.x > 0) return bridge.centerPoint.x;
+        if (viewportContainer && viewportContainer.width > 0) return viewportContainer.width * 0.5;
+        if (parent && parent.width > 0) return parent.width * 0.5;
+        if (typeof canvasRoot !== "undefined" && canvasRoot && canvasRoot.width > 0) return canvasRoot.width * 0.5;
+        return 0.0;
     }
+
+    readonly property real dynamicCenterY: {
+        if (bridge && bridge.centerY !== undefined && bridge.centerY > 0) return bridge.centerY;
+        if (bridge && bridge.centerPoint && bridge.centerPoint.y !== undefined && bridge.centerPoint.y > 0) return bridge.centerPoint.y;
+        if (viewportContainer && viewportContainer.height > 0) return viewportContainer.height * 0.5;
+        if (parent && parent.height > 0) return parent.height * 0.5;
+        if (typeof canvasRoot !== "undefined" && canvasRoot && canvasRoot.height > 0) return canvasRoot.height * 0.5;
+        return 0.0;
+    }
+
+    readonly property real distFromCenter: Math.hypot(nodeX - dynamicCenterX, nodeY - dynamicCenterY)
+
+    readonly property real ellipseA: Math.max(600.0, (viewportContainer ? viewportContainer.width : (bridge ? bridge.viewportWidth : 1920.0)) * 0.35)
+    readonly property real ellipseB: Math.max(360.0, (viewportContainer ? viewportContainer.height : (bridge ? bridge.viewportHeight : 1080.0)) * 0.30)
+
+    readonly property real normDx: (nodeX - dynamicCenterX) / ellipseA
+    readonly property real normDy: (nodeY - (dynamicCenterY - 40.0)) / ellipseB
+    readonly property real horizonRho: Math.hypot(normDx, normDy)
+
+    readonly property real canvasAperture: (bridge && bridge.aperture !== undefined && bridge.aperture > 0) ? bridge.aperture : canvasScale
+    readonly property int nodeZone: {
+        if (nodeModel && nodeModel.zone !== undefined) {
+            var z = nodeModel.zone;
+            if (z === "ZONE_FOCAL" || z === 0) return 0;
+            if (z === "ZONE_MID_FIELD" || z === "ZONE_SHELF" || z === 1) return 1;
+            if (z === "ZONE_HORIZON" || z === 2) return 2;
+            var parsed = parseInt(z);
+            if (!isNaN(parsed)) return parsed;
+        }
+        if (typeof model !== "undefined" && model && model.zone !== undefined) {
+            var mz = model.zone;
+            if (mz === "ZONE_FOCAL" || mz === 0) return 0;
+            if (mz === "ZONE_MID_FIELD" || mz === "ZONE_SHELF" || mz === 1) return 1;
+            if (mz === "ZONE_HORIZON" || mz === 2) return 2;
+            var mparsed = parseInt(mz);
+            if (!isNaN(mparsed)) return mparsed;
+        }
+        if (distFromCenter <= 500.0) return 0;
+        if (distFromCenter <= 800.0) return 1;
+        return 2;
+    }
+
+    visible: (isSelected || isFocusedTarget || isPinned || isSearchMatchOrConnected) ? true : (horizonRho <= 3.2)
 
     width: shell.width
     height: shell.height
@@ -77,11 +123,11 @@ Item {
     property bool isDwelling: false
     property bool isDragging: nodeMouseArea.drag.active
     property bool isSettling: settleTimer.running
-    property string baseTier: (nodeModel && nodeModel.tier !== undefined) ? nodeModel.tier : ambientTier
     property real currentLuminosity: 0.2
     readonly property bool isFocusedTarget: bridge ? ((nodeId === bridge.focusedNodeId || nodeId === bridge.selectedNodeId || String(nodeId) === String(bridge.focusedNodeId) || String(nodeId) === String(bridge.selectedNodeId)) && nodeId > 0) : false
     readonly property bool isPinned: Boolean((typeof model !== "undefined" && model && (model.isPinned || model.pinned)) || (nodeModel && (nodeModel.isPinned || nodeModel.pinned)))
     property bool isSelected: isFocusedTarget
+    property bool isStaged: false
     property bool isHovered: false
     property bool isSearchActive: false
     property bool isSearchMatchOrConnected: false
@@ -95,7 +141,7 @@ Item {
         if (isSearchActive) {
             return (isSearchMatchOrConnected || isFocusedTarget) ? 1.0 : 0.12;
         }
-        if (effectiveTier === "TIER_4" && !isHovered && !isSelected && !isFocusedTarget && !isPinned) {
+        if (currentTier === "TIER_4" && !isHovered && !isSelected && !isFocusedTarget && !isPinned) {
             return emberOpacity;
         }
         return 1.0;
@@ -108,42 +154,39 @@ Item {
         }
     }
 
-    readonly property string effectiveTier: {
-        if (isDragging || isSettling) {
-            if (baseTier === "TIER_4" || ambientTier === "TIER_4") return "TIER_3";
-            return "TIER_2"; // Tier 3 and Tier 2 clamp to Tier 2 during transit & settle
-        }
-        if (isSelected) return "TIER_1_5";
-        if (isDwelling) return "TIER_1_5";
-
-        // Determine unhovered ambient tier based on Aperture ceiling & scale-aware thresholds
-        var unhoveredTier = "TIER_3";
-        if (canvasScale <= 0.4 || ambientTier === "TIER_4") {
-            unhoveredTier = "TIER_4";
-        } else if (canvasScale > 1.6 || ambientTier === "TIER_2") {
-            if (distFromCenter <= 500 * canvasScale) {
-                unhoveredTier = "TIER_2";
-            } else {
-                unhoveredTier = "TIER_3";
-            }
-        } else {
-            // Standard zoom (0.4 < canvasScale <= 1.6 or ambientTier === "TIER_3")
-            if (distFromCenter > 850 * canvasScale) {
-                unhoveredTier = "TIER_4";
-            } else {
-                unhoveredTier = (baseTier === "TIER_4") ? "TIER_4" : "TIER_3";
-            }
-        }
-
-        if (isHovered) {
-            if (unhoveredTier === "TIER_4") return "TIER_3";
+    readonly property string baseTier: {
+        if (ambientTier === "TIER_4") return "TIER_4";
+        if (ambientTier === "TIER_2") {
+            if (nodeZone === 2) return "TIER_3";
             return "TIER_2";
         }
-
-        return unhoveredTier;
+        if (canvasAperture <= 0.40) return "TIER_4";
+        if (nodeZone === 2) {
+            return (canvasAperture > 1.4) ? "TIER_3" : "TIER_4";
+        }
+        if (nodeZone === 1) {
+            return (canvasAperture > 1.4) ? "TIER_2" : "TIER_3";
+        }
+        // nodeZone === 0 (Focal / Desk void) - capped at Tier 2
+        return (canvasAperture > 1.4) ? "TIER_2" : "TIER_3";
     }
 
-    readonly property string currentTier: effectiveTier
+    readonly property string effectiveTier: {
+        if (isSelected || isStaged || isFocusedTarget || isDwelling) return "TIER_1_5";
+        if (isDragging || isSettling) return "TIER_3";
+        return baseTier;
+    }
+
+    readonly property string currentTier: {
+        if (isSelected || isStaged || isFocusedTarget || isDwelling) return "TIER_1_5";
+        if (isDragging || isSettling) return "TIER_3";
+        if (isHovered) {
+            if (effectiveTier === "TIER_4") return "TIER_3";
+            if (effectiveTier === "TIER_3") return "TIER_2";
+            return "TIER_2";
+        }
+        return effectiveTier;
+    }
     readonly property bool isPreviewMode: currentTier === "TIER_1_5"
 
     z: isSelected ? 20 : ((isPreviewMode || isHovered) ? 18 : 15)

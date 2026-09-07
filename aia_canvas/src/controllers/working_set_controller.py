@@ -38,6 +38,17 @@ class WorkingSetController(BaseController):
         """int: ID of the primary node occupying Tier 1 focal center stage."""
         return self._focal_slate_id
 
+    @property
+    def recent_node_ids(self) -> List[int]:
+        """List[int]: IDs of recent/active nodes (focal followed by satellites without duplicates)."""
+        nodes: List[int] = []
+        if self._focal_slate_id > 0:
+            nodes.append(self._focal_slate_id)
+        for nid in self._satellites.keys():
+            if nid not in nodes:
+                nodes.append(nid)
+        return nodes
+
     def _resolve_meta(self, node_id: int, archetype: str = "", title: str = "") -> Dict[str, Any]:
         """Resolve or synthesize metadata dictionary for a given slate node."""
         if not archetype or not title:

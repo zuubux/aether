@@ -10,6 +10,18 @@ import os
 from PyQt6.QtCore import QObject, QPointF, pyqtProperty, pyqtSignal
 
 
+class ZoneInt(int):
+    _STR_MAP = {0: "ZONE_FOCAL", 1: "ZONE_MID_FIELD", 2: "ZONE_HORIZON"}
+
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self._STR_MAP.get(int(self)) == other or str(int(self)) == other
+        return super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()
+
+
 class Node(QObject):
     positionChanged = pyqtSignal()
     targetPositionChanged = pyqtSignal()
@@ -39,7 +51,7 @@ class Node(QObject):
         snippet: str = "",
         size_bytes: int = 0,
         thumbnail_url: str = "",
-        zone: str = "ZONE_HORIZON",
+        zone: int | str | None = None,
         target_x: float | None = None,
         target_y: float | None = None,
         is_user_placed: bool = False,
@@ -53,7 +65,27 @@ class Node(QObject):
         self._y = y
         self._target_x = target_x if target_x is not None else x
         self._target_y = target_y if target_y is not None else y
-        self._zone = zone
+
+        # Discrete persistent lifecycle zone (0: Desk, 1: Mid-Shelf, 2: Horizon)
+        if zone is not None:
+            if isinstance(zone, str):
+                mapping = {"ZONE_FOCAL": 0, "ZONE_MID_FIELD": 1, "ZONE_SHELF": 1, "ZONE_HORIZON": 2}
+                zone = mapping.get(zone, 2)
+            resolved_zone = int(zone)
+        elif is_pinned:
+            resolved_zone = 0
+        elif last_interaction_epoch is not None:
+            age = time.time() - float(last_interaction_epoch)
+            if age < 3600.0 * 2.0:
+                resolved_zone = 0
+            elif age < 3600.0 * 48.0:
+                resolved_zone = 1
+            else:
+                resolved_zone = 2
+        else:
+            resolved_zone = 2
+
+        self._zone = ZoneInt(resolved_zone)
         self._vx = 0.0
         self._vy = 0.0
         self._focus = focus
@@ -165,6 +197,7 @@ class Node(QObject):
             "thumbnail_url": thumb,
             "preview_path": prev,
             "previewUrl": prev,
+            "zone": self._zone,
             "sizeBytes": self._size_bytes,
             "size_bytes": self._size_bytes,
             "x": self._x,
@@ -225,14 +258,18 @@ class Node(QObject):
             self.positionChanged.emit()
 
     # --- Zone & Target Position ---
-    @pyqtProperty(str, notify=zoneChanged)
-    def zone(self) -> str:
+    @pyqtProperty(int, notify=zoneChanged)
+    def zone(self) -> int:
         return self._zone
 
     @zone.setter
-    def zone(self, val: str):
-        if self._zone != val:
-            self._zone = val
+    def zone(self, val: object):
+        if isinstance(val, str):
+            mapping = {"ZONE_FOCAL": 0, "ZONE_MID_FIELD": 1, "ZONE_SHELF": 1, "ZONE_HORIZON": 2}
+            val = mapping.get(val, 2)
+        int_val = ZoneInt(val) if val is not None else ZoneInt(2)
+        if self._zone != int_val:
+            self._zone = int_val
             self.zoneChanged.emit()
 
     @pyqtProperty(QPointF, notify=targetPositionChanged)
