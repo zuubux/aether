@@ -266,6 +266,8 @@ class NodeController(BaseController):
         hovered_id = getattr(self.bridge, "_hovered_node_id", 0)
         if hovered_id != node_id:
             self.bridge._hovered_node_id = node_id
+            if hasattr(self.bridge, "physics_ctrl") and self.bridge.physics_ctrl:
+                self.bridge.physics_ctrl.set_hovered_node(node_id)
             self.hoveredNodeChanged.emit(node_id)
             if node_id > 0:
                 self.apply_hover_grace(node_id)

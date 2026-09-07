@@ -156,6 +156,12 @@ class PhysicsWorker(QObject):
         if self._timer and not self._timer.isActive():
             self._timer.start(8)
 
+    @pyqtSlot(int)
+    def set_hovered_node(self, node_id: int):
+        self._hovered_node_id = int(node_id)
+        if self._timer and not self._timer.isActive():
+            self._timer.start(8)
+
     @pyqtSlot(list, float, float)
     @pyqtSlot(list, float, float, float)
     def summon_nodes(self, node_ids: list, target_x: float, target_y: float, strength: float = 0.6):
@@ -199,8 +205,8 @@ class PhysicsWorker(QObject):
         self,
         nodes: list | None = None,
         edges: list | None = None,
-        focused_node_id: int = 0,
-        hovered_node_id: int = 0,
+        focused_node_id: int | None = None,
+        hovered_node_id: int | None = None,
         dt: float = 0.008,
         first_degree_set: set | None = None,
         second_degree_set: set | None = None,
@@ -223,8 +229,10 @@ class PhysicsWorker(QObject):
                 types.SimpleNamespace(**e) if isinstance(e, dict) else e
                 for e in edges
             ]
-        self._focused_node_id = focused_node_id
-        self._hovered_node_id = hovered_node_id
+        if focused_node_id is not None:
+            self._focused_node_id = focused_node_id
+        if hovered_node_id is not None:
+            self._hovered_node_id = hovered_node_id
         self._dt = dt
         if first_degree_set is not None:
             self._first_degree_set = first_degree_set

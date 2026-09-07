@@ -80,9 +80,11 @@ Window {
                 canvasViewport.isCameraCached = true;
             }
         } else {
+            if (!canvasBridge || canvasBridge.selectedNodeId <= 0) {
+                canvasViewport.targetX = 0;
+                canvasViewport.targetY = 0;
+            }
             if (canvasViewport.isCameraCached) {
-                canvasViewport.targetX = canvasViewport.preSearchX;
-                canvasViewport.targetY = canvasViewport.preSearchY;
                 canvasViewport.targetScale = canvasViewport.preSearchScale;
                 canvasViewport.isCameraCached = false;
             }
@@ -231,6 +233,16 @@ Window {
                     if (nodeId > 0) {
                         canvasViewport.isCameraCached = false;
                         canvasViewport.steerCameraToNode(nodeId, true);
+                    } else {
+                        canvasViewport.targetX = 0;
+                        canvasViewport.targetY = 0;
+                    }
+                }
+
+                function onSearchCleared() {
+                    if (!canvasBridge || canvasBridge.selectedNodeId <= 0) {
+                        canvasViewport.targetX = 0;
+                        canvasViewport.targetY = 0;
                     }
                 }
 
@@ -256,13 +268,30 @@ Window {
                 function onFocusedNodeIdChanged() {
                     if (searchShelf.searchActive && searchShelf.focusedNodeId > 0) {
                         canvasViewport.steerCameraToNode(searchShelf.focusedNodeId);
+                    } else if (!searchShelf.searchActive || searchShelf.focusedNodeId <= 0) {
+                        if (!canvasBridge || canvasBridge.selectedNodeId <= 0) {
+                            canvasViewport.targetX = 0;
+                            canvasViewport.targetY = 0;
+                        }
+                    }
+                }
+
+                function onSearchActiveChanged() {
+                    if (!searchShelf.searchActive) {
+                        if (!canvasBridge || canvasBridge.selectedNodeId <= 0) {
+                            canvasViewport.targetX = 0;
+                            canvasViewport.targetY = 0;
+                        }
                     }
                 }
             }
 
-            function steerCameraToNode(nodeId) {
-                var force = (arguments.length > 1 && arguments[1] === true);
-                if (!nodeId || nodeId <= 0) return;
+            function steerCameraToNode(nodeId, force) {
+                if (!nodeId || nodeId <= 0) {
+                    targetX = 0;
+                    targetY = 0;
+                    return;
+                }
                 var nx = 0;
                 var ny = 0;
                 var nodeItem = getNode(nodeId);
@@ -283,29 +312,13 @@ Window {
                     return;
                 }
 
-                var screenX = targetX + nx * targetScale;
-                var screenY = targetY + ny * targetScale;
-
                 var vw = canvasRoot.width;
                 var vh = canvasRoot.height;
 
-                var dzLeft = vw * 0.25;
-                var dzRight = vw * 0.75;
-                var dzTop = vh * 0.20;
-                var dzBottom = vh * 0.70;
-
-                var startX = targetX;
-                var startY = targetY;
-
-                if (force || screenX < dzLeft || screenX > dzRight || screenY < dzTop || screenY > dzBottom) {
-                    var destX = -(nx * targetScale) + (vw / 2);
-                    var destY = -(ny * targetScale) + (vh / 2);
-                    console.log("[CameraSteer] Steering camera to node " + nodeId + " at world (" + nx.toFixed(1) + ", " + ny.toFixed(1) + "). startX/Y: (" + startX.toFixed(1) + ", " + startY.toFixed(1) + ") -> targetX/Y: (" + destX.toFixed(1) + ", " + destY.toFixed(1) + ") | force=" + force);
-                    targetX = destX;
-                    targetY = destY;
-                } else {
-                    console.log("[CameraSteer] Node " + nodeId + " at world (" + nx.toFixed(1) + ", " + ny.toFixed(1) + ") inside deadzone. startX/Y: (" + startX.toFixed(1) + ", " + startY.toFixed(1) + ")");
-                }
+                var normX = Math.max(-1.0, Math.min(1.0, (nx - (vw / 2)) / (vw / 2)));
+                var normY = Math.max(-1.0, Math.min(1.0, (ny - (vh / 2)) / (vh / 2)));
+                targetX = -normX * 32.0;
+                targetY = -normY * 24.0;
             }
 
             x: targetX

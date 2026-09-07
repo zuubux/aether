@@ -29,6 +29,7 @@ class PhysicsController(BaseController):
     request_viewport = pyqtSignal(float, float)
     request_focal_card = pyqtSignal(float, float)
     request_aperture = pyqtSignal(float)
+    request_hover = pyqtSignal(int)
 
     def __init__(self, bridge, parent=None):
         super().__init__(bridge, parent)
@@ -57,6 +58,7 @@ class PhysicsController(BaseController):
         self.request_viewport.connect(self.worker.set_viewport_dimensions)
         self.request_focal_card.connect(self.worker.set_focal_card_dimensions)
         self.request_aperture.connect(self.worker.set_aperture)
+        self.request_hover.connect(self.worker.set_hovered_node)
 
         # Clean deterministic teardown on application exit
         app = QCoreApplication.instance()
@@ -121,6 +123,10 @@ class PhysicsController(BaseController):
     def set_aperture(self, aperture: float):
         """Routes aperture updates asynchronously to PhysicsWorker slot."""
         self.request_aperture.emit(float(aperture))
+
+    @pyqtSlot(int)
+    def set_hovered_node(self, node_id: int):
+        self.request_hover.emit(int(node_id))
 
     @pyqtSlot(list, list)
     def sync_graph_data(self, nodes: list, edges: list):

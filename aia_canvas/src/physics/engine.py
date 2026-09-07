@@ -425,6 +425,8 @@ class PhysicsEngine:
 
         hovered_idx = id_to_idx.get(hovered_node_id, -1)
         pinned_idx = id_to_idx.get(self.pinned_node_id, -1)
+        if hovered_idx >= 0:
+            hx, hy = pos[hovered_idx, 0], pos[hovered_idx, 1]
 
         for idx in range(N):
             nid = node_ids[idx]
@@ -460,6 +462,13 @@ class PhysicsEngine:
             elif cur_speed < 0.1 and math.hypot(fx, fy) < 1.0:
                 vel[idx, 0] = 0.0
                 vel[idx, 1] = 0.0
+
+            if hovered_idx >= 0 and idx != hovered_idx:
+                dist = math.hypot(pos[idx, 0] - hx, pos[idx, 1] - hy)
+                if dist <= 300.0:
+                    calm_factor = 0.15 + 0.85 * (dist / 300.0)
+                    vel[idx, 0] *= calm_factor
+                    vel[idx, 1] *= calm_factor
 
             pos[idx, 0] += vel[idx, 0] * dt
             pos[idx, 1] += vel[idx, 1] * dt

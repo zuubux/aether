@@ -4,7 +4,7 @@
 
 ### Presentation Layer (QML Quick 6)
 - **Primary Canvas (`aia_canvas/src/qml/Canvas.qml`):** 
-  The master viewport that routes global input events and acts as the root render context.
+  The master viewport that routes global input events and acts as the root render context. Enforces the Camera Lock Invariant: The root canvas viewport remains anchored to (0, 0) with camera translation slewing forbidden. Node selections only apply bounded micro-parallax nudges (+/- 32px max).
 - **Component Subsystems:**
   - `aia_canvas/src/qml/bar/`: 
     Input and command surfaces, including OmniBar, ShellDrawer, and file Drop targets.
