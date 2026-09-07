@@ -62,6 +62,7 @@ Item {
     readonly property int textLength: inputCapsule.text.length
     readonly property string currentQuery: inputCapsule.text
     readonly property alias resultsModel: ribbonContainer.resultsModel
+    readonly property alias focalLensFrame: focalLensFrame
     readonly property int resultsCount: getListLength(resultsList)
     readonly property string modePrefix: inputCapsule.text ? (inputCapsule.text.trim().startsWith(">") ? ">" : (inputCapsule.text.trim().startsWith("?") ? "?" : (inputCapsule.text.trim().startsWith("/") ? "/" : ""))) : ""
     readonly property bool isShellMode: modePrefix === ">"

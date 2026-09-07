@@ -147,6 +147,12 @@ class ConversationController(BaseController):
 
         if self.synthesizer:
             self.synthesizer.notify_event_occurred()
+            clean_prompt = prompt.lstrip("?").strip()
+            if hasattr(self.synthesizer, "event_ledger") and self.synthesizer.event_ledger:
+                self.synthesizer.event_ledger.record_event(
+                    event_type="omni_query",
+                    payload={"query": clean_prompt, "prompt": clean_prompt, "context": str(context or "")}
+                )
 
         self.stop()
 

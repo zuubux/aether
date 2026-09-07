@@ -8,6 +8,7 @@ Item {
     id: root
     objectName: "focalLensFrame"
     property bool active: false
+    visible: active
     property real targetCenterY: lensContainer ? lensContainer.targetCenterY : Math.round((root.height - (lensContainer ? lensContainer.height : 0)) / 2)
     property string activeContext: ""
     property var turnHistory: []
@@ -617,6 +618,7 @@ Item {
     }
 
     function close() { root.active = false; }
+    function collapse() { close(); }
 
     function submitFollowUp(query) {
         if (!query || query.trim().length === 0) return;

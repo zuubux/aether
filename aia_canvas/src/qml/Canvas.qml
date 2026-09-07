@@ -21,6 +21,7 @@ Window {
 
 
     readonly property alias omniBar: omniBar
+    readonly property alias unloadModal: unloadModal
 
     readonly property int nodeCount: (canvasBridge && canvasBridge.nodes) ? Math.max(1, canvasBridge.nodes.length) : 1
     readonly property real viewportArea: width * height
@@ -100,23 +101,30 @@ Window {
     Shortcut {
         sequence: "Escape"
         onActivated: {
-            if (canvasBridge && canvasBridge.selectedNodeId > 0) {
+            if (unloadModal.isOpen) {
+                unloadModal.isOpen = false
+            } else if (omniBar.focalLensFrame && omniBar.focalLensFrame.visible) {
+                if (typeof omniBar.focalLensFrame.close === "function") {
+                    omniBar.focalLensFrame.close()
+                } else if (typeof omniBar.focalLensFrame.collapse === "function") {
+                    omniBar.focalLensFrame.collapse()
+                } else {
+                    omniBar.focalLensFrame.active = false
+                }
+            } else if (canvasBridge && canvasBridge.selectedNodeId > 0) {
                 canvasBridge.node.select_node(0)
             } else if (omniBar.active) {
                 if (omniBar.textLength > 0) {
                     omniBar.clearTextAndCancel()
                 } else {
                     omniBar.dismiss()
-                    if (searchShelf.searchActive && canvasBridge) {
-                        canvasBridge.search.clear_search()
-                    }
                 }
             } else if (searchShelf.searchActive) {
-                if (canvasBridge) {
+                if (canvasBridge && canvasBridge.search) {
                     canvasBridge.search.clear_search()
                 }
             } else {
-                Qt.quit()
+                unloadModal.isOpen = true
             }
         }
     }
@@ -506,6 +514,13 @@ Window {
                     if (s === "IDLE" || s === "LATENT") return "LATENT";
                     return s ? s : "LATENT";
                 }
+            }
+
+            UnloadModal {
+                id: unloadModal
+                objectName: "unloadModal"
+                z: 1100
+                onConfirmed: Qt.quit()
             }
         }
     }

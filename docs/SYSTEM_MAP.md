@@ -51,6 +51,11 @@
 - **Responsibility:** System telemetry visualizer representing the engine as a continuous 4-state rune: `LATENT`, `WORKING`, `DISTILLING`, `OFFLINE`.
 - **Signal Boundary:** Strictly listens to `bridge.engineStateChanged` with raw string payloads (bypassing boolean mask logic).
 
+### UnloadModal
+- **Path:** `aia_canvas/src/qml/hud/UnloadModal.qml`
+- **Responsibility:** Elevated confirmation modal protecting against accidental exit; initiates graceful application teardown.
+- **Signal Boundary:** Invoked by ambient `Escape` tier; emits `confirmed` to `Qt.quit()` to engage the shutdown compaction pipeline.
+
 ### AetherContextBuilder
 - **Path:** `aia_canvas/src/omni/context.py`
 - **Responsibility:** Single authoritative assembler for the AI persona, spatial context boundaries, runtime telemetry parameters, and localized workspace ground truth.
@@ -92,6 +97,7 @@
 4. **Prune Phase:** `EventLedger.prune_events` actively evicts database rows older than the specified TTL horizon.
 5. **Vacuum Phase:** `PRAGMA incremental_vacuum` ensures the database footprint remains statically bounded and minimal.
 6. **Token Extraction:** Remaining relevant data rows map into context arrays for instant consumption by `AetherContextBuilder`.
+7. **Shutdown Compaction Phase:** Upon application termination, `app.aboutToQuit` triggers `ConversationController.synthesizer.shutdown()`, executing a synchronous final compaction pass (`synthesize_sync`) to flush uncompacted ledger events and heuristic facts directly into `~/.local/share/aether/memory.db`.
 
 ---
 

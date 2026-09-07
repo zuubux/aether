@@ -180,6 +180,17 @@ def main():
     timer.timeout.connect(lambda: None)
     timer.start(250)
 
+    def _on_about_to_quit():
+        logger.info("Aether Canvas shutting down. Flushing living memory synthesizer...")
+        ctrl = getattr(bridge, "conversation_ctrl", None) or getattr(bridge, "conversation", None)
+        if ctrl and hasattr(ctrl, "synthesizer") and ctrl.synthesizer:
+            try:
+                ctrl.synthesizer.shutdown()
+            except Exception as e:
+                logger.error(f"Error during memory synthesizer shutdown: {e}")
+
+    app.aboutToQuit.connect(_on_about_to_quit)
+
     sys.exit(app.exec())
 
 if __name__ == "__main__":
