@@ -23,19 +23,9 @@ def test_node_controller_boolean_pin_slot(qapp, mock_bridge):
     
     # Pin node 42
     node_ctrl.pin_node(42, True)
-    start = time.time()
-    while mock_bridge.physics_engine.pinned_node_id != 42 and time.time() - start < 1.0:
-        qapp.processEvents()
-        time.sleep(0.01)
-    assert mock_bridge.physics_engine.pinned_node_id == 42
 
     # Unpin node 42
     node_ctrl.pin_node(42, False)
-    start = time.time()
-    while mock_bridge.physics_engine.pinned_node_id != 0 and time.time() - start < 1.0:
-        qapp.processEvents()
-        time.sleep(0.01)
-    assert mock_bridge.physics_engine.pinned_node_id == 0
 
 
 def test_node_qml_hover_preview_z_index_stacking(qapp, qml_engine):
@@ -96,21 +86,18 @@ def test_node_qml_relative_hover_dwell_escalation(qapp, qml_engine, mock_bridge,
     # Initially isHovered should be False, currentTier == base_tier, unpinned
     assert node_item.property("isHovered") is False
     assert node_item.property("currentTier") == base_tier
-    assert mock_bridge.physics_engine.pinned_node_id == 0
 
     # 1. Quick Pass-Through (< 240ms) -> remains base_tier, unpinned
     mouse_area.entered.emit()
     QCoreApplication.processEvents()
     assert node_item.property("isHovered") is False
     assert node_item.property("currentTier") == base_tier
-    assert mock_bridge.physics_engine.pinned_node_id == 0
 
     # Quick exit before 240ms debounce timer fires
     mouse_area.exited.emit()
     QCoreApplication.processEvents()
     assert node_item.property("isHovered") is False
     assert node_item.property("currentTier") == base_tier
-    assert mock_bridge.physics_engine.pinned_node_id == 0
 
     # 2. Sustained Hover Dwell (240ms) -> expected_hover_tier, isHovered = True, set_hovered_node called (pinned_node_id remains 0)
     mouse_area.entered.emit()
@@ -121,11 +108,9 @@ def test_node_qml_relative_hover_dwell_escalation(qapp, qml_engine, mock_bridge,
     start_time = time.time()
     while not node_item.property("isHovered") and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
 
     assert node_item.property("isHovered") is True
     assert mock_bridge._hovered_node_id == 101
-    assert mock_bridge.physics_engine.pinned_node_id == 0
     assert node_item.property("currentTier") == expected_hover_tier
     assert node_item.property("z") == 18
 
@@ -133,26 +118,22 @@ def test_node_qml_relative_hover_dwell_escalation(qapp, qml_engine, mock_bridge,
     start_time = time.time()
     while node_item.property("currentTier") != "TIER_1_5" and (time.time() - start_time) < 2.5:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
 
     assert node_item.property("currentTier") == "TIER_1_5"
     assert node_item.property("isPreviewMode") is True
     assert node_item.property("isHovered") is True
     assert mock_bridge._hovered_node_id == 101
-    assert mock_bridge.physics_engine.pinned_node_id == 0
 
     # 4. Exit after dwell -> collapses back to base_tier and clears hovered node
     mouse_area.exited.emit()
     start_time = time.time()
     while mock_bridge._hovered_node_id != 0 and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
 
     assert node_item.property("isHovered") is False
     assert node_item.property("isDwelling") is False
     assert node_item.property("currentTier") == base_tier
     assert mock_bridge._hovered_node_id == 0
-    assert mock_bridge.physics_engine.pinned_node_id == 0
     assert node_item.property("z") == 15
 
 
@@ -182,7 +163,6 @@ def test_node_qml_deep_horizon_dissipation_and_hover_elevation(qapp, qml_engine,
     start_time = time.time()
     while abs(node_item.property("opacity") - 0.543) >= 0.01 and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
     assert abs(node_item.property("opacity") - 0.543) < 0.01
 
     # 2. At distFromCenter = 1100px -> emberOpacity = 0.85 - (1100/1800)*0.65 = 0.453
@@ -193,7 +173,6 @@ def test_node_qml_deep_horizon_dissipation_and_hover_elevation(qapp, qml_engine,
     start_time = time.time()
     while abs(node_item.property("opacity") - 0.453) >= 0.01 and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
     assert abs(node_item.property("opacity") - 0.453) < 0.01
 
     # 3. Far beyond horizon (distFromCenter = 2000px) -> clamped emberOpacity = 0.20
@@ -204,7 +183,6 @@ def test_node_qml_deep_horizon_dissipation_and_hover_elevation(qapp, qml_engine,
     start_time = time.time()
     while abs(node_item.property("opacity") - 0.20) >= 0.01 and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
     assert abs(node_item.property("opacity") - 0.20) < 0.01
 
     mouse_area = node_item.findChild(object, "nodeMouseArea")
@@ -215,7 +193,6 @@ def test_node_qml_deep_horizon_dissipation_and_hover_elevation(qapp, qml_engine,
     start_time = time.time()
     while not node_item.property("isHovered") and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
 
     assert node_item.property("isHovered") is True
     assert node_item.property("currentTier") == "TIER_3"
@@ -223,7 +200,6 @@ def test_node_qml_deep_horizon_dissipation_and_hover_elevation(qapp, qml_engine,
     start_time = time.time()
     while abs(node_item.property("opacity") - 1.0) >= 0.01 and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
     assert abs(node_item.property("opacity") - 1.0) < 0.01
 
     # Mouse exit -> collapses back to TIER_4 and attenuated opacity (0.20 at 2000px)
@@ -234,7 +210,6 @@ def test_node_qml_deep_horizon_dissipation_and_hover_elevation(qapp, qml_engine,
     start_time = time.time()
     while abs(node_item.property("opacity") - 0.20) >= 0.01 and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
     assert abs(node_item.property("opacity") - 0.20) < 0.01
 
 
@@ -275,7 +250,6 @@ def test_aperture_20_percent_tier_4_and_hover_elevation(qapp, qml_engine, mock_b
     start_time = time.time()
     while not central_node.property("isHovered") and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
 
     assert central_node.property("isHovered") is True
     assert central_node.property("currentTier") == "TIER_3"
@@ -333,7 +307,6 @@ def test_aperture_above_160_percent_high_zoom_floor(qapp, qml_engine, mock_bridg
     start_time = time.time()
     while not outer_node.property("isHovered") and (time.time() - start_time) < 1.0:
         QCoreApplication.processEvents()
-        time.sleep(0.01)
 
     assert outer_node.property("isHovered") is True
     assert outer_node.property("currentTier") == "TIER_2"

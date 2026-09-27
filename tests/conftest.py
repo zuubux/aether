@@ -123,10 +123,6 @@ def mock_bridge(qapp, monkeypatch):
     monkeypatch.setattr(ConversationController, "stream_prompt", lambda *args, **kwargs: None)
     bridge = CanvasBridge()
     yield bridge
-    if hasattr(bridge, "_physics_timer") and bridge._physics_timer:
-        bridge._physics_timer.stop()
-    if hasattr(bridge, "physics_ctrl") and bridge.physics_ctrl:
-        bridge.physics_ctrl.stop()
     if hasattr(bridge, "_telemetry_timer") and bridge._telemetry_timer:
         bridge._telemetry_timer.stop()
     if hasattr(bridge, "conversation_ctrl") and bridge.conversation_ctrl:
@@ -151,7 +147,6 @@ def canvas_qml_root(qapp, qml_engine, mock_bridge):
     ctx.setContextProperty("bridge", mock_bridge)
     ctx.setContextProperty("canvasController", mock_bridge.canvas_ctrl)
     ctx.setContextProperty("nodeController", mock_bridge.node_ctrl)
-    ctx.setContextProperty("physicsController", mock_bridge.physics_ctrl)
     ctx.setContextProperty("searchController", mock_bridge.search_ctrl)
     ctx.setContextProperty("intentEngine", intent_engine)
     ctx.setContextProperty("targetScreenIdx", 0)
