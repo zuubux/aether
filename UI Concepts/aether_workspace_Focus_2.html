@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether - Active Multi-Plate Assembly</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        canvas: '#161413',
+                        cream: '#E6E4DF',
+                        plate: '#1C1918',
+                        borderCream: 'rgba(230, 228, 223, 0.08)',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Lora', 'serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #161413; color: #E6E4DF; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .terminal-mask {
+            mask-image: linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%);
+        }
+        /* SVG Anchor Glyph */
+        .anchor-icon {
+            mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a1 1 0 0 1 1 1v4.075a5.002 5.002 0 0 1 4.546 4.39A3.5 3.5 0 0 1 19 14.5v1a1 1 0 0 1-2 0v-1a1.5 1.5 0 0 0-3 0v1.5a1 1 0 0 1-2 0V15a3 3 0 0 0-6 0v1a1 1 0 0 1-2 0v-1a1.5 1.5 0 0 0-3 0v1a1 1 0 0 1-2 0v-1a3.5 3.5 0 0 1 1.454-3.035A5.002 5.002 0 0 1 11 7.075V3a1 1 0 0 1 1-1zm0 7a3 3 0 0 0-2.995 2.824L9 12v3h6v-3a3 3 0 0 0-2.824-2.995L12 9z"/></svg>') no-repeat center / contain;
+            -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a1 1 0 0 1 1 1v4.075a5.002 5.002 0 0 1 4.546 4.39A3.5 3.5 0 0 1 19 14.5v1a1 1 0 0 1-2 0v-1a1.5 1.5 0 0 0-3 0v1.5a1 1 0 0 1-2 0V15a3 3 0 0 0-6 0v1a1 1 0 0 1-2 0v-1a1.5 1.5 0 0 0-3 0v1a1 1 0 0 1-2 0v-1a3.5 3.5 0 0 1 1.454-3.035A5.002 5.002 0 0 1 11 7.075V3a1 1 0 0 1 1-1zm0 7a3 3 0 0 0-2.995 2.824L9 12v3h6v-3a3 3 0 0 0-2.824-2.995L12 9z"/></svg>') no-repeat center / contain;
+        }
+    </style>
+</head>
+<body class="h-screen w-full overflow-hidden font-sans antialiased relative">
+
+    <!-- The Horizon: Ambient Anchors -->
+    <header class="fixed top-6 left-0 w-full px-12 flex justify-between items-center z-50 pointer-events-auto">
+        <div class="text-cream opacity-25 hover:opacity-80 transition-opacity duration-500 font-sans font-light tracking-wide text-[13px] cursor-default">
+            64°F · South Jordan · Fair
+        </div>
+        <div class="text-cream opacity-25 hover:opacity-80 transition-opacity duration-500 flex items-center gap-3 text-[13px] cursor-default">
+            <span class="font-sans font-light">Sun, Sep 27 · 10:48 AM</span>
+            <span class="opacity-30 font-mono text-[11px]">//</span>
+            <span class="font-mono text-[11px] tracking-[0.15em] uppercase text-cream/70">NIC · WORKSPACE</span>
+        </div>
+    </header>
+
+    <!-- Peripheral Sediment Chips (Right Margin Rail with Left-Aligned Notification Jewel) -->
+    <div class="fixed top-[25%] right-6 flex flex-col gap-3 z-40 items-end">
+        <div class="bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-full px-4 py-2 flex items-center gap-3 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05] hover:border-white/[0.12]">
+            <span class="opacity-70 text-[14px]">📝</span>
+            <span class="text-cream opacity-50 text-xs font-medium tracking-wide">Architecture Spec</span>
+        </div>
+
+        <div class="bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-full px-4 py-2 flex items-center gap-3 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05] hover:border-white/[0.12]">
+            <span class="opacity-70 text-[14px]">🎬</span>
+            <span class="text-cream opacity-50 text-xs font-medium tracking-wide">Porsche Media Session</span>
+        </div>
+
+        <!-- Left-Aligned Amber Notification Jewel -->
+        <div class="relative bg-white/[0.02] backdrop-blur-md border border-amber-500/30 ring-1 ring-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.1)] rounded-full pl-3.5 pr-4 py-2 flex items-center gap-2.5 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05]">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_6px_rgba(251,191,36,0.9)]"></span>
+            <span class="opacity-90 text-[14px]">💬</span>
+            <span class="text-amber-100/90 text-xs font-medium tracking-wide">Teams: #infra</span>
+        </div>
+        
+        <div class="bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-full px-4 py-2 flex items-center gap-3 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05] hover:border-white/[0.12]">
+            <span class="opacity-70 text-[14px]">🚗</span>
+            <span class="text-cream opacity-50 text-xs font-medium tracking-wide">'95 BMW E34</span>
+        </div>
+    </div>
+
+    <!-- The Canvas Architecture (~86vw Multi-Plate Grid) -->
+    <main class="w-full max-w-[2800px] mx-auto h-full pt-28 px-16 flex gap-8 items-start justify-center pr-48">
+
+        <!-- PLATE 1: Primary Shell (PINNED) - 45% width -->
+        <section class="w-[45%] h-[72vh] bg-plate rounded-2xl border border-cream/10 shadow-[0_30px_90px_rgba(0,0,0,0.75)] flex flex-col overflow-hidden z-20">
+            
+            <!-- Crown Bar (Pinned State) -->
+            <div class="px-5 py-3 border-b border-white/[0.05] flex justify-between items-center bg-white/[0.01] flex-shrink-0">
+                <div class="flex items-center gap-3 text-xs font-mono text-cream/50">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400/80 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
+                    <span class="text-cream/90 font-medium">pty/3</span>
+                    <span class="opacity-30">//</span>
+                    <span>zsh · 5.9</span>
+                    <span class="opacity-30">//</span>
+                    <span class="text-cream/40">~/src/aether</span>
+                </div>
+                <div class="px-2.5 py-1 rounded bg-cream/15 text-cream border border-cream/30 font-medium text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow-[0_0_10px_rgba(230,228,223,0.1)]">
+                    <span class="w-3 h-3 bg-cream anchor-icon"></span>
+                    Pinned
+                </div>
+            </div>
+
+            <!-- Terminal Buffer -->
+            <div class="flex-1 p-8 font-mono text-[13.5px] leading-relaxed text-cream/80 space-y-2 overflow-y-auto no-scrollbar terminal-mask selection:bg-cream/20">
+                <div class="text-cream/40">Last login: Sun Sep 27 10:22:14 on ttys004</div>
+                <div class="text-emerald-400/80 pt-2">> aether-node --version</div>
+                <div class="text-cream/60">Aether Kernel Substrate v0.4.2-alpha (x86_64-linux-gnu)</div>
+                <div class="text-cream/60">Stage compositor: Wayland-EGL native // Latency: 1.4ms</div>
+                
+                <div class="text-emerald-400/80 pt-3">> systemctl --user status aether-compositor</div>
+                <div class="text-cream/70">● aether-compositor.service - Aether Ambient Stage Engine</div>
+                <div class="text-cream/50 pl-4">Loaded: loaded (/usr/lib/systemd/user/aether-compositor.service; enabled)</div>
+                <div class="text-cream/50 pl-4">Active: <span class="text-emerald-400">active (running)</span> since Sun 2026-09-27 08:30:11 MDT</div>
+                <div class="text-cream/50 pl-4">Main PID: 18422 (aether-node)</div>
+
+                <div class="text-emerald-400/80 pt-3">> journalctl -u aether-compositor -n 25 --no-pager</div>
+                <div class="text-cream/50 text-[12.5px]">[08:30:11] compositor initialized on DRM render node /dev/dri/card1</div>
+                <div class="text-cream/50 text-[12.5px]">[08:30:11] EGL display extensions queried: EGL_EXT_platform_wayland ok</div>
+                <div class="text-cream/50 text-[12.5px]">[08:30:12] Substrate frame buffer allocated: 3840x2160 @ 120Hz HDR10</div>
+                <div class="text-rose-400/80 text-[12.5px] font-medium">[10:45:33] WARN: vblank scanout latency exceeded 16ms (actual: 22ms) on CRTC-4</div>
+                <div class="text-cream/50 text-[12.5px]">[10:45:33] Re-negotiating atomic commit parameters...</div>
+                <div class="text-rose-400/80 text-[12.5px] font-medium">[10:46:12] ERROR: EGL_BAD_ALLOC during surface page flip. Dropping frame.</div>
+                <div class="text-cream/50 text-[12.5px]">[10:46:12] Fallback to legacy DRM mode-setting triggered.</div>
+                
+                <div class="pt-4 flex items-center gap-2">
+                    <span class="text-emerald-400/90 font-medium">nic@daybreak:~/src/aether$</span>
+                    <span class="w-2.5 h-5 bg-cream/90 inline-block animate-pulse align-middle"></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- MIDDLE COLUMN: Browsers - 30% width -->
+        <div class="w-[30%] flex flex-col gap-8 h-[72vh]">
+            
+            <!-- PLATE 2: KMS & DRM Protocol Spec (UNPINNED) -->
+            <section class="w-full bg-plate rounded-2xl border border-cream/10 shadow-[0_30px_90px_rgba(0,0,0,0.75)] flex flex-col overflow-hidden">
+                <div class="px-5 py-3 border-b border-white/[0.05] flex justify-between items-center bg-white/[0.01] flex-shrink-0">
+                    <div class="flex items-center gap-3 text-xs font-mono text-cream/50">
+                        <span class="w-2 h-2 rounded-full bg-orange-400/80"></span>
+                        <span class="text-cream/90 font-medium">kernel.org</span>
+                        <span class="opacity-30">//</span>
+                        <span class="text-cream/40">drm-kms.rst</span>
+                    </div>
+                    <div class="opacity-30 hover:opacity-80 text-cream/60 cursor-pointer transition-opacity flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-medium">
+                        <span class="w-3 h-3 bg-currentColor anchor-icon"></span> Pin
+                    </div>
+                </div>
+                <div class="p-7 space-y-5">
+                    <div class="text-[11px] font-sans uppercase tracking-widest text-cream/30">Documentation / gpu / drm-kms.rst</div>
+                    <h2 class="text-xl font-serif text-cream/90 leading-tight">Atomic Mode Setting</h2>
+                    <p class="text-sm font-serif text-cream/60 leading-relaxed">
+                        Atomic provides transactional updates of KMS state. An update is assembled by setting properties on objects, and then committed in a single ioctl. If the hardware cannot accept the exact combination of parameters, it fails cleanly before modifying scanout.
+                    </p>
+                    <div class="bg-black/30 border border-white/[0.05] rounded-lg p-4 font-mono text-[11px] text-cream/70 mt-2">
+                        <div class="text-blue-300">int</div> <div class="inline">drm_atomic_commit(struct drm_device *dev,</div>
+                        <div class="pl-8">struct drm_atomic_state *state,</div>
+                        <div class="pl-8">bool async);</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- PLATE 3: GitHub PR (UNPINNED) -->
+            <section class="w-full bg-plate rounded-2xl border border-cream/10 shadow-[0_30px_90px_rgba(0,0,0,0.75)] flex flex-col overflow-hidden flex-1">
+                <div class="px-5 py-3 border-b border-white/[0.05] flex justify-between items-center bg-white/[0.01] flex-shrink-0">
+                    <div class="flex items-center gap-3 text-xs font-mono text-cream/50">
+                        <span class="w-2 h-2 rounded-full bg-purple-400/80"></span>
+                        <span class="text-cream/90 font-medium">github.com</span>
+                        <span class="opacity-30">//</span>
+                        <span class="text-cream/40">Aether/issues/142</span>
+                    </div>
+                    <div class="opacity-30 hover:opacity-80 text-cream/60 cursor-pointer transition-opacity flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-medium">
+                        <span class="w-3 h-3 bg-currentColor anchor-icon"></span> Pin
+                    </div>
+                </div>
+                <div class="p-7 flex flex-col h-full gap-5">
+                    <h2 class="text-lg font-medium text-cream/90 leading-snug">Fix buffer scanout latency on multi-head displays <span class="font-mono text-cream/40 ml-2">#142</span></h2>
+                    
+                    <div class="flex items-center gap-3 bg-emerald-900/20 border border-emerald-500/20 rounded-md px-3 py-2 w-fit">
+                        <span class="text-emerald-400 font-bold">✓</span>
+                        <span class="text-emerald-400/80 text-xs font-medium">4 checks passed</span>
+                    </div>
+
+                    <div class="flex items-start gap-4 mt-2">
+                        <div class="w-8 h-8 rounded-full bg-zinc-800 border border-cream/10 overflow-hidden flex-shrink-0">
+                            <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=100&q=80" alt="Reviewer" class="w-full h-full object-cover">
+                        </div>
+                        <div class="flex-1 bg-white/[0.02] border border-white/[0.05] rounded-lg p-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-cream/80 text-xs font-medium">jbarnes_dev</span>
+                                <span class="text-cream/30 text-[10px]">2 hours ago</span>
+                            </div>
+                            <p class="text-sm text-cream/60 leading-relaxed font-sans">
+                                I verified the EGL context locking logic, but we're still seeing page flip drops when CRTC-4 initializes under heavy load. Check if the vblank event is firing prematurely.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- PLATE 4: LLM Copilot (UNPINNED) - 25% width -->
+        <section class="w-[25%] bg-plate rounded-2xl border border-cream/10 shadow-[0_30px_90px_rgba(0,0,0,0.75)] flex flex-col overflow-hidden h-fit">
+            <div class="px-5 py-3 border-b border-white/[0.05] flex justify-between items-center bg-white/[0.01] flex-shrink-0">
+                <div class="flex items-center gap-3 text-xs font-mono text-cream/50">
+                    <span class="w-2 h-2 rounded-full bg-blue-500/80"></span>
+                    <span class="text-cream/90 font-medium">Aether Copilot</span>
+                    <span class="opacity-30">//</span>
+                    <span class="text-cream/40">Incident Analysis</span>
+                </div>
+                <div class="opacity-30 hover:opacity-80 text-cream/60 cursor-pointer transition-opacity flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-medium">
+                    <span class="w-3 h-3 bg-currentColor anchor-icon"></span> Pin
+                </div>
+            </div>
+            
+            <div class="p-7 space-y-6">
+                <div class="text-sm font-medium text-cream/80">Hypotheses for EGL_BAD_ALLOC on CRTC-4:</div>
+                
+                <ul class="space-y-4 text-sm text-cream/60 leading-relaxed list-disc pl-4">
+                    <li><strong class="text-cream/90 font-normal">VBLANK timing mismatch</strong> across outputs causing the atomic commit queue to stall.</li>
+                    <li><strong class="text-cream/90 font-normal">EGL buffer starvation:</strong> buffers are not being released by the Wayland compositor prior to the next scanout phase.</li>
+                    <li><strong class="text-cream/90 font-normal">Kernel DRM atomic commit</strong> failing specifically on Head 2 due to legacy bandwidth limitations in the driver fallback.</li>
+                </ul>
+
+                <button class="w-full mt-4 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] transition-colors py-3 rounded-xl flex items-center justify-center gap-2 group">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 group-hover:animate-pulse"></span>
+                    <span class="text-cream/90 text-xs font-medium tracking-wide">Apply Suggested Patch</span>
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- OmniBar (Reflecting Active Compound Session) -->
+    <div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-plate/90 backdrop-blur-xl border border-cream/20 rounded-full pl-6 pr-8 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.6)] flex items-center justify-center cursor-pointer transition-all hover:bg-plate group min-w-[450px] z-50">
+        <div class="flex items-center w-full justify-between font-mono text-xs">
+            <div class="flex items-center gap-3">
+                <span class="text-emerald-400 font-bold">></span>
+                <span class="text-cream font-medium">debug compositor scanout latency</span>
+            </div>
+            <span class="text-cream/40 text-[10px] uppercase tracking-wider ml-6 bg-white/[0.05] px-2 py-1 rounded">Assembly: 4 nodes</span>
+        </div>
+    </div>
+
+</body>
+</html>

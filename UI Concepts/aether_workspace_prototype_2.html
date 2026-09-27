@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether - Editorial Substrate</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        canvas: '#161413', /* Warm deep charcoal */
+                        cream: '#E6E4DF',  /* Soft bone/cream */
+                        plate: '#1C1918',  /* Slightly elevated warm charcoal */
+                        borderCream: 'rgba(230, 228, 223, 0.08)',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Lora', 'serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #161413; color: #E6E4DF; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="h-screen w-full overflow-hidden font-sans antialiased relative">
+
+    <!-- Subtle Profile Indicator -->
+    <div class="fixed top-8 right-10 text-xs font-mono tracking-[0.2em] opacity-30 z-50 pointer-events-none">
+        NIC // WORKSPACE
+    </div>
+
+    <!-- Main Stage Grid (10 Columns for 50/30/20 Math) -->
+    <div class="grid grid-cols-10 gap-10 w-full h-full max-w-[100vw] px-16 py-20">
+
+        <!-- Left Column: Drafting Node (50% = col-span-5) -->
+        <div class="col-span-5 flex justify-center items-start overflow-y-auto no-scrollbar">
+            <!-- Constrained reading measure, sitting directly on canvas -->
+            <div class="max-w-[65ch] font-serif text-lg leading-relaxed space-y-6 opacity-80 pt-4">
+                <h1 class="text-3xl font-sans font-medium mb-10 opacity-100 text-cream">The Post-WIMP Substrate</h1>
+                <p>The interface is no longer a window, but a continuous substrate. We reject the overlapping chaos of the desktop metaphor, moving toward a calm, intent-driven topology.</p>
+                <p>Typography bears the structural weight. By decapitating the artificial bounding boxes, the text returns to its native editorial environment—breathing directly on the canvas, constrained only by mathematical proportion and optimal reading measures.</p>
+                <p>When focus is required, the peripheral noise falls away. The environment does not demand attention; it merely provides a surface for thought to materialize. Content dictates the height, leaving the void untouched.</p>
+            </div>
+        </div>
+
+        <!-- Center Column: Active Media (30% = col-span-3) -->
+        <div class="col-span-3 flex items-start">
+            <!-- The Singular Plate -->
+            <div class="w-full bg-plate rounded-[16px] border border-borderCream shadow-[0_24px_60px_rgba(0,0,0,0.4)] overflow-hidden flex flex-col h-fit transition-transform hover:-translate-y-1 duration-500 ease-out">
+                
+                <!-- High-Fidelity Car Auction Mock -->
+                <div class="h-64 w-full relative bg-black/20">
+                    <img src="https://images.unsplash.com/photo-1553440569-bcc63803a83d?auto=format&fit=crop&w=800&q=80" alt="Vehicle Auction" class="object-cover w-full h-full opacity-80 mix-blend-luminosity hover:mix-blend-normal transition-all duration-700">
+                </div>
+                
+                <div class="p-7 space-y-5">
+                    <div class="text-xs font-mono uppercase tracking-widest opacity-50 flex items-center gap-3">
+                        <span class="w-1.5 h-1.5 rounded-full bg-red-800 animate-pulse"></span>
+                        Live Auction · Ends 2h 14m
+                    </div>
+                    
+                    <div>
+                        <h2 class="text-2xl font-medium tracking-tight mb-1 text-cream">1995 BMW E34 M5</h2>
+                        <div class="text-3xl font-light opacity-100">$34,500 <span class="text-xs tracking-wide opacity-40 font-sans ml-2 uppercase">Current Bid</span></div>
+                    </div>
+                    
+                    <div class="flex gap-6 text-sm opacity-60 font-sans border-t border-borderCream pt-5 mt-2">
+                        <div class="flex flex-col gap-1">
+                            <span class="text-xs uppercase tracking-wider opacity-60">Miles</span>
+                            <span class="opacity-100 text-cream">72k</span>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <span class="text-xs uppercase tracking-wider opacity-60">Engine</span>
+                            <span class="opacity-100 text-cream">3.8L S38</span>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <span class="text-xs uppercase tracking-wider opacity-60">Trans</span>
+                            <span class="opacity-100 text-cream">6-Spd Manual</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Terminal Stream (20% = col-span-2) -->
+        <div class="col-span-2 flex items-start pt-4 pl-4">
+            <!-- Floating directly on margin canvas -->
+            <div class="font-mono text-[13px] opacity-40 leading-loose space-y-1 w-full">
+                <div class="opacity-30 mb-4"># stream_ops.log</div>
+                <div>> aether.daemon --init</div>
+                <div class="opacity-80">[ok] core substrate loaded</div>
+                <div>> mount.plates --layout=editorial</div>
+                <div class="opacity-80">[ok] geometry bound to grid</div>
+                <div class="opacity-30 my-2">...</div>
+                <div>> sync.workspace_node</div>
+                <div>connected: 12ms ping</div>
+                <div class="animate-pulse opacity-80 mt-4">awaiting intent_</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Intent Pill UI Control -->
+    <div class="fixed bottom-12 left-1/2 -translate-x-1/2 bg-plate/60 backdrop-blur-xl border border-borderCream rounded-full pl-8 pr-10 py-4 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center justify-center cursor-text transition-all hover:bg-plate/90 group w-[320px]">
+        <div class="flex items-center w-full">
+            <span class="text-cream opacity-40 font-light text-[15px] group-hover:opacity-70 transition-opacity">What are we doing?</span>
+            <div class="w-[2px] h-5 bg-cream/30 ml-2 animate-pulse hidden group-hover:block"></div>
+        </div>
+    </div>
+
+</body>
+</html>

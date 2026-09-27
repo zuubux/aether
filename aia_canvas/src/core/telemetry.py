@@ -24,7 +24,6 @@ class TelemetrySink:
         return cls()
 
     def _init_state(self) -> None:
-        self.physics_step_deques = collections.deque(maxlen=60)
         self.render_fps_deques = collections.deque(maxlen=60)
         self.ipc_rtt_deques = collections.deque(maxlen=60)
         self.db_query_deques = collections.deque(maxlen=60)
@@ -32,14 +31,10 @@ class TelemetrySink:
 
     def reset(self) -> None:
         """Clear all metric ring buffers."""
-        self.physics_step_deques.clear()
         self.render_fps_deques.clear()
         self.ipc_rtt_deques.clear()
         self.db_query_deques.clear()
         self.llm_ttft_deques.clear()
-
-    def record_physics_step(self, val_ms: float) -> None:
-        self.physics_step_deques.append(float(val_ms))
 
     def record_render_fps(self, fps: float) -> None:
         self.render_fps_deques.append(float(fps))
@@ -62,10 +57,6 @@ class TelemetrySink:
         return (end_ns - start_ns) / 1e6
 
     @property
-    def physics_step_ms(self) -> float:
-        return self.physics_step_deques[-1] if self.physics_step_deques else 0.0
-
-    @property
     def render_fps(self) -> float:
         return self.render_fps_deques[-1] if self.render_fps_deques else 120.0
 
@@ -83,7 +74,6 @@ class TelemetrySink:
 
     def get_snapshot(self) -> Dict[str, float]:
         return {
-            "physics_step_ms": self.physics_step_ms,
             "render_fps": self.render_fps,
             "ipc_rtt_ms": self.ipc_rtt_ms,
             "db_query_ms": self.db_query_ms,

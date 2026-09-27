@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether - Active Investigation Assembly</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        canvas: '#161413',
+                        cream: '#E6E4DF',
+                        plate: '#1C1918',
+                        borderCream: 'rgba(230, 228, 223, 0.08)',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Lora', 'serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #161413; color: #E6E4DF; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="h-screen w-full overflow-hidden font-sans antialiased relative">
+
+    <!-- The Horizon: Ambient Anchors -->
+    <header class="fixed top-6 left-0 w-full px-12 flex justify-between items-center z-50 pointer-events-auto">
+        <div class="text-cream opacity-25 hover:opacity-80 transition-opacity duration-500 font-sans font-light tracking-wide text-[13px] cursor-default">
+            64°F · South Jordan · Fair
+        </div>
+        <div class="text-cream opacity-25 hover:opacity-80 transition-opacity duration-500 flex items-center gap-3 text-[13px] cursor-default">
+            <span class="font-sans font-light">Sun, Sep 27 · 11:30 AM</span>
+            <span class="opacity-30 font-mono text-[11px]">//</span>
+            <span class="font-mono text-[11px] tracking-[0.15em] uppercase text-cream/70">NIC · WORKSPACE</span>
+        </div>
+    </header>
+
+    <!-- Peripheral Sediment Chips (Right Margin Rail) -->
+    <div class="fixed top-[28%] right-6 flex flex-col gap-3 z-40 items-end">
+        <div class="bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-full px-4 py-2 flex items-center gap-3 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05] hover:border-white/[0.12]">
+            <span class="opacity-70 text-[14px]">📝</span>
+            <span class="text-cream opacity-50 text-xs font-medium tracking-wide">Architecture Spec</span>
+        </div>
+
+        <div class="bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-full px-4 py-2 flex items-center gap-3 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05] hover:border-white/[0.12]">
+            <span class="opacity-70 text-[14px]">🎬</span>
+            <span class="text-cream opacity-50 text-xs font-medium tracking-wide">Porsche Media Session</span>
+        </div>
+
+        <!-- Left-Aligned Amber Notification Jewel -->
+        <div class="relative bg-white/[0.02] backdrop-blur-md border border-amber-500/30 ring-1 ring-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.1)] rounded-full pl-3.5 pr-4 py-2 flex items-center gap-2.5 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05]">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_6px_rgba(251,191,36,0.9)]"></span>
+            <span class="opacity-90 text-[14px]">💬</span>
+            <span class="text-amber-100/90 text-xs font-medium tracking-wide">Teams: #infra</span>
+        </div>
+        
+        <div class="bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-full px-4 py-2 flex items-center gap-3 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05] hover:border-white/[0.12]">
+            <span class="opacity-70 text-[14px]">🚗</span>
+            <span class="text-cream opacity-50 text-xs font-medium tracking-wide">'95 BMW E34</span>
+        </div>
+    </div>
+
+    <!-- The Balanced Assembly (Compressed Terminal, Focal Doc, Ambient Assistant) -->
+    <main class="w-full max-w-[2400px] mx-auto h-full pt-28 pb-32 px-12 flex gap-12 items-start justify-center pr-32">
+
+        <!-- 1. COMPRESSED COMPANION STREAM: Terminal (Pinned, Raw Substrate) -->
+        <div class="w-[28vw] max-w-[500px] flex flex-col font-mono text-[12.5px] leading-relaxed text-cream/70 flex-shrink-0 pt-1">
+            
+            <!-- Terminal Header with Rendered Inline SVG Pin -->
+            <div class="flex items-center justify-between pb-3 mb-3 border-b border-white/[0.06] text-xs text-cream/40">
+                <div class="flex items-center gap-2.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400/90 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
+                    <span class="text-cream/80 font-medium">pty/3</span>
+                    <span class="opacity-30">//</span>
+                    <span class="text-cream/50 truncate">~/src/aether</span>
+                </div>
+                <!-- Modern Minimal Pin Glyph (Active / Amber) -->
+                <button title="Pinned to Canvas" class="text-amber-400/90 hover:text-amber-300 transition-colors p-1 cursor-pointer">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14 4v5c0 1.12.37 2.16 1 3H9c.65-.86 1-1.9 1-3V4h4m3-2H7a1 1 0 0 0 0 2h1v5c0 .64-.23 1.25-.62 1.73A3.003 3.003 0 0 0 6 13a1 1 0 0 0 1 1h4v7a1 1 0 0 0 2 0v-7h4a1 1 0 0 0 1-1c0-.85-.36-1.62-.94-2.16A2.99 2.99 0 0 0 16 9V4h1a1 1 0 0 0 0-2z"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Monospace Output -->
+            <div class="space-y-1.5 select-text opacity-85">
+                <div class="text-cream/40">[08:30:11] compositor initialized on /dev/dri/card1</div>
+                <div class="text-cream/40">[08:30:12] Substrate frame buffer: 3840x2160 @ 120Hz</div>
+                <div class="text-rose-400/90 pt-1">[10:45:33] WARN: vblank scanout latency exceeded 16ms</div>
+                <div class="text-rose-400/90 font-medium">[10:46:12] ERROR: EGL_BAD_ALLOC during page flip.</div>
+                <div class="text-cream/40">[10:46:12] Fallback to legacy DRM mode-setting.</div>
+                
+                <div class="pt-3 text-emerald-400/80">> journalctl -u aether -n 2 --no-pager</div>
+                <div class="text-cream/60">CRTC-4: atomic ioctl busy (timeout 67ms)</div>
+                <div class="text-cream/60">Staging triple buffer queue engaged.</div>
+
+                <div class="pt-3 flex items-center gap-2">
+                    <span class="text-emerald-400/90">nic@daybreak$</span>
+                    <span class="w-2 h-4 bg-cream/80 inline-block animate-pulse align-middle"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. PRIMARY FOCUS: The Central Reference Plate (Soft Plate, Self-Sizing) -->
+        <section class="w-[42vw] max-w-[820px] bg-plate/90 backdrop-blur-xl rounded-2xl border border-borderCream p-8 shadow-[0_25px_70px_rgba(0,0,0,0.5)] flex flex-col gap-6 flex-shrink-0">
+            
+            <!-- Reference Section 1: Kernel Documentation -->
+            <div class="space-y-3">
+                <div class="flex items-center justify-between pb-3 border-b border-white/[0.05] text-xs font-mono text-cream/40">
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-2 h-2 rounded-full bg-orange-400/80"></span>
+                        <span class="text-cream/80 font-medium">kernel.org</span>
+                        <span class="opacity-30">//</span>
+                        <span>drm-kms.rst</span>
+                    </div>
+                    <!-- Modern Minimal Pin Glyph (Inactive / Subtle) -->
+                    <button title="Pin Document" class="opacity-25 hover:opacity-80 text-cream transition-opacity p-1 cursor-pointer">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M14 4v5c0 1.12.37 2.16 1 3H9c.65-.86 1-1.9 1-3V4h4m3-2H7a1 1 0 0 0 0 2h1v5c0 .64-.23 1.25-.62 1.73A3.003 3.003 0 0 0 6 13a1 1 0 0 0 1 1h4v7a1 1 0 0 0 2 0v-7h4a1 1 0 0 0 1-1c0-.85-.36-1.62-.94-2.16A2.99 2.99 0 0 0 16 9V4h1a1 1 0 0 0 0-2z"/>
+                        </svg>
+                    </button>
+                </div>
+                
+                <h2 class="text-xl font-serif text-cream/95 leading-tight tracking-tight">Atomic Mode Setting & Scanout</h2>
+                <p class="text-[13.5px] font-serif text-cream/65 leading-relaxed">
+                    Atomic provides transactional updates of KMS state. An update is assembled by setting properties on objects, and then committed in a single ioctl. If hardware cannot accept the combination of parameters synchronously, drivers return <code class="font-mono text-cream/90 bg-white/[0.05] px-1 rounded">-EBUSY</code> before modifying scanout.
+                </p>
+                <div class="bg-black/40 border border-white/[0.04] rounded-lg p-3 font-mono text-[11.5px] text-cream/70">
+                    <span class="text-blue-300">int</span> drm_atomic_commit(struct drm_device *dev,
+                    <div class="pl-6 text-cream/50">struct drm_atomic_state *state, bool async);</div>
+                </div>
+            </div>
+
+            <!-- Soft Hairline Partition -->
+            <div class="h-px bg-white/[0.05] w-full"></div>
+
+            <!-- Reference Section 2: GitHub PR Context -->
+            <div class="space-y-3">
+                <div class="flex items-center justify-between text-xs font-mono text-cream/40">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-purple-400/80"></span>
+                        <span class="text-cream/80 font-medium">github.com</span>
+                        <span class="opacity-30">//</span>
+                        <span>aether-wm#142</span>
+                    </div>
+                    <span class="text-emerald-400/80 text-[11px] font-sans">[✓] 4 checks passed</span>
+                </div>
+
+                <h3 class="text-[15px] font-medium text-cream/90">Fix buffer scanout latency on multi-head displays</h3>
+
+                <div class="flex items-start gap-3 bg-white/[0.02] border border-white/[0.04] rounded-xl p-3.5">
+                    <div class="w-7 h-7 rounded-full bg-zinc-800 border border-cream/10 overflow-hidden flex-shrink-0">
+                        <img src="https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=100&q=80" alt="Reviewer" class="w-full h-full object-cover">
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex justify-between items-center mb-1 text-[11px]">
+                            <span class="text-cream/80 font-medium font-mono">jbarnes_dev</span>
+                            <span class="text-cream/30">2h ago</span>
+                        </div>
+                        <p class="text-xs text-cream/65 leading-relaxed font-sans">
+                            Verified EGL context locking, but page flip drops persist when CRTC-4 initializes under heavy load. Check if the vblank event is firing prematurely before committing the frame.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. MARGIN ANNOTATION: Copilot Rail (Unboxed, Pure Typography) -->
+        <div class="w-[20vw] max-w-[340px] flex flex-col gap-5 pt-1 font-sans flex-shrink-0">
+            
+            <div class="flex items-center justify-between pb-3 border-b border-white/[0.06] text-xs font-mono text-cream/40 uppercase tracking-wider">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-blue-500/80"></span>
+                    <span>Copilot Analysis</span>
+                </div>
+                <!-- Inactive Pin Glyph -->
+                <button title="Pin Rail" class="opacity-25 hover:opacity-80 text-cream transition-opacity p-1 cursor-pointer">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14 4v5c0 1.12.37 2.16 1 3H9c.65-.86 1-1.9 1-3V4h4m3-2H7a1 1 0 0 0 0 2h1v5c0 .64-.23 1.25-.62 1.73A3.003 3.003 0 0 0 6 13a1 1 0 0 0 1 1h4v7a1 1 0 0 0 2 0v-7h4a1 1 0 0 0 1-1c0-.85-.36-1.62-.94-2.16A2.99 2.99 0 0 0 16 9V4h1a1 1 0 0 0 0-2z"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="space-y-3">
+                <div class="text-[11px] font-mono text-cream/40 uppercase tracking-wider">Hypotheses for EGL_BAD_ALLOC</div>
+                
+                <ul class="space-y-3 text-xs text-cream/70 leading-relaxed list-none pl-0">
+                    <li class="flex items-start gap-2">
+                        <span class="text-amber-400/80 font-mono mt-0.5">•</span>
+                        <span><strong class="text-cream/90 font-normal">VBLANK timing mismatch</strong> across heads causing atomic commit stall.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span class="text-amber-400/80 font-mono mt-0.5">•</span>
+                        <span><strong class="text-cream/90 font-normal">EGL buffer starvation:</strong> buffers not releasing prior to next scanout phase.</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="pt-2">
+                <button class="w-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] text-cream/90 text-xs font-medium py-2.5 px-3 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 group">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 group-hover:animate-pulse"></span>
+                    <span>Apply Timing Patch</span>
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Intent Pill (Reflecting Executed State) -->
+    <div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-plate/90 backdrop-blur-xl border border-cream/20 rounded-full pl-6 pr-8 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.6)] flex items-center justify-center cursor-pointer transition-all hover:bg-plate group min-w-[420px] z-50">
+        <div class="flex items-center w-full justify-between font-mono text-xs">
+            <div class="flex items-center gap-3">
+                <span class="text-emerald-400 font-bold">></span>
+                <span class="text-cream font-medium">debug compositor scanout latency</span>
+            </div>
+            <span class="text-cream/40 text-[10px] uppercase tracking-wider ml-6 bg-white/[0.05] px-2 py-0.5 rounded">Assembly</span>
+        </div>
+    </div>
+
+</body>
+</html>

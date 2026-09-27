@@ -12,22 +12,7 @@
 - If a task introduces a file, deprecates a module, or shifts an IPC/signal boundary, update `docs/SYSTEM_MAP.md` as the final step.
 - Zero zombie code: delete replaced or superseded stubs immediately.
 
-## 2. Dynamic Geometry & Layout
-- Zero hardcoded pixel fallbacks or magic tier dimensions in QML. Query layout coordinates dynamically.
-- Single-Stroke Rule: Slate cards must have exactly one root visual element with `border.width > 0`.
-
-## 3. Typographic Identity & AI Voice
-- AI dialogue across all surfaces binds strictly to `Theme.fontAiVoice` (`Cabinet Grotesk` Regular static cut).
-- Dialogue color must use `Theme.aiVoiceGlacial` (`#BAE6FD` / Sky-200) at 1.45 line height.
-- All prompts and living context assemble exclusively via `AetherContextBuilder`.
-
-## 4. Concurrency & Telemetry
-- GUI thread never invokes background `QThread` workers directly—use PyQt signals/slots.
-- Telemetry ring buffers must use fixed-capacity `collections.deque(maxlen=120)` with numeric scalars only.
-- Pass raw engine states verbatim (`LATENT`, `WORKING`, `DISTILLING`, `OFFLINE`). Never swallow into boolean gates.
-- Database connections must enforce WAL mode, incremental auto-vacuum, and `PRAGMA foreign_keys = ON;`.
-
-## 5. Test Diet (Rule 10)
+## 2. Test Diet (Rule 10)
 - Do NOT create new test files or cases for refactors, visual polish, or tweaks.
 - Zero wall-clock sleeps: never use `time.sleep()` or hardcoded `QTest.qWait(ms)`. Use deterministic condition polling (`qtbot.waitUntil`).
 - Authorized test runs only. Report exact files modified, test assertions verified, and manual visual verification steps.

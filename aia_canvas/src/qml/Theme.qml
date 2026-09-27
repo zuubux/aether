@@ -99,18 +99,6 @@ QtObject {
     readonly property color ansiCyan: "#06B6D4"
     readonly property color ansiGray: "#71717A"
 
-    // Tendril Colors
-    readonly property color tendrilExplicit: "#00F2FE"
-    readonly property color tendrilSemantic: "#A855F7"
-    readonly property color tendrilTemporal: "#F59E0B"
-    readonly property color tendrilWikilink: "#76FF03"
-    readonly property color tendrilFallback: "#78909C"
-
-    // Tendril & Filament Geometry
-    readonly property real tendrilStrokeExplicit: 2.2
-    readonly property real tendrilStrokeSemantic: 1.8
-    readonly property real tendrilStrokeHover: 2.5
-    readonly property real tendrilStrokeSibling: 1.0
 
     // Tier Dimensions
     readonly property real tier4Width: 10

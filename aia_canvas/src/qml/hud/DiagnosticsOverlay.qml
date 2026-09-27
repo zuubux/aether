@@ -78,46 +78,7 @@ Rectangle {
             Text { text: canvasBridge ? canvasBridge.activeNodeCount : 0; color: Theme.accentFocus; font.family: Theme.fontCode; font.pixelSize: 11; font.bold: true }
 
             Text { text: "Edges (Render):"; color: Theme.textMuted; font.family: Theme.fontCode; font.pixelSize: 11; width: 110 }
-            Text { text: canvasBridge ? canvasBridge.activeEdgeCount : 0; color: Theme.tendrilTemporal; font.family: Theme.fontCode; font.pixelSize: 11; font.bold: true }
-
-            Text { text: "Physics Step:"; color: Theme.textMuted; font.family: Theme.fontCode; font.pixelSize: 11; width: 110 }
-            
-            Row {
-                spacing: 6
-
-                Text {
-                    id: physicsValueText
-                    property real stepMs: canvasBridge ? canvasBridge.physicsStepMs : 0.0
-                    text: stepMs.toFixed(2) + " ms"
-                    color: stepMs > 8.0 ? "#ef4444" : (stepMs > 6.5 ? "#f59e0b" : Theme.accentSuccess)
-                    font.family: Theme.fontCode
-                    font.pixelSize: 11
-                    font.bold: true
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-
-                Rectangle {
-                    property real stepMs: canvasBridge ? canvasBridge.physicsStepMs : 0.0
-                    width: statusPillText.implicitWidth + 8
-                    height: 16
-                    radius: 3
-                    color: stepMs > 8.0 ? "#451a1a" : (stepMs > 6.5 ? "#453010" : "#143820")
-                    border.color: stepMs > 8.0 ? "#ef4444" : (stepMs > 6.5 ? "#f59e0b" : "#22c55e")
-                    border.width: 1
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    Text {
-                        id: statusPillText
-                        property real stepMs: canvasBridge ? canvasBridge.physicsStepMs : 0.0
-                        anchors.centerIn: parent
-                        text: stepMs > 8.0 ? "CRIT" : (stepMs > 6.5 ? "WARN" : "GOOD")
-                        color: stepMs > 8.0 ? "#ef4444" : (stepMs > 6.5 ? "#f59e0b" : "#22c55e")
-                        font.family: Theme.fontCode
-                        font.pixelSize: 9
-                        font.bold: true
-                    }
-                }
-            }
+            Text { text: canvasBridge ? canvasBridge.activeEdgeCount : 0; color: Theme.accentFocus; font.family: Theme.fontCode; font.pixelSize: 11; font.bold: true }
         }
 
         Rectangle { width: parent.width; height: 1; color: Theme.borderSubtle }
@@ -157,40 +118,3 @@ Rectangle {
         Rectangle { width: parent.width; height: 1; color: Theme.borderSubtle }
 
         Text {
-            text: "TENDRIL COLOR KEY"
-            color: Theme.textMuted
-            font.family: Theme.fontCode
-            font.pixelSize: 10
-            font.bold: true
-        }
-
-        Column {
-            spacing: 5
-            width: parent.width
-
-            Row {
-                spacing: 8
-                Rectangle { width: 14; height: 3; radius: 1.5; color: Theme.tendrilExplicit; anchors.verticalCenter: parent.verticalCenter }
-                Text { text: "Explicit ([[WikiLinks]])"; color: Theme.textSecondary; font.family: Theme.fontCode; font.pixelSize: 10 }
-            }
-
-            Row {
-                spacing: 8
-                Rectangle { width: 14; height: 3; radius: 1.5; color: Theme.tendrilSemantic; anchors.verticalCenter: parent.verticalCenter }
-                Text { text: "Semantic (Embeddings)"; color: Theme.textSecondary; font.family: Theme.fontCode; font.pixelSize: 10 }
-            }
-
-            Row {
-                spacing: 8
-                Rectangle { width: 14; height: 3; radius: 1.5; color: Theme.tendrilTemporal; anchors.verticalCenter: parent.verticalCenter }
-                Text { text: "Temporal (Co-edit / Session)"; color: Theme.textSecondary; font.family: Theme.fontCode; font.pixelSize: 10 }
-            }
-
-            Row {
-                spacing: 8
-                Rectangle { width: 14; height: 3; radius: 1.5; color: "#67e8f9"; anchors.verticalCenter: parent.verticalCenter }
-                Text { text: "Hover / Active Bloom"; color: Theme.textSecondary; font.family: Theme.fontCode; font.pixelSize: 10 }
-            }
-        }
-    }
-}

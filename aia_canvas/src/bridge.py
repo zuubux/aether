@@ -11,9 +11,7 @@ from typing import Any
 
 from core.telemetry import TelemetrySink
 from ipc.client import WeaverIPCClient
-from layout.physics_bridge import PhysicsBridgeLayout
 from models import Edge, Node
-from physics.engine import PhysicsEngine
 from PyQt6.QtCore import QObject, QTimer, pyqtProperty, pyqtSignal, pyqtSlot
 from store import GraphStore
 from telemetry import TelemetryCollector
@@ -31,7 +29,6 @@ class CanvasBridge(QObject):
     workbenchDimensionsChanged = pyqtSignal()
     viewportDimensionsChanged = pyqtSignal()
     apertureChanged = pyqtSignal(float)
-    clusterHalosChanged = pyqtSignal()
     telemetryChanged = pyqtSignal()
     searchResultsReceived = pyqtSignal(list)
     omniResultsReceived = pyqtSignal(list)
@@ -64,13 +61,10 @@ class CanvasBridge(QObject):
         self._viewport_width: float = 2560.0
         self._viewport_height: float = 1440.0
         self.store = GraphStore()
-        self.physics_engine = PhysicsEngine()
-        self.spatial_layout_bridge = PhysicsBridgeLayout()
 
         from controllers.canvas_controller import CanvasController
         from controllers.conversation_controller import ConversationController
         from controllers.node_controller import NodeController
-        from controllers.physics_controller import PhysicsController
         from controllers.search_controller import SearchController
         try:
             from .controllers.working_set_controller import WorkingSetController
@@ -84,12 +78,8 @@ class CanvasBridge(QObject):
         self.search_ctrl = SearchController(self)
         self.conversation_ctrl = ConversationController(self)
         self.node_ctrl = NodeController(self)
-        self.physics_ctrl = PhysicsController(self)
         self.working_set_ctrl = WorkingSetController(self)
         self.completion_engine = CompletionEngine(self)
-
-        # Start physics controller worker simulation loop during initialization
-        self.physics_ctrl.start()
 
         # Connect controller child signals to the corresponding bridge signals
         self.canvas_ctrl.workbenchDimensionsChanged.connect(self.workbenchDimensionsChanged)
@@ -111,18 +101,10 @@ class CanvasBridge(QObject):
         self.node_ctrl.csvDataReady.connect(self.csvDataReady)
         self.node_ctrl.imageReady.connect(self.imageReady)
         self.node_ctrl.mediaError.connect(self.mediaError)
-        
-        self.physics_ctrl.nodesChanged.connect(self.nodesChanged)
-        self.physics_ctrl.edgesChanged.connect(self.edgesChanged)
-        self.physics_ctrl.clusterHalosChanged.connect(self.clusterHalosChanged)
-        self.physics_ctrl.telemetryChanged.connect(self.telemetryChanged)
-        self.physics_ctrl.connectionStatusChanged.connect(self.connectionStatusChanged)
         self.conversation_ctrl.engineStateChanged.connect(self.engineStateChanged)
         self.conversation_ctrl.providerMetadataChanged.connect(self.providerMetadataChanged)
         self.working_set_ctrl.activeSlatesChanged.connect(self.activeSlatesChanged)
         self.working_set_ctrl.focalSlateChanged.connect(self.focalSlateChanged)
-        self.working_set_ctrl.activeSlatesChanged.connect(self._sync_working_set_to_physics)
-        self.working_set_ctrl.focalSlateChanged.connect(self._sync_working_set_to_physics)
 
         self._SUPPORTED_IMAGE_EXTS = {
             "bmp", "gif", "ico", "jpeg", "jpg", "png", "pbm", "pgm", "ppm", "xbm", "xpm",
@@ -146,9 +128,6 @@ class CanvasBridge(QObject):
         self._workbench_height: float = 1000.0
         self._focal_card_width: float = 880.0
         self._focal_card_height: float = 600.0
-
-        self.physics_engine.set_focal_card_dimensions(self._workbench_width, self._workbench_height)
-        self.physics_engine.set_aperture(self._aperture)
 
         self._cluster_halos: list = []
         self._last_frametime_ms: float = 0.0
@@ -276,43 +255,8 @@ class CanvasBridge(QObject):
     def canvasIsInteracting(self, val: bool):
         self.canvas_is_interacting = val
 
-    def _sync_working_set_to_physics(self, *args):
-        if hasattr(self, "physics_ctrl") and self.physics_ctrl and hasattr(self, "working_set_ctrl") and self.working_set_ctrl:
-            recent = getattr(self.working_set_ctrl, "recent_node_ids", [])
-            self.physics_ctrl.set_recent_nodes(recent)
-
-    def update_spatial_budget(self):
-        """
-        Evaluates spatial budget zoning and target positions across all nodes in GraphStore.
-        Spatial budgeting runs continuously even during hover states to avoid update backlogs.
-        Glacial outward drift is locked while canvas interaction or node dragging is active.
-        """
-        nodes = self.store.get_all_nodes()
-        if not nodes:
-            return
-        pinned_id = getattr(self, "_selected_node_id", 0)
-        recent = (
-            getattr(self.working_set_ctrl, "recent_node_ids", [])
-            if hasattr(self, "working_set_ctrl") and self.working_set_ctrl
-            else []
-        )
-        if hasattr(self, "physics_ctrl") and self.physics_ctrl:
-            self.physics_ctrl.set_recent_nodes(recent)
-        is_interacting = (
-            getattr(self, "_canvas_is_interacting", False) or
-            getattr(self.node_ctrl, "is_dragging", False)
-        )
-        self.spatial_layout_bridge.sync_nodes(
-            nodes,
-            pinned_node_id=pinned_id,
-            recent_node_ids=recent,
-            is_interacting=is_interacting,
-        )
-
-    @pyqtSlot(object)
     def _on_positions_updated(self, snapshot: Any = None):
         """
-        Consumes position snapshots from PhysicsWorker to update main thread node models smoothly.
         """
         if snapshot is None:
             return
@@ -332,30 +276,11 @@ class CanvasBridge(QObject):
                     if tier_val is not None and store_node is not node:
                         store_node.tier = tier_val
 
-        self.update_spatial_budget()
 
         nodes = self.store.get_all_nodes()
         active_edges = list(self._structural_edges)
-        self._cluster_halos = self.physics_engine.get_cluster_halos(
-            nodes,
-            active_edges,
-            self._selected_node_id,
-            first_degree_set=self._cached_first_degree,
-            second_degree_set=self._cached_second_degree,
-        )
-        self.clusterHalosChanged.emit()
-        self.nodesChanged.emit()
-
-    def _wake_physics(self):
-        nodes = self.store.get_all_nodes()
-        edges = list(self._structural_edges)
-        if hasattr(self, "physics_ctrl") and self.physics_ctrl:
-            self.physics_ctrl.sync_graph_data(nodes, edges)
-            self.physics_ctrl.start()
-
     def _upsert_edge(self, new_edge: Edge):
         """Insert or update edge with balanced multi-tier ambient allocation."""
-        self._wake_physics()
         matched = False
         for idx, e in enumerate(self._structural_edges):
             if (e.sourceId == new_edge.sourceId and e.targetId == new_edge.targetId and e.edgeType == new_edge.edgeType) or \
@@ -391,14 +316,11 @@ class CanvasBridge(QObject):
 
     @pyqtProperty(list, notify=nodesChanged)
     def nodes(self) -> list[Node]:
-        """list[Node]: List of active graph nodes in physics space."""
-        return self.physics_ctrl.nodes
+        """list[Node]: List of active graph nodes."""
 
     @pyqtProperty(list, notify=edgesChanged)
     def edges(self) -> list[Edge]:
         """list[Edge]: List of active renderable edges."""
-        if hasattr(self.physics_ctrl, "edges"):
-            return self.physics_ctrl.edges
         return getattr(self, "_ambient_edges", [])
 
     @pyqtProperty(list, notify=ambientEdgesChanged)
@@ -462,10 +384,6 @@ class CanvasBridge(QObject):
         return getattr(self, "canvas_ctrl", None)
 
     @pyqtProperty(QObject, constant=True)
-    def physics(self) -> QObject:
-        """QObject: PhysicsController instance route for QML."""
-        return getattr(self, "physics_ctrl", None)
-
     @pyqtProperty(QObject, constant=True)
     def workingSetCtrl(self) -> QObject:
         """QObject: WorkingSetController instance route for QML."""
@@ -512,7 +430,6 @@ class CanvasBridge(QObject):
     @pyqtProperty(bool, notify=connectionStatusChanged)
     def isConnected(self) -> bool:
         """bool: Weaver IPC connection state status."""
-        return self.physics_ctrl.isConnected
 
     @pyqtProperty(float, notify=viewportDimensionsChanged)
     def viewportWidth(self) -> float:
@@ -542,9 +459,6 @@ class CanvasBridge(QObject):
         dim_changed = (abs(getattr(self, "_viewport_width", 0.0) - w) > 1e-4 or abs(getattr(self, "_viewport_height", 0.0) - h) > 1e-4)
         self._viewport_width = w
         self._viewport_height = h
-        if hasattr(self, "physics_ctrl") and self.physics_ctrl:
-            self.physics_ctrl.set_viewport_dimensions(w, h)
-            self.physics_ctrl.set_center(w * 0.5, h * 0.5)
         if hasattr(self, "canvas_ctrl") and self.canvas_ctrl:
             self.canvas_ctrl.update_viewport_dimensions(w, h)
         if dim_changed:
@@ -578,19 +492,6 @@ class CanvasBridge(QObject):
     def focalCardHeight(self) -> float:
         return getattr(self, "_focal_card_height", 600.0)
 
-    @pyqtProperty(list, notify=clusterHalosChanged)
-    def clusterHalos(self) -> list:
-        return self.physics_ctrl.clusterHalos
-
-    @pyqtProperty(float, notify=telemetryChanged)
-    def physicsStepMs(self) -> float:
-        return TelemetrySink.instance().physics_step_ms
-
-    @pyqtProperty(float, notify=telemetryChanged)
-    def physicsFrametime(self) -> float:
-        return TelemetrySink.instance().physics_step_ms or getattr(self, "_last_frametime_ms", 0.0)
-
-    @pyqtProperty(float, notify=telemetryChanged)
     def renderFps(self) -> float:
         return TelemetrySink.instance().render_fps
 
@@ -607,17 +508,7 @@ class CanvasBridge(QObject):
         return TelemetrySink.instance().llm_ttft_ms
 
     @pyqtProperty(int, notify=telemetryChanged)
-    def activeNodeCount(self) -> int:
-        return self.physics_ctrl.activeNodeCount
-
     @pyqtProperty(int, notify=telemetryChanged)
-    def activeEdgeCount(self) -> int:
-        if hasattr(self.physics_ctrl, "activeEdgeCount"):
-            return self.physics_ctrl.activeEdgeCount
-        return len(getattr(self, "_ambient_edges", []))
-
-    # --- Slots Invoked from QML ---
-    
     @pyqtSlot()
     def notify_ui_ready(self):
         import time
@@ -741,13 +632,11 @@ class CanvasBridge(QObject):
                 self._initial_sync_active = False
                 self.edgesChanged.emit()
                 self.ipc.nodeUpdated.connect(self._on_node_updated)
-                self._wake_physics()
                 import time
                 t1 = time.perf_counter()
                 qml_ready_ms = self._qml_ready_time
-                physics_init_ms = (t1-t0) * 1000.0 * 0.15 # Approx setup cost
                 print(f"[T+{(t1 - self._t0)*1000:.1f}ms] All batches completed")
-                print(f"[STARTUP PERF] DB Load: {db_load_ms:.1f}ms | Embeddings/Cache: {embed_cache_ms:.1f}ms | Physics Init: {physics_init_ms:.1f}ms | QML Ready: {qml_ready_ms:.1f}ms")
+                print(f"[STARTUP PERF] DB Load: {db_load_ms:.1f}ms | Embeddings/Cache: {embed_cache_ms:.1f}ms | QML Ready: {qml_ready_ms:.1f}ms")
                 return
 
             end_idx = min(current_idx + batch_size, len(nodes_to_load))
@@ -832,7 +721,6 @@ class CanvasBridge(QObject):
             self.edgesChanged.emit()
 
     def _on_node_updated(self, data: dict):
-        self._wake_physics()
         raw_id = data.get("node_id") if data.get("node_id") is not None else data.get("id")
         if raw_id is None:
             return
@@ -852,14 +740,14 @@ class CanvasBridge(QObject):
         if not node:
             angle = node_id * 2.399963
             # Limit the radius to within the current viewport bounds
-            max_r_x = self.physics_engine.viewport_w * 0.4
-            max_r_y = self.physics_engine.viewport_h * 0.4
+            max_r_x = 800
+            max_r_y = 400
             # Keep within the screen boundaries safely
             base_r = min(max_r_x, max_r_y)
             radius = min(350.0 + (math.sqrt(node_id) * 85.0), max(50.0, base_r - 150.0))
             
-            spawn_x = self.physics_engine.center_x + math.cos(angle) * radius
-            spawn_y = self.physics_engine.center_y + math.sin(angle) * radius
+            spawn_x = 1280 + math.cos(angle) * radius
+            spawn_y = 720 + math.sin(angle) * radius
             
             new_node = Node(
                 id=node_id, 
@@ -876,30 +764,7 @@ class CanvasBridge(QObject):
             new_node.vx = math.cos(angle) * 40.0
             new_node.vy = math.sin(angle) * 40.0
             
-            if hasattr(self, "physics_engine") and self.physics_engine:
-                self.physics_engine.initialize_node_position(new_node)
-
-            self.store.upsert_node(new_node)
-            self.nodesChanged.emit()
-        else:
-            if file_path and node.filePath != file_path:
-                node.filePath = file_path
-            if "archetype" in data and data["archetype"] and node._archetype != data["archetype"]:
-                node._archetype = data["archetype"]
-                node.archetypeChanged.emit()
-            if "snippet" in data and data["snippet"] and node._snippet != data["snippet"]:
-                node._snippet = data["snippet"]
-                node.snippetChanged.emit()
-            if "size_bytes" in data and data["size_bytes"] is not None:
-                node._size_bytes = data["size_bytes"]
-            if thumbnail_url and node._thumbnail_url != thumbnail_url:
-                node._thumbnail_url = thumbnail_url
-                node.thumbnailUrlChanged.emit()
-
-        self._recalculate_focal_weights(self._selected_node_id)
-
     def _on_node_deleted(self, data: dict):
-        self._wake_physics()
         raw_id = data.get("node_id") if data.get("node_id") is not None else data.get("id")
         if raw_id is not None:
             node_id = int(raw_id)

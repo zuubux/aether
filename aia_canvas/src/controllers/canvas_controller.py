@@ -30,9 +30,6 @@ class CanvasController(BaseController):
         self._workbench_height: float = 1000.0
 
     @pyqtProperty(float, notify=telemetryChanged)
-    def physicsStepMs(self) -> float:
-        return TelemetrySink.instance().physics_step_ms
-
     @pyqtProperty(float, notify=telemetryChanged)
     def renderFps(self) -> float:
         return TelemetrySink.instance().render_fps
@@ -62,8 +59,7 @@ class CanvasController(BaseController):
     @pyqtProperty(float, notify=workbenchDimensionsChanged)
     def wingWidth(self) -> float:
         """float: Lateral wing margin width computed from viewport dimensions."""
-        if hasattr(self.bridge, 'physics') and self.bridge.physics:
-            return (self.bridge.physics_engine.viewport_w - self._workbench_width) / 2.0
+        return (self.bridge._viewport_width - self._workbench_width) / 2.0
         return 0.0
 
     @pyqtProperty(float, notify=apertureChanged)
@@ -73,14 +69,12 @@ class CanvasController(BaseController):
 
     @pyqtSlot(float, float)
     def set_workbench_dimensions(self, width: float, height: float) -> None:
-        """Update central workbench card dimensions and notify physics layout.
+        """Update central workbench card dimensions.
 
         Args:
             width: Target workbench width.
             height: Target workbench height.
         """
-        if hasattr(self.bridge, '_wake_physics'):
-            self.bridge._wake_physics()
 
         clamped_w = max(480.0, min(2600.0, width))
         clamped_h = max(320.0, min(1600.0, height))
@@ -88,8 +82,6 @@ class CanvasController(BaseController):
         if abs(self._workbench_width - clamped_w) > 1.0 or abs(self._workbench_height - clamped_h) > 1.0:
             self._workbench_width = clamped_w
             self._workbench_height = clamped_h
-            if hasattr(self.bridge, 'physics') and self.bridge.physics:
-                self.bridge.physics_engine.set_focal_card_dimensions(clamped_w, clamped_h)
             self.workbenchDimensionsChanged.emit()
 
     @pyqtSlot(float, float)
@@ -102,25 +94,11 @@ class CanvasController(BaseController):
         """
         w = float(width)
         h = float(height)
-        if hasattr(self.bridge, '_wake_physics'):
-            self.bridge._wake_physics()
-        if hasattr(self.bridge, 'physics_engine') and self.bridge.physics_engine:
-            self.bridge.physics_engine.set_viewport_dimensions(w, h)
-        elif hasattr(self.bridge, 'physics') and self.bridge.physics:
-            if hasattr(self.bridge.physics, 'set_viewport_dimensions'):
-                self.bridge.physics.set_viewport_dimensions(w, h)
-        if hasattr(self.bridge, 'spatial_layout_bridge') and self.bridge.spatial_layout_bridge:
-            self.bridge.spatial_layout_bridge.set_viewport_dimensions(w, h)
-            if hasattr(self.bridge, 'update_spatial_budget'):
-                self.bridge.update_spatial_budget()
-
         # Synchronize dynamic viewport dimensions and dispatch center point
         if hasattr(self.bridge, '_viewport_width') and hasattr(self.bridge, '_viewport_height'):
             dim_changed = (abs(self.bridge._viewport_width - w) > 1e-4 or abs(self.bridge._viewport_height - h) > 1e-4)
             self.bridge._viewport_width = w
             self.bridge._viewport_height = h
-            if hasattr(self.bridge, 'physics_ctrl') and self.bridge.physics_ctrl:
-                self.bridge.physics_ctrl.set_center(w * 0.5, h * 0.5)
             if dim_changed and hasattr(self.bridge, 'viewportDimensionsChanged'):
                 self.bridge.viewportDimensionsChanged.emit()
 
@@ -136,11 +114,7 @@ class CanvasController(BaseController):
         new_val = max(0.20, min(2.20, self._aperture + delta))
         if abs(new_val - self._aperture) > 0.005:
             self._aperture = new_val
-            if hasattr(self.bridge, 'physics') and self.bridge.physics:
-                self.bridge.physics_engine.set_aperture(new_val)
             self.apertureChanged.emit(new_val)
-            if hasattr(self.bridge, '_wake_physics'):
-                self.bridge._wake_physics()
 
     @pyqtSlot(float)
     def set_aperture(self, value: float) -> None:
@@ -152,8 +126,4 @@ class CanvasController(BaseController):
         new_val = max(0.20, min(2.20, value))
         if abs(new_val - self._aperture) > 0.005:
             self._aperture = new_val
-            if hasattr(self.bridge, 'physics') and self.bridge.physics:
-                self.bridge.physics_engine.set_aperture(new_val)
             self.apertureChanged.emit(new_val)
-            if hasattr(self.bridge, '_wake_physics'):
-                self.bridge._wake_physics()

@@ -354,53 +354,6 @@ Window {
                 return nodeRegistry[id] || null
             }
             
-            // 1. Atmospheric Cluster Halos (Background Layer)
-            Repeater {
-                model: canvasBridge ? canvasBridge.clusterHalos : []
-
-                ClusterHalo {
-                    required property var modelData
-
-                    centerX: modelData.centerX
-                    centerY: modelData.centerY
-                    
-                    // Replaced haloRadius with independent width/height mapping
-                    haloWidth: modelData.width
-                    haloHeight: modelData.height
-                    
-                    haloColor: modelData.color
-                    isFocalCluster: modelData.isFocalCluster
-                    nodeCount: modelData.nodeCount
-                    currentAperture: canvasBridge ? canvasBridge.aperture : 1.0
-                    densityWeight: modelData.densityWeight !== undefined ? modelData.densityWeight : 1.0
-                }
-            }
-
-            // 2. Dynamic Synaptic Tendrils (Midground Layer)
-            Item {
-                id: tendrilLayer
-                anchors.fill: parent
-                z: 10
-
-                Repeater {
-                    // In focal mode, ONLY feed the deduplicated focalEdges list
-                    model: (canvasBridge && canvasBridge.selectedNodeId > 0) ? canvasBridge.focalEdges : (canvasBridge ? canvasBridge.ambientEdges : [])
-
-                    Tendril {
-                        required property var modelData
-
-                        sourceId: modelData.sourceId
-                        targetId: modelData.targetId
-                        edgeType: modelData.edgeType
-                        weight: modelData.weight
-                        currentAperture: canvasBridge ? canvasBridge.aperture : 1.0
-                        selectedNodeId: canvasBridge ? canvasBridge.selectedNodeId : 0
-                        hoveredNodeId: canvasBridge ? canvasBridge.hoveredNodeId : 0
-                        sourceNode: canvasViewport.getNode(modelData.sourceId)
-                        targetNode: canvasViewport.getNode(modelData.targetId)
-                    }
-                }
-            }
 
             // 3. Cards & Constellations (Foreground Layer)
             Item {

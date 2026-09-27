@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aether - Terminal Max Height (72vh Ceiling)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        canvas: '#161413',
+                        cream: '#E6E4DF',
+                        plate: '#1C1918',
+                        borderCream: 'rgba(230, 228, 223, 0.08)',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        serif: ['Lora', 'serif'],
+                        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #161413; color: #E6E4DF; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        /* Subtle edge feathering when content scrolls */
+        .terminal-mask {
+            mask-image: linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 32px, black calc(100% - 32px), transparent 100%);
+        }
+    </style>
+</head>
+<body class="h-screen w-full overflow-hidden font-sans antialiased relative">
+
+    <!-- The Horizon: Ambient Anchors -->
+    <header class="fixed top-6 left-0 w-full px-12 flex justify-between items-center z-50 pointer-events-auto">
+        <div class="text-cream opacity-25 hover:opacity-80 transition-opacity duration-500 font-sans font-light tracking-wide text-[13px] cursor-default">
+            64°F · South Jordan · Fair
+        </div>
+        <div class="text-cream opacity-25 hover:opacity-80 transition-opacity duration-500 flex items-center gap-3 text-[13px] cursor-default">
+            <span class="font-sans font-light">Sun, Sep 27 · 10:35 AM</span>
+            <span class="opacity-30 font-mono text-[11px]">//</span>
+            <span class="font-mono text-[11px] tracking-[0.15em] uppercase text-cream/70">NIC · WORKSPACE</span>
+        </div>
+    </header>
+
+    <!-- Semantic Chips (Right Margin Rail with Left-Aligned Notification Jewel) -->
+    <div class="fixed top-[32%] right-6 flex flex-col gap-3 z-40 items-end">
+        <div class="bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-full px-4 py-2 flex items-center gap-3 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05] hover:border-white/[0.12]">
+            <span class="opacity-70 text-[14px]">📝</span>
+            <span class="text-cream opacity-50 text-xs font-medium tracking-wide">Architecture Spec</span>
+        </div>
+        
+        <div class="bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-full px-4 py-2 flex items-center gap-3 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05] hover:border-white/[0.12]">
+            <span class="opacity-70 text-[14px]">🚗</span>
+            <span class="text-cream opacity-50 text-xs font-medium tracking-wide">'95 BMW E34</span>
+        </div>
+
+        <!-- Left-Aligned Amber Notification Jewel -->
+        <div class="relative bg-white/[0.02] backdrop-blur-md border border-amber-500/30 ring-1 ring-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.1)] rounded-full pl-3.5 pr-4 py-2 flex items-center gap-2.5 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05]">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_6px_rgba(251,191,36,0.9)]"></span>
+            <span class="opacity-90 text-[14px]">💬</span>
+            <span class="text-amber-100/90 text-xs font-medium tracking-wide">Teams: #infra</span>
+        </div>
+
+        <div class="bg-white/[0.02] backdrop-blur-md border border-white/[0.06] rounded-full px-4 py-2 flex items-center gap-3 cursor-pointer transition-all duration-300 hover:-translate-x-1.5 hover:bg-white/[0.05] hover:border-white/[0.12]">
+            <span class="opacity-70 text-[14px]">⚡</span>
+            <span class="text-cream opacity-50 text-xs font-mono tracking-wide">build_api.log</span>
+        </div>
+    </div>
+
+    <!-- The Stage & Wings Canvas Layout -->
+    <main class="w-full h-full flex justify-center items-center gap-12 px-12 relative">
+
+        <!-- LEFT WING: Yielded Media & Music (Dims and rests) -->
+        <div class="w-[280px] flex flex-col gap-6 opacity-25 filter grayscale hover:opacity-60 hover:grayscale-0 transition-all duration-500 cursor-pointer pointer-events-auto flex-shrink-0">
+            <div class="w-full aspect-video rounded-xl border border-borderCream overflow-hidden bg-neutral-900 shadow-md">
+                <img src="https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=800&q=80" alt="Video Stream" class="object-cover w-full h-full opacity-60">
+            </div>
+            <div class="w-full bg-plate/60 rounded-lg border border-borderCream p-3 flex items-center gap-3">
+                <img src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&w=100&q=80" alt="Album Art" class="w-10 h-10 rounded object-cover opacity-70">
+                <div class="flex-1 truncate">
+                    <div class="text-cream text-xs font-medium truncate">Nightcall</div>
+                    <div class="text-cream/40 text-[11px] font-sans truncate">Kavinsky</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- THE PRIMARY STAGE: Viewport-Relative Clamped Width & Max-Height (72vh Ceiling) -->
+        <section class="w-[58vw] max-w-[72rem] min-w-[640px] h-[72vh] bg-plate rounded-2xl border border-cream/15 shadow-[0_30px_90px_rgba(0,0,0,0.75)] flex flex-col overflow-hidden z-20 transition-all duration-500">
+            
+            <!-- Terminal Plate Crown / Minimal HUD -->
+            <div class="px-6 py-3.5 border-b border-white/[0.06] flex justify-between items-center bg-white/[0.01] flex-shrink-0">
+                <div class="flex items-center gap-3 text-xs font-mono text-cream/50">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400/80 shadow-[0_0_8px_rgba(52,211,153,0.6)]"></span>
+                    <span class="text-cream/90 font-medium">pty/3</span>
+                    <span class="opacity-30">//</span>
+                    <span>zsh · 5.9</span>
+                    <span class="opacity-30">//</span>
+                    <span class="text-cream/40">~/src/aether</span>
+                </div>
+                <div class="flex items-center gap-4 text-[11px] font-mono text-cream/40">
+                    <span class="text-emerald-400/80">72vh ceiling</span>
+                    <span class="opacity-30">//</span>
+                    <span>UTF-8</span>
+                    <span class="px-2 py-0.5 rounded bg-white/[0.04] text-cream/60">ESC to yield</span>
+                </div>
+            </div>
+
+            <!-- Terminal Buffer Viewport: Fills 100% of height, scrolls internally with masked edges -->
+            <div class="flex-1 p-8 font-mono text-[13.5px] leading-relaxed text-cream/80 space-y-2 overflow-y-auto no-scrollbar terminal-mask selection:bg-cream/20">
+                <div class="text-cream/40">Last login: Sun Sep 27 10:22:14 on ttys004</div>
+                <div class="text-emerald-400/80 pt-2">> aether-node --version</div>
+                <div class="text-cream/60">Aether Kernel Substrate v0.4.2-alpha (x86_64-linux-gnu)</div>
+                <div class="text-cream/60">Stage compositor: Wayland-EGL native // Latency: 1.4ms</div>
+                
+                <div class="text-emerald-400/80 pt-3">> uname -srm</div>
+                <div class="text-cream/60">Linux 6.10.9-200.fc40.x86_64 x86_64</div>
+
+                <div class="text-emerald-400/80 pt-3">> systemctl --user status aether-compositor</div>
+                <div class="text-cream/70">● aether-compositor.service - Aether Ambient Stage Engine</div>
+                <div class="text-cream/50 pl-4">Loaded: loaded (/usr/lib/systemd/user/aether-compositor.service; enabled)</div>
+                <div class="text-cream/50 pl-4">Active: <span class="text-emerald-400">active (running)</span> since Sun 2026-09-27 08:30:11 MDT; 2h 5min ago</div>
+                <div class="text-cream/50 pl-4">Main PID: 18422 (aether-node)</div>
+                <div class="text-cream/50 pl-4">Tasks: 18 (limit: 19182)</div>
+                <div class="text-cream/50 pl-4">Memory: 242.4M (limit: 8.0G)</div>
+
+                <div class="text-emerald-400/80 pt-3">> journalctl -u aether-compositor -n 25 --no-pager</div>
+                <div class="text-cream/50 text-[12.5px]">[08:30:11] compositor initialized on DRM render node /dev/dri/card1</div>
+                <div class="text-cream/50 text-[12.5px]">[08:30:11] EGL display extensions queried: EGL_EXT_platform_wayland ok</div>
+                <div class="text-cream/50 text-[12.5px]">[08:30:12] Substrate frame buffer allocated: 3840x2160 @ 120Hz HDR10</div>
+                <div class="text-cream/50 text-[12.5px]">[08:30:12] IPC socket opened: /run/user/1000/aether-intent.sock</div>
+                <div class="text-cream/50 text-[12.5px]">[08:30:14] Plate manager: temporal decay ticker registered (half-life = 1800s)</div>
+                <div class="text-cream/50 text-[12.5px]">[09:12:44] Ambient decay triggered: plate [copart_e34] shifted focus from active to stasis</div>
+                <div class="text-cream/50 text-[12.5px]">[09:30:00] Plate [copart_e34] phase collapse -> semantic chip emitted to right peripheral rail</div>
+                <div class="text-cream/50 text-[12.5px]">[10:02:19] Foreground intent received: "terminal" (priority = elevate_stage)</div>
+                <div class="text-cream/50 text-[12.5px]">[10:02:19] Kinematics: left_wing transform (-translate-x-4, grayscale, opacity 0.25)</div>
+                <div class="text-cream/50 text-[12.5px]">[10:02:19] Kinematics: right_wing transform (+translate-x-4, grayscale, opacity 0.25)</div>
+                <div class="text-cream/50 text-[12.5px]">[10:02:20] Stage surface [pty/3] expanded: w=58vw, ceiling=72vh</div>
+                <div class="text-cream/50 text-[12.5px]">[10:02:22] Internal buffer height reached ceiling boundary (max-h clamped)</div>
+                <div class="text-cream/50 text-[12.5px]">[10:02:22] Soft terminal-mask vertical gradients engaged</div>
+
+                <div class="pt-4 flex items-center gap-2">
+                    <span class="text-emerald-400/90 font-medium">nic@daybreak:~/src/aether$</span>
+                    <span class="w-2.5 h-5 bg-cream/90 inline-block animate-pulse align-middle"></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT WING: Yielded Search Plate & Telemetry (Dims and rests) -->
+        <div class="w-[280px] flex flex-col gap-6 opacity-35 filter grayscale hover:opacity-70 hover:grayscale-0 transition-all duration-500 cursor-pointer pointer-events-auto flex-shrink-0">
+            <div class="w-full bg-plate/70 rounded-xl border border-borderCream p-5 flex flex-col gap-3">
+                <div class="flex items-center gap-2 border-b border-borderCream/40 pb-2">
+                    <svg class="w-3.5 h-3.5 text-cream/40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <span class="text-cream/70 text-xs truncate">Wayland compositor</span>
+                </div>
+                <div class="text-[10px] font-mono text-cream/40 uppercase">freedesktop.org</div>
+                <div class="text-cream/80 text-xs font-serif leading-snug line-clamp-2">Wayland Architecture Overview</div>
+            </div>
+
+            <div class="font-mono text-[11px] text-cream/50 space-y-1 pl-3 border-l border-white/[0.04]">
+                <div class="text-emerald-400/60">[+] docker up -d</div>
+                <div class="opacity-50">⠿ redis: started</div>
+                <div class="opacity-50">⠿ aether_core: ok</div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Intent Pill (Reflecting Executed State) -->
+    <div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-plate/80 backdrop-blur-xl border border-cream/20 rounded-full pl-6 pr-8 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.6)] flex items-center justify-center cursor-pointer transition-all hover:bg-plate group w-[340px] z-50">
+        <div class="flex items-center w-full justify-between font-mono text-xs">
+            <div class="flex items-center gap-2.5">
+                <span class="text-emerald-400">></span>
+                <span class="text-cream font-medium">terminal</span>
+            </div>
+            <span class="text-cream/30 text-[10px] uppercase tracking-wider">Active</span>
+        </div>
+    </div>
+
+</body>
+</html>
