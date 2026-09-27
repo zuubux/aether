@@ -30,7 +30,6 @@ class CanvasController(BaseController):
         self._workbench_height: float = 1000.0
 
     @pyqtProperty(float, notify=telemetryChanged)
-    @pyqtProperty(float, notify=telemetryChanged)
     def renderFps(self) -> float:
         return TelemetrySink.instance().render_fps
 

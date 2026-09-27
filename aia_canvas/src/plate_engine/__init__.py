@@ -37,6 +37,15 @@ from .lifecycle import (
     PlateLifecycleManager,
     PlateLifecycleTier,
 )
+from .summary_engine import (
+    PlateSummaryEngine,
+)
+from .feed_engine import (
+    FeedConfig,
+    FeedEngine,
+    FeedGraduatedTier,
+    FeedItem,
+)
 
 __version__ = "0.1.0"
 
@@ -69,5 +78,12 @@ __all__ = [
     "PlateLifecycleConfig",
     "PlateLifecycleManager",
     "LifecycleBatchResult",
+    # Text Compression & Summarization
+    "PlateSummaryEngine",
+    # Feed Engine & Models
+    "FeedGraduatedTier",
+    "FeedItem",
+    "FeedConfig",
+    "FeedEngine",
 ]
 

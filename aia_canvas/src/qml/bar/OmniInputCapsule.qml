@@ -15,6 +15,7 @@ Item {
     property string effectiveProvider: ""
     property color borderColor: Theme.borderSubtle
     property bool active: false
+    property bool isExpanded: false
     property bool isConversationalMode: false
     property bool isShellMode: false
     property bool shelfExpanded: false
@@ -40,8 +41,8 @@ Item {
 
     Row {
         anchors.fill: parent
-        anchors.leftMargin: 20
-        anchors.rightMargin: root.isConversationalMode ? 40 : 20
+        anchors.leftMargin: root.isExpanded ? 20 : 16
+        anchors.rightMargin: root.isConversationalMode ? 40 : (root.isExpanded ? 20 : 16)
         spacing: 10
 
         // Search Icon when no mode prefix is active
@@ -54,7 +55,7 @@ Item {
             font.bold: true
             color: root.borderColor
             text: "⌕"
-            visible: !root.isSpecialMode
+            visible: !root.isSpecialMode && root.isExpanded
         }
 
         // Integrated Mode Indicator Badge when active in left inset
@@ -120,7 +121,7 @@ Item {
         TextField {
             id: inputField
             objectName: "inputField"
-            width: parent.width - (root.isSpecialMode ? (modeBadge.width + modeSigil.implicitWidth + 20) : prefixIcon.width) - 54
+            width: parent.width - (root.isSpecialMode ? (modeBadge.width + modeSigil.implicitWidth + 20) : (prefixIcon.visible ? prefixIcon.width + 10 : 0)) - (root.isExpanded ? 54 : 0)
             height: parent.height
             anchors.verticalCenter: parent.verticalCenter
             clip: true
@@ -148,14 +149,16 @@ Item {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 verticalAlignment: Text.AlignVCenter
+                horizontalAlignment: root.isExpanded ? Text.AlignLeft : Text.AlignHCenter
                 font.family: inputField.font.family
                 font.pixelSize: inputField.font.pixelSize
                 color: Theme.textMuted
                 text: {
+                    if (!root.isExpanded) return "What are we doing?";
                     if (root.modePrefix === ">") return "Run command...";
                     if (root.modePrefix === "?") return "Ask AI reasoning engine...";
                     if (root.modePrefix === "/") return "Execute system command...";
-                    return "Search nodes, content, or commands...";
+                    return "Search nodes, commands (>), or ask Aether (?)...";
                 }
                 visible: {
                     if (inputField.text.length === 0) return true;

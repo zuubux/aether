@@ -70,6 +70,12 @@ class CanvasBridge(QObject):
             from .controllers.working_set_controller import WorkingSetController
         except (ImportError, ValueError):
             from controllers.working_set_controller import WorkingSetController
+        try:
+            from .controllers.plate_controller import PlateCanvasController
+            from .controllers.feed_controller import FeedController
+        except (ImportError, ValueError):
+            from controllers.plate_controller import PlateCanvasController
+            from controllers.feed_controller import FeedController
         from core.intent_dispatcher import IntentDispatcher
         from core.completion_engine import CompletionEngine
 
@@ -79,6 +85,8 @@ class CanvasBridge(QObject):
         self.conversation_ctrl = ConversationController(self)
         self.node_ctrl = NodeController(self)
         self.working_set_ctrl = WorkingSetController(self)
+        self.plate_ctrl = PlateCanvasController(self)
+        self.feed_ctrl = FeedController(self)
         self.completion_engine = CompletionEngine(self)
 
         # Connect controller child signals to the corresponding bridge signals
@@ -317,21 +325,24 @@ class CanvasBridge(QObject):
     @pyqtProperty(list, notify=nodesChanged)
     def nodes(self) -> list[Node]:
         """list[Node]: List of active graph nodes."""
+        if hasattr(self, "store") and hasattr(self.store, "nodes") and self.store.nodes:
+            return list(self.store.nodes.values())
+        return []
 
     @pyqtProperty(list, notify=edgesChanged)
     def edges(self) -> list[Edge]:
         """list[Edge]: List of active renderable edges."""
-        return getattr(self, "_ambient_edges", [])
+        return getattr(self, "_ambient_edges", []) or []
 
     @pyqtProperty(list, notify=ambientEdgesChanged)
     def ambientEdges(self) -> list[Edge]:
         """list[Edge]: List of ambient background connections."""
-        return getattr(self, "_ambient_edges", [])
+        return getattr(self, "_ambient_edges", []) or []
 
     @pyqtProperty(list, notify=edgesChanged)
     def focalEdges(self) -> list[Edge]:
         """list[Edge]: List of focal connections tied to the selected node."""
-        return getattr(self, "_focal_edges", [])
+        return getattr(self, "_focal_edges", []) or []
 
     @pyqtProperty(int, notify=selectedNodeChanged)
     def selectedNodeId(self) -> int:
@@ -384,7 +395,6 @@ class CanvasBridge(QObject):
         return getattr(self, "canvas_ctrl", None)
 
     @pyqtProperty(QObject, constant=True)
-    @pyqtProperty(QObject, constant=True)
     def workingSetCtrl(self) -> QObject:
         """QObject: WorkingSetController instance route for QML."""
         return getattr(self, "working_set_ctrl", None)
@@ -393,6 +403,26 @@ class CanvasBridge(QObject):
     def workingSet(self) -> QObject:
         """QObject: WorkingSetController instance route for QML."""
         return getattr(self, "working_set_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def plateCtrl(self) -> QObject:
+        """QObject: PlateCanvasController instance route for QML."""
+        return getattr(self, "plate_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def plate(self) -> QObject:
+        """QObject: PlateCanvasController instance route for QML."""
+        return getattr(self, "plate_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def feedCtrl(self) -> QObject:
+        """QObject: FeedController instance route for QML."""
+        return getattr(self, "feed_ctrl", None)
+
+    @pyqtProperty(QObject, constant=True)
+    def feed(self) -> QObject:
+        """QObject: FeedController instance route for QML."""
+        return getattr(self, "feed_ctrl", None)
 
     @pyqtProperty(str, notify=engineStateChanged)
     def engineState(self) -> str:
@@ -430,6 +460,7 @@ class CanvasBridge(QObject):
     @pyqtProperty(bool, notify=connectionStatusChanged)
     def isConnected(self) -> bool:
         """bool: Weaver IPC connection state status."""
+        return getattr(self, "_is_connected", False)
 
     @pyqtProperty(float, notify=viewportDimensionsChanged)
     def viewportWidth(self) -> float:
@@ -492,6 +523,7 @@ class CanvasBridge(QObject):
     def focalCardHeight(self) -> float:
         return getattr(self, "_focal_card_height", 600.0)
 
+    @pyqtProperty(float, notify=telemetryChanged)
     def renderFps(self) -> float:
         return TelemetrySink.instance().render_fps
 
@@ -507,8 +539,6 @@ class CanvasBridge(QObject):
     def llmTtftMs(self) -> float:
         return TelemetrySink.instance().llm_ttft_ms
 
-    @pyqtProperty(int, notify=telemetryChanged)
-    @pyqtProperty(int, notify=telemetryChanged)
     @pyqtSlot()
     def notify_ui_ready(self):
         import time

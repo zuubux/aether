@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import ".."
-import "../focal"
 
 /**
  * OmniBar.qml
@@ -10,7 +9,10 @@ import "../focal"
 Item {
     id: root
 
-    property bool active: false
+    property alias textInput: inputCapsule.inputField
+    property bool conversationDrawerVisible: showOutputDrawer
+    property bool isExpanded: activeFocus || (textInput && textInput.activeFocus) || (textInput && textInput.text.length > 0) || conversationDrawerVisible
+    property bool active: isExpanded
     property Item searchShelf: null
     property var resultsList: []
     property int currentRibbonIndex: -1
@@ -62,7 +64,7 @@ Item {
     readonly property int textLength: inputCapsule.text.length
     readonly property string currentQuery: inputCapsule.text
     readonly property alias resultsModel: ribbonContainer.resultsModel
-    readonly property alias focalLensFrame: focalLensFrame
+    readonly property var focalLensFrame: null
     readonly property int resultsCount: getListLength(resultsList)
     readonly property string modePrefix: inputCapsule.text ? (inputCapsule.text.trim().startsWith(">") ? ">" : (inputCapsule.text.trim().startsWith("?") ? "?" : (inputCapsule.text.trim().startsWith("/") ? "/" : ""))) : ""
     readonly property bool isShellMode: modePrefix === ">"
@@ -120,12 +122,12 @@ Item {
         return parts.join("");
     }
 
-    readonly property bool showShellOutput: root.active && root.isShellMode && root.resultsCount > 0
+    readonly property bool showShellOutput: root.isShellMode && root.resultsCount > 0
     readonly property real maxShellOutputHeight: parent ? parent.height * 0.6 : 600
     readonly property real shellContentCalculatedHeight: (barShell.shellDrawer && barShell.shellDrawer.shellListView ? barShell.shellDrawer.shellListView.contentHeight : 0) + (systemStatusItem ? 32 : 0)
     readonly property real shellDrawerHeight: showShellOutput ? Math.min(maxShellOutputHeight, Math.max(48, shellContentCalculatedHeight)) : 0
 
-    readonly property bool showDialogueOutput: root.active && root.isConversationalMode && root.resultsCount > 0
+    readonly property bool showDialogueOutput: root.isConversationalMode && root.resultsCount > 0
     readonly property real maxDialogueOutputHeight: parent ? parent.height * 0.6 : 600
     readonly property real calculatedTextHeight: (barShell.dialogueDrawer && barShell.dialogueDrawer.dialogueListView) ? barShell.dialogueDrawer.dialogueListView.contentHeight : 60
     readonly property real dialogueContentCalculatedHeight: calculatedTextHeight + 66
@@ -140,46 +142,65 @@ Item {
 
     signal requestAscensionToSlate(var history)
     property var turnHistory: []
-    width: (root.isShellMode || root.isConversationalMode) ? Math.min(860, parent ? parent.width * 0.82 : 860) : Math.min(680, parent ? parent.width * 0.85 : 680)
-    height: outputDrawerHeight + (showOutputDrawer ? 1 : 0) + 48
-    anchors.bottom: parent ? parent.bottom : undefined
-    anchors.bottomMargin: 36
+
+    readonly property real baseBarHeight: parent ? Math.max(38, Math.round(parent.height * 0.045)) : 40
+    property real radius: isExpanded ? Math.round((showOutputDrawer ? baseBarHeight : height) * 0.28) : Math.round(height * 0.5)
+
+    width: parent ? (isExpanded ? Math.min(Math.round(parent.width * 0.45), 840) : Math.max(Math.round(parent.width * 0.20), 320)) : 320
+    height: outputDrawerHeight + (showOutputDrawer ? 1 : 0) + baseBarHeight
     anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
-    opacity: active ? 1.0 : 0.0
-    visible: opacity > 0.01
+    anchors.bottom: parent ? parent.bottom : undefined
+    anchors.bottomMargin: parent ? Math.round(parent.height * 0.03) : 24
 
-    Behavior on width { NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing } }
-    Behavior on height { NumberAnimation { duration: Theme.animCollapseDuration; easing.type: Theme.animCollapseEasing } }
-    Behavior on opacity { NumberAnimation { duration: Theme.animDuration; easing.type: Theme.animEasing } }
+    Behavior on width { NumberAnimation { duration: 240; easing.type: Easing.OutQuint } }
+    Behavior on height { NumberAnimation { duration: 240; easing.type: Easing.OutQuint } }
+    Behavior on radius { NumberAnimation { duration: 240; easing.type: Easing.OutQuint } }
 
-    function open() { active = true; inputCapsule.inputField.forceActiveFocus(); }
+    function open() {
+        if (inputCapsule && inputCapsule.inputField) {
+            inputCapsule.inputField.forceActiveFocus();
+        }
+    }
+
     function dismiss() {
-        active = false; inputCapsule.text = ""; inputCapsule.inputField.focus = false;
-        resultsList = []; currentRibbonIndex = -1; shelfExpanded = false; shellHistoryIndex = -1;
-        if (typeof aiAutoSendTimer !== "undefined" && aiAutoSendTimer) aiAutoSendTimer.stop();
-        if (searchShelf) searchShelf.isSearchActiveExplicit = false;
-        if (root.parent) root.parent.forceActiveFocus();
+        if (inputCapsule && inputCapsule.inputField) {
+            inputCapsule.inputField.focus = false;
+        }
+        if (root.parent) {
+            root.parent.forceActiveFocus();
+        }
+        clearTextAndCancel();
         dismissed();
     }
 
     function clearTextAndCancel() {
-        inputCapsule.text = ""; resultsList = []; currentRibbonIndex = -1; shelfExpanded = false; shellHistoryIndex = -1;
+        if (inputCapsule) {
+            inputCapsule.text = "";
+        }
+        resultsList = [];
+        currentRibbonIndex = -1;
+        shelfExpanded = false;
+        shellHistoryIndex = -1;
+        lastExecutedPrompt = "";
         if (typeof aiAutoSendTimer !== "undefined" && aiAutoSendTimer) aiAutoSendTimer.stop();
+        if (typeof debounceTimer !== "undefined" && debounceTimer) debounceTimer.stop();
         if (searchShelf) searchShelf.isSearchActiveExplicit = false;
         cancelQuery();
         if (typeof searchController !== "undefined" && searchController) searchController.clear_search();
-        else if (canvasBridge) canvasBridge.search.clear_search();
+        else if (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.searchController) canvasBridge.searchController.clear_search();
+        else if (typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.search) canvasBridge.search.clear_search();
     }
 
     function dispatchCurrentQuery() {
         var txt = inputCapsule.text.trim();
-        var focusedId = (canvasBridge && canvasBridge.selectedNodeId > 0) ? String(canvasBridge.selectedNodeId) : "";
+        var cb = (typeof canvasBridge !== "undefined" && canvasBridge) ? canvasBridge : null;
+        var focusedId = (cb && cb.selectedNodeId > 0) ? String(cb.selectedNodeId) : "";
         if (typeof searchController !== "undefined" && searchController) {
             searchController.dispatch_omni(txt, typingCadenceMs, focusedId, []);
-        } else if (canvasBridge && canvasBridge.search_ctrl) {
-            canvasBridge.search_ctrl.dispatch_omni(txt, typingCadenceMs, focusedId, []);
-        } else if (canvasBridge) {
-            canvasBridge.search.submit_query(txt);
+        } else if (cb && cb.search_ctrl) {
+            cb.search_ctrl.dispatch_omni(txt, typingCadenceMs, focusedId, []);
+        } else if (cb && cb.search) {
+            cb.search.submit_query(txt);
         }
     }
 
@@ -289,9 +310,9 @@ Item {
                         vp.steerCameraToNode(nId, true);
                     }
                 }
-                if (canvasBridge) {
-                    canvasBridge.node.select_node(nId);
-                    canvasBridge.search.clear_search();
+                if (typeof canvasBridge !== "undefined" && canvasBridge) {
+                    if (canvasBridge.node) canvasBridge.node.select_node(nId);
+                    if (canvasBridge.search) canvasBridge.search.clear_search();
                 }
                 if (searchShelf) {
                     searchShelf.isSearchActiveExplicit = false;
@@ -326,6 +347,19 @@ Item {
         }
     }
 
+    MouseArea {
+        id: ambientPillMouseArea
+        objectName: "ambientPillMouseArea"
+        anchors.fill: parent
+        z: 10
+        enabled: !root.isExpanded
+        cursorShape: Qt.PointingHandCursor
+        hoverEnabled: true
+        onClicked: {
+            root.open();
+        }
+    }
+
     SearchSuggestionRibbon {
         id: ribbonContainer
         objectName: "ribbonContainer"
@@ -334,7 +368,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         
-        active: root.active
+        active: root.isExpanded
         isShellMode: root.isShellMode
         isConversationalMode: root.isConversationalMode
         shelfExpanded: root.shelfExpanded
@@ -357,12 +391,19 @@ Item {
         id: barShell
         objectName: "barShell"
         anchors.fill: parent
-        radius: 12
+        radius: root.radius
         color: Theme.surfaceGlass
         border.width: 1
-        border.color: root.isConversationalMode ? Theme.accentAI : (root.isShellMode ? Theme.accentShell : Theme.borderSubtle)
+        border.color: {
+            if (root.isConversationalMode) return Theme.accentAI;
+            if (root.isShellMode) return Theme.accentShell;
+            if (root.isExpanded) return Theme.borderSubtle;
+            if (ambientPillMouseArea.containsMouse) return Theme.borderHover;
+            return Theme.borderSeamSubtle;
+        }
         readonly property color borderColor: border.color
         Behavior on border.color { ColorAnimation { duration: Theme.animFadeInDuration ?? 160 } }
+        Behavior on radius { NumberAnimation { duration: 240; easing.type: Easing.OutQuint } }
 
         property alias shellDrawer: shellDrawer
         property alias dialogueDrawer: dialogueDrawer
@@ -414,12 +455,13 @@ Item {
                     id: inputCapsule
                     objectName: "inputCapsule"
                     width: parent.width
-                    height: 48
+                    height: root.baseBarHeight
                     
+                    isExpanded: root.isExpanded
                     modePrefix: root.modePrefix
                     effectiveProvider: root.effectiveProvider
                     borderColor: barShell.borderColor
-                    active: root.active
+                    active: root.isExpanded
                     isConversationalMode: root.isConversationalMode
                     isShellMode: root.isShellMode
                     shelfExpanded: root.shelfExpanded
@@ -432,7 +474,7 @@ Item {
                             root.tabCompletionIndex = -1;
                             root.tabLastQuery = "";
                         }
-                        if (root.active && inputCapsule.text.length > 0) {
+                        if (root.isExpanded && inputCapsule.text.length > 0) {
                             var now = Date.now();
                             if (root.lastKeyPressTime > 0) root.typingCadenceMs = now - root.lastKeyPressTime;
                             root.lastKeyPressTime = now;
@@ -581,9 +623,7 @@ Item {
                     }
 
                     onEscapePressed: {
-                        root.shelfExpanded = false;
-                        if (inputCapsule.text.length > 0) root.clearTextAndCancel();
-                        else root.dismiss();
+                        root.dismiss();
                     }
 
                     onReturnPressed: function(shiftModifier) {
@@ -686,12 +726,7 @@ Item {
         }
     }
 
-    FocalLensFrame {
-        id: focalLensFrame
-        parent: root.parent ? root.parent : root
-        z: 999
-        targetCenterY: parent ? (parent.height / 2) - 300 : 200
-    }
+    
 
     function ascendToLens() {
         if (!focalLensFrame) return;

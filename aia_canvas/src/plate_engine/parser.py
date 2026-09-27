@@ -50,30 +50,44 @@ class PlatePayloadParser:
             raise ValueError(f"Invalid plate ID value: {raw_id}") from exc
 
         # 2. File Path & Names
-        file_path = str(data.get("file_path") or data.get("filePath") or data.get("path") or "").strip()
-        file_name = str(data.get("file_name") or data.get("fileName") or "")
+        raw_path = data.get("file_path") if data.get("file_path") is not None else data.get("filePath")
+        if raw_path is None:
+            raw_path = data.get("path", "")
+        file_path = str(raw_path).strip()
+
+        raw_name = data.get("file_name") if data.get("file_name") is not None else data.get("fileName")
+        file_name = str(raw_name) if raw_name is not None else ""
         if not file_name and file_path:
             file_name = Path(file_path).name
 
-        display_title = str(data.get("display_title") or data.get("displayTitle") or data.get("title") or "").strip()
+        raw_title = data.get("display_title") if data.get("display_title") is not None else data.get("displayTitle")
+        if raw_title is None:
+            raw_title = data.get("title", "")
+        display_title = str(raw_title).strip()
 
-        extension = str(data.get("extension") or "").strip()
+        raw_ext = data.get("extension")
+        extension = str(raw_ext).strip() if raw_ext is not None else ""
         if not extension and file_path:
             extension = Path(file_path).suffix
 
         # 3. Size & Archetype
+        raw_size = data.get("size_bytes") if data.get("size_bytes") is not None else data.get("sizeBytes")
+        if raw_size is None:
+            raw_size = data.get("size", 0)
         try:
-            size_bytes = int(data.get("size_bytes") or data.get("sizeBytes") or data.get("size") or 0)
+            size_bytes = int(raw_size)
         except (ValueError, TypeError):
             size_bytes = 0
 
         raw_archetype = data.get("archetype")
         archetype = PlateArchetype.from_str(str(raw_archetype) if raw_archetype else None, extension)
 
-        snippet = str(data.get("snippet") or "")
+        snippet = str(data.get("snippet", ""))
 
         # 4. Preview / Thumbnail
-        raw_thumb = data.get("thumbnail_url") or data.get("thumbnailUrl") or data.get("thumbnail") or ""
+        raw_thumb = data.get("thumbnail_url") if data.get("thumbnail_url") is not None else data.get("thumbnailUrl")
+        if raw_thumb is None:
+            raw_thumb = data.get("thumbnail", "")
         thumbnail_url = str(raw_thumb).strip()
 
         # 5. Temporal State
@@ -91,8 +105,9 @@ class PlatePayloadParser:
             geometry = PlateGeometry.from_dict(data)
 
         # 7. Mass / Cognitive Weight
+        raw_mass = data.get("mass") if data.get("mass") is not None else data.get("focus")
         try:
-            mass = float(data.get("mass") or data.get("focus") or 1.0)
+            mass = float(raw_mass) if raw_mass is not None else 1.0
         except (ValueError, TypeError):
             mass = 1.0
 

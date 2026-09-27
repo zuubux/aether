@@ -18,7 +18,7 @@ os.environ["QT_QUICK_CONTROLS_STYLE"] = "Basic"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 from PyQt6.QtGui import QGuiApplication
-from PyQt6.QtQml import QQmlApplicationEngine, qmlRegisterType
+from PyQt6.QtQml import QQmlApplicationEngine, QQmlComponent, qmlRegisterType
 
 from bridge import CanvasBridge
 from content.streamer import MmapTextStreamer
@@ -140,8 +140,11 @@ def mock_search_controller(mock_bridge):
 
 @pytest.fixture
 def canvas_qml_root(qapp, qml_engine, mock_bridge):
-    """Loads Canvas.qml with all standard context properties set."""
+    """Loads main.qml (or legacy Canvas.qml) with all standard context properties set."""
+    from controllers import HorizonController
+
     intent_engine = IntentEngine(mock_bridge)
+    horizon_ctrl = HorizonController()
     ctx = qml_engine.rootContext()
     ctx.setContextProperty("canvasBridge", mock_bridge)
     ctx.setContextProperty("bridge", mock_bridge)
@@ -149,14 +152,26 @@ def canvas_qml_root(qapp, qml_engine, mock_bridge):
     ctx.setContextProperty("nodeController", mock_bridge.node_ctrl)
     ctx.setContextProperty("searchController", mock_bridge.search_ctrl)
     ctx.setContextProperty("intentEngine", intent_engine)
+    ctx.setContextProperty("plateCanvasController", mock_bridge.plate_ctrl)
+    ctx.setContextProperty("feedController", mock_bridge.feed_ctrl)
+    ctx.setContextProperty("horizonController", horizon_ctrl)
     ctx.setContextProperty("targetScreenIdx", 0)
     ctx.setContextProperty("isFullscreen", False)
     ctx.setContextProperty("isSpanAll", False)
 
-    qml_file = CANVAS_SRC / "qml" / "Canvas.qml"
+    theme_file = CANVAS_SRC / "qml" / "Theme.qml"
+    if theme_file.exists():
+        theme_comp = QQmlComponent(qml_engine, str(theme_file))
+        theme_obj = theme_comp.create()
+        if theme_obj:
+            ctx.setContextProperty("Theme", theme_obj)
+
+    qml_file = CANVAS_SRC / "qml" / "main.qml"
+    if not qml_file.exists():
+        qml_file = CANVAS_SRC / "qml" / "Canvas.qml"
     qml_engine.load(str(qml_file))
 
-    assert len(qml_engine.rootObjects()) > 0, "Failed to load Canvas.qml"
+    assert len(qml_engine.rootObjects()) > 0, f"Failed to load {qml_file.name}"
     root = qml_engine.rootObjects()[0]
     qapp.processEvents()
     return root

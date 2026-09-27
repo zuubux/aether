@@ -1,18 +1,19 @@
 # Aether Interface Architecture (.clinerules)
 
 ## 0. Strict Git & Repository Invariant (ZERO TOLERANCE)
-- NEVER run any `git` commands under any circumstances.
-- All version control (`git add`, `commit`, `push`, `checkout`, `reset`, etc.) is strictly reserved for the human developer.
-- Focus strictly on editing files, inspecting code, and running explicitly authorized test commands.
+- NEVER run any `git` commands under any circumstances (zero `git add`, `commit`, `push`, `diff`, `checkout`, `stash`, etc.).
+- Version control is strictly reserved for the human developer.
+- Confine all actions strictly to reading files, surgical editing, and running targeted test/verification scripts.
 
-## 1. Operating Rules & Pre-Flight Check
-- Surgical, minimal diffs only. Zero unsolicited refactoring.
-- Check `docs/SYSTEM_MAP.md` before altering cross-module boundaries or adding files.
-- Single Responsibility Invariant: Consult `docs/SYSTEM_MAP.md` to ensure functionality is not duplicated across components (e.g., prompt assembly, SQLite connections, token buffering).
-- If a task introduces a file, deprecates a module, or shifts an IPC/signal boundary, update `docs/SYSTEM_MAP.md` as the final step.
-- Zero zombie code: delete replaced or superseded stubs immediately.
+## 1. Linear Execution Protocol (Read -> Code -> Sync Docs)
+Execute every task in this exact three-phase order:
+1. **READ FIRST:** Thoroughly inspect `docs/ARCHITECTURE.md` and `docs/SYSTEM_MAP.md` at the start of every task. Never guess architectural boundaries, data contracts, or component roles.
+2. **EXECUTE CODE:** Apply surgical, minimal diffs. Zero unsolicited refactoring or out-of-scope edits. Delete replaced or superseded code immediately (zero zombie code).
+3. **SYNC DOCS LAST:** Update `docs/ARCHITECTURE.md` and `docs/SYSTEM_MAP.md` precisely once at the very end of the task if boundaries, files, models, or IPC contracts were introduced or altered. Never loop between writing code and editing docs mid-task.
 
-## 2. Test Diet (Rule 10)
-- Do NOT create new test files or cases for refactors, visual polish, or tweaks.
-- Zero wall-clock sleeps: never use `time.sleep()` or hardcoded `QTest.qWait(ms)`. Use deterministic condition polling (`qtbot.waitUntil`).
-- Authorized test runs only. Report exact files modified, test assertions verified, and manual visual verification steps.
+## 2. Test Integrity & Verification Standards (Zero Cheating)
+- **Fix the Software, Not the Test:** Never weaken, bypass, relax, or mock out a failing assertion just to achieve a green test pass. If a test fails, diagnose and fix the underlying runtime defect.
+- **Full Transparency:** Always report the complete test output—including skipped, warned, or failing tests. Never omit or obscure failures.
+- **Deterministic & Lean:**
+  - Zero wall-clock sleeps (`time.sleep()`, arbitrary `QTest.qWait()`); use deterministic condition polling (`qtbot.waitUntil`).
+  - Do NOT generate redundant test files or test bloat for minor tweaks or visual polish.

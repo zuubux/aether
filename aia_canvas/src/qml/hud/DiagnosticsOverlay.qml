@@ -118,3 +118,12 @@ Rectangle {
         Rectangle { width: parent.width; height: 1; color: Theme.borderSubtle }
 
         Text {
+            text: "Press F3 to dismiss overlay"
+            color: Theme.textDimmed
+            font.family: Theme.fontCode
+            font.pixelSize: 9
+            anchors.horizontalCenter: parent.horizontalCenter
+        }
+    }
+}
+

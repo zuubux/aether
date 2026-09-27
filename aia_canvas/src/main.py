@@ -14,9 +14,10 @@ from pathlib import Path
 from aia_intent import IntentEngine
 from bridge import CanvasBridge
 from content.streamer import MmapTextStreamer
+from controllers import HorizonController
 from PyQt6.QtCore import QCoreApplication, QLibraryInfo, QTimer, QtMsgType, qInstallMessageHandler
 from PyQt6.QtGui import QGuiApplication, QSurfaceFormat
-from PyQt6.QtQml import QQmlApplicationEngine, qmlRegisterType
+from PyQt6.QtQml import QQmlApplicationEngine, QQmlComponent, qmlRegisterType
 
 
 def qt_message_handler(mode, context, message):
@@ -121,6 +122,11 @@ def main():
     engine.rootContext().setContextProperty("canvasController", bridge.canvas_ctrl)
     engine.rootContext().setContextProperty("nodeController", bridge.node_ctrl)
     engine.rootContext().setContextProperty("searchController", bridge.search_ctrl)
+    engine.rootContext().setContextProperty("plateCanvasController", bridge.plate_ctrl)
+    engine.rootContext().setContextProperty("feedController", bridge.feed_ctrl)
+    
+    horizon_ctrl = HorizonController(parent=app)
+    engine.rootContext().setContextProperty("horizonController", horizon_ctrl)
 
     intent_engine = IntentEngine(bridge)
     engine.rootContext().setContextProperty("intentEngine", intent_engine)
@@ -130,8 +136,14 @@ def main():
     engine.rootContext().setContextProperty("targetScreenIdx", screen_idx)
     engine.rootContext().setContextProperty("isFullscreen", args.fullscreen)
     engine.rootContext().setContextProperty("isSpanAll", args.span_all)
-    
-    qml_file = Path(__file__).parent / "qml" / "Canvas.qml"
+
+    engine.addImportPath(str(Path(__file__).parent / "qml"))
+    theme_component = QQmlComponent(engine, str(Path(__file__).parent / "qml" / "Theme.qml"))
+    theme_obj = theme_component.create()
+    if theme_obj:
+        engine.rootContext().setContextProperty("Theme", theme_obj)
+
+    qml_file = Path(__file__).parent / "qml" / "main.qml"
     engine.load(str(qml_file))
 
     if not engine.rootObjects():

@@ -1,1 +1,3 @@
+module qml
 singleton Theme 1.0 Theme.qml
+AetherMotion 1.0 AetherMotion.qml

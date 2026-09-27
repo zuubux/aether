@@ -174,11 +174,25 @@ class PlateEdge:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> PlateEdge:
-        src = int(d.get("source_id") or d.get("sourceId") or d.get("source", 0))
-        tgt = int(d.get("target_id") or d.get("targetId") or d.get("target", 0))
-        e_type = str(d.get("edge_type") or d.get("edgeType") or "explicit")
-        weight = float(d.get("weight", 1.0))
-        category = str(d.get("category") or ("temporal" if e_type == "temporal" else "topological"))
+        src_val = d.get("source_id") if d.get("source_id") is not None else d.get("sourceId")
+        if src_val is None:
+            src_val = d.get("source", 0)
+        src = int(src_val)
+
+        tgt_val = d.get("target_id") if d.get("target_id") is not None else d.get("targetId")
+        if tgt_val is None:
+            tgt_val = d.get("target", 0)
+        tgt = int(tgt_val)
+
+        e_type_val = d.get("edge_type") if d.get("edge_type") is not None else d.get("edgeType")
+        e_type = str(e_type_val) if e_type_val is not None else "explicit"
+
+        weight_val = d.get("weight")
+        weight = float(weight_val) if weight_val is not None else 1.0
+
+        category_val = d.get("category")
+        category = str(category_val) if category_val is not None else ("temporal" if e_type == "temporal" else "topological")
+
         meta = d.get("metadata")
         return cls(
             source_id=src,
@@ -233,17 +247,44 @@ class TemporalState:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> TemporalState:
         now = time.time()
+        created_at_val = d.get("created_at") if d.get("created_at") is not None else d.get("createdAt")
+        updated_at_val = d.get("updated_at") if d.get("updated_at") is not None else d.get("updatedAt")
+        last_interaction_val = (
+            d.get("last_interaction_epoch")
+            if d.get("last_interaction_epoch") is not None
+            else d.get("lastInteractionEpoch")
+        )
+        interaction_count_val = (
+            d.get("interaction_count")
+            if d.get("interaction_count") is not None
+            else d.get("interactionCount")
+        )
+        dwell_time_val = (
+            d.get("dwell_time_seconds")
+            if d.get("dwell_time_seconds") is not None
+            else d.get("dwellTimeSeconds")
+        )
+        recency_score_val = (
+            d.get("recency_score")
+            if d.get("recency_score") is not None
+            else d.get("recencyScore")
+        )
+        is_pinned_val = d.get("is_pinned") if d.get("is_pinned") is not None else d.get("isPinned")
+        is_user_placed_val = (
+            d.get("is_user_placed")
+            if d.get("is_user_placed") is not None
+            else d.get("isUserPlaced")
+        )
+
         return cls(
-            created_at=float(d.get("created_at") or d.get("createdAt") or now),
-            updated_at=float(d.get("updated_at") or d.get("updatedAt") or now),
-            last_interaction_epoch=float(
-                d.get("last_interaction_epoch") or d.get("lastInteractionEpoch") or now
-            ),
-            interaction_count=int(d.get("interaction_count") or d.get("interactionCount") or 0),
-            dwell_time_seconds=float(d.get("dwell_time_seconds") or d.get("dwellTimeSeconds") or 0.0),
-            recency_score=float(d.get("recency_score") or d.get("recencyScore") or 1.0),
-            is_pinned=bool(d.get("is_pinned") or d.get("isPinned") or False),
-            is_user_placed=bool(d.get("is_user_placed") or d.get("isUserPlaced") or False),
+            created_at=float(created_at_val) if created_at_val is not None else now,
+            updated_at=float(updated_at_val) if updated_at_val is not None else now,
+            last_interaction_epoch=float(last_interaction_val) if last_interaction_val is not None else now,
+            interaction_count=int(interaction_count_val) if interaction_count_val is not None else 0,
+            dwell_time_seconds=float(dwell_time_val) if dwell_time_val is not None else 0.0,
+            recency_score=float(recency_score_val) if recency_score_val is not None else 1.0,
+            is_pinned=bool(is_pinned_val) if is_pinned_val is not None else False,
+            is_user_placed=bool(is_user_placed_val) if is_user_placed_val is not None else False,
         )
 
 
@@ -289,8 +330,8 @@ class NodeRelationships:
             for e in raw_edges
             if isinstance(e, (dict, PlateEdge))
         ]
-        raw_neighbors = d.get("neighbor_ids") or d.get("neighborIds") or []
-        neighbor_set = {int(n) for n in raw_neighbors}
+        raw_neighbors = d.get("neighbor_ids") if d.get("neighbor_ids") is not None else d.get("neighborIds")
+        neighbor_set = {int(n) for n in raw_neighbors} if raw_neighbors is not None else set()
 
         for e in parsed_edges:
             if isinstance(e, PlateEdge):
@@ -303,12 +344,14 @@ class NodeRelationships:
             if isinstance(item, (list, tuple)) and len(item) >= 2:
                 semantic_list.append((int(item[0]), float(item[1])))
 
+        cluster_id_val = d.get("cluster_id") if d.get("cluster_id") is not None else d.get("clusterId")
+
         return cls(
             edges=parsed_edges,
             neighbor_ids=neighbor_set,
             incoming_count=int(d.get("incoming_count", 0)),
             outgoing_count=int(d.get("outgoing_count", 0)),
-            cluster_id=int(d.get("cluster_id") or d.get("clusterId") or -1),
+            cluster_id=int(cluster_id_val) if cluster_id_val is not None else -1,
             cluster_label=str(d.get("cluster_label", "")),
             semantic_neighbors=semantic_list,
         )
@@ -347,14 +390,18 @@ class PlateGeometry:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> PlateGeometry:
+        col_span_val = d.get("col_span") if d.get("col_span") is not None else d.get("colSpan")
+        row_span_val = d.get("row_span") if d.get("row_span") is not None else d.get("rowSpan")
+        depth_z_val = d.get("depth_z") if d.get("depth_z") is not None else d.get("depthZ")
+
         return cls(
             x=float(d.get("x", 0.0)),
             y=float(d.get("y", 0.0)),
             width=float(d.get("width", 0.0)),
             height=float(d.get("height", 0.0)),
-            col_span=int(d.get("col_span") or d.get("colSpan") or 1),
-            row_span=int(d.get("row_span") or d.get("rowSpan") or 1),
-            depth_z=float(d.get("depth_z") or d.get("depthZ") or 0.0),
+            col_span=int(col_span_val) if col_span_val is not None else 1,
+            row_span=int(row_span_val) if row_span_val is not None else 1,
+            depth_z=float(depth_z_val) if depth_z_val is not None else 0.0,
             tier=float(d.get("tier", 3.0)),
             zone=int(d.get("zone", 2)),
         )
@@ -494,8 +541,12 @@ class PlateNodePayload:
             raw_id = d.get("nodeId", 0)
         node_id = int(raw_id)
 
-        file_path = str(d.get("file_path") or d.get("filePath") or d.get("path") or "")
-        extension = str(d.get("extension") or (Path(file_path).suffix if file_path else ""))
+        raw_path = d.get("file_path") if d.get("file_path") is not None else d.get("filePath")
+        if raw_path is None:
+            raw_path = d.get("path", "")
+        file_path = str(raw_path)
+
+        extension = str(d.get("extension") if d.get("extension") is not None else (Path(file_path).suffix if file_path else ""))
 
         raw_archetype = d.get("archetype")
         archetype = PlateArchetype.from_str(str(raw_archetype) if raw_archetype else None, extension)
@@ -518,20 +569,39 @@ class PlateNodePayload:
             else PlateGeometry.from_dict(d)
         )
 
+        raw_name = d.get("file_name") if d.get("file_name") is not None else d.get("fileName")
+        file_name = str(raw_name) if raw_name is not None else ""
+
+        raw_title = d.get("display_title") if d.get("display_title") is not None else d.get("displayTitle")
+        display_title = str(raw_title) if raw_title is not None else ""
+
+        raw_size = d.get("size_bytes") if d.get("size_bytes") is not None else d.get("sizeBytes")
+        size_bytes = int(raw_size) if raw_size is not None else 0
+
+        raw_thumb = d.get("thumbnail_url") if d.get("thumbnail_url") is not None else d.get("thumbnailUrl")
+        if raw_thumb is None:
+            raw_thumb = d.get("thumbnail", "")
+        thumbnail_url = str(raw_thumb)
+
+        raw_mass = d.get("mass") if d.get("mass") is not None else d.get("focus")
+        mass = float(raw_mass) if raw_mass is not None else 1.0
+
+        metadata = dict(d.get("metadata", {})) if isinstance(d.get("metadata"), dict) else {}
+
         return cls(
             node_id=node_id,
             file_path=file_path,
-            file_name=str(d.get("file_name") or d.get("fileName") or ""),
-            display_title=str(d.get("display_title") or d.get("displayTitle") or ""),
+            file_name=file_name,
+            display_title=display_title,
             extension=extension,
-            size_bytes=int(d.get("size_bytes") or d.get("sizeBytes") or 0),
+            size_bytes=size_bytes,
             archetype=archetype,
             snippet=str(d.get("snippet", "")),
-            thumbnail_url=str(d.get("thumbnail_url") or d.get("thumbnailUrl") or d.get("thumbnail") or ""),
+            thumbnail_url=thumbnail_url,
             temporal=temporal,
             relationships=relationships,
             geometry=geometry,
-            mass=float(d.get("mass") or d.get("focus") or 1.0),
-            metadata=dict(d.get("metadata", {})) if isinstance(d.get("metadata"), dict) else {},
+            mass=mass,
+            metadata=metadata,
         )
 
