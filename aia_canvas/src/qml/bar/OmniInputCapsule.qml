@@ -16,6 +16,7 @@ Item {
     property color borderColor: Theme.borderSubtle
     property bool active: false
     property bool isExpanded: false
+    property bool ambientHovered: false
     property bool isConversationalMode: false
     property bool isShellMode: false
     property bool shelfExpanded: false
@@ -46,34 +47,16 @@ Item {
         anchors.rightMargin: root.isConversationalMode ? 40 : (root.isExpanded ? 20 : 16)
         spacing: 10
 
-        // Search Icon when no mode prefix is active
-        Text {
-            id: prefixIcon
-            objectName: "prefixIcon"
-            anchors.verticalCenter: parent.verticalCenter
-            font.family: Theme.fontCode
-            font.pixelSize: 14
-            font.bold: true
-            color: root.borderColor
-            text: "⌕"
-            visible: !root.isSpecialMode && root.isExpanded
-        }
-
         // Integrated Mode Indicator Badge when active in left inset
         Rectangle {
             id: modeBadge
             objectName: "modeBadge"
             anchors.verticalCenter: parent.verticalCenter
             height: 22
-            width: modeText.implicitWidth + 12
+            width: Math.max(34, modeText.implicitWidth + 12)
             radius: 4
-            visible: root.isSpecialMode
-            color: {
-                if (root.modePrefix === ">") return Theme.accentShell; // Shell ('CLI')
-                if (root.modePrefix === "?") return Theme.accentAI; // LLM ('AI' or provider badge e.g. 'GEM')
-                if (root.modePrefix === "/") return "#10B981"; // System ('SET')
-                return "transparent";
-            }
+            visible: root.isExpanded
+            color: Theme.getModeColor(root.modePrefix)
 
             Text {
                 id: modeText
@@ -87,7 +70,7 @@ Item {
                         return "AI";
                     }
                     if (root.modePrefix === "/") return "SET";
-                    return "";
+                    return "OMNI";
                 }
                 font.pixelSize: 10
                 font.bold: true
@@ -101,17 +84,14 @@ Item {
             id: modeSigil
             objectName: "modeSigil"
             anchors.verticalCenter: parent.verticalCenter
-            visible: root.isSpecialMode
-            text: root.modePrefix
+            visible: root.isExpanded
+            width: 10
+            horizontalAlignment: Text.AlignHCenter
+            text: root.modePrefix === "" ? "•" : root.modePrefix
             font.bold: true
             font.family: Theme.fontCode
             font.pixelSize: 14
-            color: {
-                if (root.modePrefix === ">") return Theme.accentShell;
-                if (root.modePrefix === "?") return Theme.accentAI;
-                if (root.modePrefix === "/") return "#10B981";
-                return "transparent";
-            }
+            color: Theme.getModeColor(root.modePrefix)
         }
 
         FontMetrics {
@@ -122,7 +102,7 @@ Item {
         TextField {
             id: inputField
             objectName: "inputField"
-            width: parent.width - (root.isSpecialMode ? (modeBadge.width + modeSigil.implicitWidth + 20) : (prefixIcon.visible ? prefixIcon.width + 10 : 0)) - (root.isExpanded ? 54 : 0)
+            width: parent.width - (root.isExpanded ? (modeBadge.width + modeSigil.width + 20) : 0) - (root.isExpanded ? 54 : 0)
             height: parent.height
             anchors.verticalCenter: parent.verticalCenter
             clip: true
@@ -152,8 +132,10 @@ Item {
                 verticalAlignment: Text.AlignVCenter
                 horizontalAlignment: root.isExpanded ? Text.AlignLeft : Text.AlignHCenter
                 font.family: inputField.font.family
-                font.pixelSize: inputField.font.pixelSize
+                font.pixelSize: root.isExpanded ? inputField.font.pixelSize : Math.max(11, Math.round(root.height * 0.42))
                 color: Theme.textMuted
+                opacity: (root.isExpanded || root.ambientHovered) ? 1.0 : 0.45
+                Behavior on opacity { NumberAnimation { duration: Theme.animFadeInDuration ?? 160 } }
                 text: {
                     if (!root.isExpanded) return "What are we doing?";
                     if (root.modePrefix === ">") return "Run command...";

@@ -284,11 +284,56 @@ def test_search_dwell_plate_preview_projection_and_commit(qapp, qml_engine, canv
     assert mock_bridge.plate_ctrl.activePlates[0]["is_preview"] is False
 
 
+def test_preview_updates_when_results_change_at_index_zero(qapp, qml_engine, canvas_qml_root, qtbot, mock_bridge):
+    omni_bar = canvas_qml_root.findChild(object, "omniBar")
+    mock_bridge.plate_ctrl.clear_all()
+    qapp.processEvents()
+
+    omni_bar.open()
+    first = [{"id": 101, "node_id": 101, "title": "design_tokens", "archetype": "document", "snippet": "d", "path": "/d/design_tokens"}]
+    omni_bar.setProperty("resultsList", first)
+    omni_bar.setProperty("currentRibbonIndex", 0)
+    qtbot.waitUntil(
+        lambda: len(mock_bridge.plate_ctrl.activePlates) == 1 and mock_bridge.plate_ctrl.activePlates[0]["node_id"] == 101,
+        timeout=1000,
+    )
+
+    # "d" -> "do": new top candidate, index stays 0, query change stops the dwell timer
+    omni_bar.setProperty("currentQuery", "do")
+    second = [{"id": 202, "node_id": 202, "title": "docker_containers", "archetype": "document", "snippet": "do", "path": "/d/docker_containers"}]
+    omni_bar.setProperty("resultsList", second)
+    assert omni_bar.property("currentRibbonIndex") == 0
+
+    qtbot.waitUntil(
+        lambda: len(mock_bridge.plate_ctrl.activePlates) == 1 and mock_bridge.plate_ctrl.activePlates[0]["node_id"] == 202,
+        timeout=1000,
+    )
+    assert mock_bridge.plate_ctrl.activePlates[0]["is_preview"] is True
+
+
+
+
+
+def test_preview_cleared_when_results_become_empty(qapp, qml_engine, canvas_qml_root, qtbot, mock_bridge):
+    omni_bar = canvas_qml_root.findChild(object, "omniBar")
+    mock_bridge.plate_ctrl.clear_all()
+    qapp.processEvents()
+
+    omni_bar.open()
+    results = [{"id": 101, "node_id": 101, "title": "BMW_M3.pdf", "archetype": "document", "snippet": "BMW M3 Specs", "path": "/docs/m3.pdf"}]
+    omni_bar.setProperty("resultsList", results)
+    omni_bar.setProperty("currentRibbonIndex", 0)
+    qtbot.waitUntil(lambda: mock_bridge.plate_ctrl.hasPreview, timeout=1000)
+
+    # Results drop from 1 -> 0 (e.g. "do" -> "dog"): orphaned preview must vanish immediately
+    omni_bar.setProperty("resultsList", [])
+    qapp.processEvents()
+    assert not mock_bridge.plate_ctrl.hasPreview
+    assert len(mock_bridge.plate_ctrl.activePlates) == 0
 
 
 def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root, qtbot):
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
-    prefix_icon = omni_bar.findChild(object, "prefixIcon")
     mode_badge = omni_bar.findChild(object, "modeBadge")
     mode_text = omni_bar.findChild(object, "modeText")
     mode_sigil = omni_bar.findChild(object, "modeSigil")
@@ -299,13 +344,15 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root, qtbot
 
     # Standard query
     input_field.setProperty("text", "hello world")
-    qtbot.waitUntil(lambda: prefix_icon.property("visible") is True, timeout=1000)
-    assert prefix_icon.property("visible") is True
+    qtbot.waitUntil(lambda: mode_badge.property("visible") is True, timeout=1000)
+    assert mode_text.property("text") == "OMNI"
+    assert mode_badge.property("color").name().lower() == "#38bdf8"
+    assert mode_sigil.property("text") == "\u2022"
+    assert omni_bar.findChild(object, "prefixIcon") is None
 
     # '>' Shell Execution mode
     input_field.setProperty("text", "> git status")
     qtbot.waitUntil(lambda: mode_badge.property("visible") is True, timeout=1000)
-    assert prefix_icon.property("visible") is False
     assert mode_badge.property("visible") is True
     assert mode_text.property("text") == "CLI"
     assert mode_badge.property("color").name().lower() == "#f59e0b"
@@ -315,13 +362,12 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root, qtbot
     search_shelf = canvas_qml_root.findChild(object, "searchShelf")
     bar_shell = omni_bar.findChild(object, "barShell")
     input_field.setProperty("text", "? explain quantum")
-    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode") and bar_shell.property("borderColor").name().lower() == "#38bdf8", timeout=1000)
-    assert prefix_icon.property("visible") is False
+    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode") and bar_shell.property("borderColor").name().lower() == "#a855f7", timeout=1000)
     assert mode_badge.property("visible") is True
     assert omni_bar.property("isConversationalMode") is True
     assert mode_text.property("text") == "AI"
-    assert mode_badge.property("color").name().lower() == "#38bdf8"
-    assert bar_shell.property("borderColor").name().lower() == "#38bdf8"
+    assert mode_badge.property("color").name().lower() == "#a855f7"
+    assert bar_shell.property("borderColor").name().lower() == "#a855f7"
     assert mode_sigil.property("text") == "?"
     if search_shelf:
         assert ribbon_container.property("visible") is False
@@ -337,7 +383,6 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root, qtbot
     # '/' System Command mode
     input_field.setProperty("text", "/reset")
     qapp.processEvents()
-    assert prefix_icon.property("visible") is False
     assert mode_badge.property("visible") is True
     assert mode_text.property("text") == "SET"
     assert mode_badge.property("color").name().lower() == "#10b981"
@@ -533,9 +578,9 @@ def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_ro
 
     # 1. Type conversational query
     input_field.setProperty("text", "? Explain Aether")
-    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode") and bar_shell.property("borderColor").name().lower() == "#38bdf8", timeout=1000)
+    qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode") and bar_shell.property("borderColor").name().lower() == "#a855f7", timeout=1000)
 
-    assert bar_shell.property("borderColor").name().lower() == "#38bdf8"
+    assert bar_shell.property("borderColor").name().lower() == "#a855f7"
     assert ribbon_container.property("visible") is False
 
     # 2. Simulate streaming results arriving into resultsList
@@ -910,18 +955,18 @@ def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qm
         assert dialogue_text.property("color").name().lower() == "#f1f5f9"
 
     # 3. Test Status Dot States: IDLE, STREAMING, ERROR
-    # A) IDLE State: Color = Theme.accentAI (#38BDF8), static opacity = 0.5
+    # A) IDLE State: Color = Theme.accentAI (#a855f7), static opacity = 0.5
     mock_bridge.conversation.setEngineState("IDLE")
     qapp.processEvents()
     assert omni_bar.property("engineState") == "IDLE"
-    assert status_dot.property("color").name().lower() == "#38bdf8"
+    assert status_dot.property("color").name().lower() == "#a855f7"
     assert status_dot.property("opacity") == 0.5
 
-    # B) STREAMING State: Color = Theme.accentAI (#38BDF8), active pulsing
+    # B) STREAMING State: Color = Theme.accentAI (#a855f7), active pulsing
     mock_bridge.conversation.setEngineState("STREAMING")
     qapp.processEvents()
     assert omni_bar.property("engineState") == "STREAMING"
-    assert status_dot.property("color").name().lower() == "#38bdf8"
+    assert status_dot.property("color").name().lower() == "#a855f7"
 
     # C) ERROR State: Color = Theme.accentRed / Theme.ansiRed (#EF4444), static opacity = 1.0
     mock_bridge.conversation.setEngineState("ERROR")

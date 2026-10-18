@@ -19,27 +19,23 @@ FocusScope {
         }
     }
 
+    function open() {
+        isOpen = true;
+    }
+
+    function dismiss() {
+        isOpen = false;
+    }
+
     function cancel() {
         if (!isOpen) return;
-        isOpen = false;
+        dismiss();
         cancelled();
     }
 
     function confirm() {
         if (!isOpen) return;
         confirmed();
-        Qt.quit();
-    }
-
-    Keys.onPressed: function(event) {
-        if (!isOpen) return;
-        if (event.key === Qt.Key_Escape) {
-            event.accepted = true;
-            cancel();
-        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            event.accepted = true;
-            confirm();
-        }
     }
 
     Keys.onEscapePressed: function(event) {

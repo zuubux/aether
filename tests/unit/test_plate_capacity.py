@@ -146,3 +146,21 @@ def test_last_plate_corner_drag_expands_rightward_with_left_edge_anchored():
     assert after[first] == before[first]
     assert after[last][1] > before[last][1]
     assert {p["node_id"] for p in ctrl.activePlates} == {1, 2}
+
+
+def test_shelve_plate_demotes_to_header_anchor_and_restores():
+    ctrl, feed = _make()
+    ctrl.setViewportDimensions(3900.0, 800.0)
+    _open(ctrl, 1, 100.0)
+    _open(ctrl, 2, 200.0)
+    ctrl.shelve_plate("1")
+    assert 1 not in ctrl._plates
+    assert [p["node_id"] for p in ctrl.activePlates] == [2]
+    assert "plate:1" in {a["id"] for a in feed.headerAnchors}
+    ctrl.shelve_plate("not-an-id")
+    ctrl.shelve_plate("99")
+    assert [p["node_id"] for p in ctrl.activePlates] == [2]
+
+    ctrl.open_plate(1)  # chip click restores and clears the anchor
+    assert "plate:1" not in {a["id"] for a in feed.headerAnchors}
+    assert {p["node_id"] for p in ctrl.activePlates} == {1, 2}

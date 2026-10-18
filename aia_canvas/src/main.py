@@ -125,7 +125,7 @@ def main():
     engine.rootContext().setContextProperty("plateCanvasController", bridge.plate_ctrl)
     engine.rootContext().setContextProperty("feedController", bridge.feed_ctrl)
     
-    horizon_ctrl = HorizonController(parent=app)
+    horizon_ctrl = HorizonController(parent=app, bridge=bridge)
     engine.rootContext().setContextProperty("horizonController", horizon_ctrl)
 
     intent_engine = IntentEngine(bridge)

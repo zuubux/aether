@@ -9,7 +9,7 @@
   Exposes the `qml` module containing `singleton Theme 1.0 Theme.qml` and `AetherMotion 1.0 AetherMotion.qml`, registered as both a QML import module and Python context property (`Theme`) during bootstrap.
 - **Component Subsystems:**
   - `aia_canvas/src/qml/components/`:
-    Layout delegates including `FeedHeaderAnchor.qml` (micro-pill ribbon with left unread dot, active border glow, hover-to-grow, dwell-to-preview), `FeedFlowItem.qml` (graduated 30-day temporal rolling stack scaling across `full`, `compact`, and `fading` tiers), and `PlateCard.qml` (ratio-based Bento container bound live to `display_title` and `snippet`/`preview_text` via a required delegate-injected `modelData`, with monospace log card rendering, visual media, and single-key `ai_summary` extraction).
+    Layout delegates including `FeedHeaderAnchor.qml` (glyph-free text micro-pill with left 5px amber notification dot, active border glow, hover-to-grow, leftward z:100 dwell flyout with archetype badge, shelved age and 2-line snippet), `FeedFlowItem.qml` (graduated 30-day temporal rolling stack scaling across `full`, `compact`, and `fading` tiers), and `PlateCard.qml` (ratio-based Bento container bound live to `display_title` and `snippet`/`preview_text` via a required delegate-injected `modelData`, with monospace log card rendering, visual media, and single-key `ai_summary` extraction).
   - `aia_canvas/src/qml/bar/`: 
     Input and command surfaces, including OmniBar, ShellDrawer, and file Drop targets.
   - `aia_canvas/src/qml/hud/`: 
@@ -61,7 +61,7 @@
 ### UnloadModal
 - **Path:** `aia_canvas/src/qml/hud/UnloadModal.qml`
 - **Responsibility:** Elevated confirmation modal protecting against accidental exit; initiates graceful application teardown.
-- **Signal Boundary:** Invoked by ambient `Escape` tier; emits `confirmed` to `Qt.quit()` to engage the shutdown compaction pipeline.
+- **Signal Boundary:** Opened via `open()` by Tier 5 of the Escape cascade in `main.qml` (`z: 1000`), closed via `dismiss()`; emits `cancelled` / `confirmed` (`main.qml` wires `confirmed` to `Qt.quit()`) to engage the shutdown compaction pipeline.
 
 ### AetherContextBuilder
 - **Path:** `aia_canvas/src/omni/context.py`
@@ -93,7 +93,7 @@
 ### HorizonController
 - **Path:** `aia_canvas/src/controllers/horizon_controller.py`
 - **Responsibility:** Domain controller managing dynamic horizon identity and ambient environmental status. Dynamically resolves user identity (`USER · HOSTNAME`) and provides reactive environmental telemetry.
-- **Signal Boundary:** Coordinates with QML Horizon anchors; exposes `identity`, `ambientStatus`; emits `identityChanged(str)`, `ambientStatusChanged(str)`.
+- **Signal Boundary:** Coordinates with QML Horizon anchors; exposes `identity`, `ambientStatus`, and on-demand diagnostics telemetry (`hostname`, `username`, `osKernel`, `memoryRss`, `weaverStatus` {is_connected, entity_count, db_path} read-only from `~/.config/aether/weaver_graph.db`, `stageMetrics` {active_count, capacity} from the bridge's `plate_ctrl`); slot `refresh_diagnostics()`; emits `identityChanged(str)`, `ambientStatusChanged(str)`, `diagnosticsChanged()`. Constructed with `bridge=` in `main.py`.
 
 ### PlateEngine
 - **Path:** `aia_canvas/src/plate_engine/` (`models.py`, `parser.py`, `weights.py`, `bento.py`, `lifecycle.py`, `summary_engine.py`, `feed_engine.py`)
@@ -104,10 +104,10 @@
 
 ### MainCanvasView (Root)
 - **Path:** `aia_canvas/src/qml/main.qml`
-- **Responsibility:** Master responsive QML layout shell organizing the canvas into ambient zones: Minimal Floating Horizon Anchors (`leftHorizonAnchor` bound to `horizonController.ambientStatus`, `rightHorizonAnchor` bound to `liveDateText // horizonController.identity`), Active Stage (`stageContainer`, center/left, 64px top margin clearance to prevent collision with horizon anchors), Peripheral Feed (floating semantic pill chips docked along right perimeter), and self-morphing OmniBar bottom ambient pill with clean focus state and 8-second right-docked ambient idle hints. Summons/focuses OmniBar via clicking the ambient pill or pressing `Ctrl+Space` with `AetherMotion`, dismissing smoothly back to ambient equilibrium with `Escape`. Coordinates dynamic viewport synchronization with `PlateCanvasController.setViewportDimensions`.
+- **Responsibility:** Master responsive QML layout shell organizing the canvas into ambient zones: Minimal Floating Horizon Anchors (`leftHorizonAnchor` bound to `horizonController.ambientStatus`, `rightHorizonAnchor` bound to `liveDateText // horizonController.identity`), Active Stage (`stageContainer`, center/left, 64px top margin clearance to prevent collision with horizon anchors; bottom anchored to the parent floor with a constant `max(68, 7.5% height)` margin, decoupled from `omniBar` so OmniBar drawers (`z: 100`) float over the stage without resizing it), Peripheral Feed (floating semantic pill chips docked along right perimeter), and `DiagnosticsOverlay` (`hud/DiagnosticsOverlay.qml`, `z: 500`, top-right under the horizon bar; toggled by clicking the identity segment (`USER · HOSTNAME` only, not the date/time) of `rightHorizonAnchor` or `F3`, calls `horizonController.refresh_diagnostics()` on open; shows Host & Substrate, Weaver Metadata, Stage Metrics), and self-morphing OmniBar bottom ambient pill with clean focus state and 8-second right-docked ambient idle hints. Summons/focuses OmniBar via clicking the ambient pill or pressing `Ctrl+Space` with `AetherMotion`, dismissing smoothly back to ambient equilibrium with `Escape`. Coordinates dynamic viewport synchronization with `PlateCanvasController.setViewportDimensions`.
 - **Signal Boundary:** Bridges signals from `PlateCanvasController` (`activePlatesChanged`, `bentoGeometryChanged`, `focalPlateChanged`), `FeedController` (`headerAnchorsChanged`, `flowStackChanged`, `unreadCountChanged`), and `HorizonController` (`identityChanged`, `ambientStatusChanged`).
 
 ### FeedHeaderAnchor, FeedFlowItem & PlateCard Delegates
 - **Path:** `aia_canvas/src/qml/components/FeedHeaderAnchor.qml`, `aia_canvas/src/qml/components/FeedFlowItem.qml`, `aia_canvas/src/qml/components/PlateCard.qml`
 - **Responsibility:** Responsive presentation delegates for micro-pill ribbons (with left unread indicator and hover/dwell states), graduated temporal flow stack (with `full`, `compact`, `fading` view tiers), and Bento plate containers (with monospace log viewer, media cards, and single-key `ai_summary` synthesis drawers).
-- **Signal Boundary:** Emits interaction triggers to `FeedController.markSeen`, `FeedController.pinItem`, `PlateCanvasController.selectPlate`, and `PlateCanvasController.adjust_plate_weight` (right-edge gutter drag handle), and `PlateCanvasController.resize_plate_proportional` (16px bottom-right corner handle). Focus is shown only by a 1px `Theme.accentCyan` border; unselected plates stay at opacity 1.0. PlateCard carries no window chrome (no badge pill, AI, pin, or close buttons); plates dismiss via temporal decay, sweeps, or gestures.
+- **Signal Boundary:** Emits interaction triggers to `FeedController.markSeen`, `FeedController.pinItem`, `PlateCanvasController.selectPlate`, and `PlateCanvasController.adjust_plate_weight` (right-edge gutter drag handle), and `PlateCanvasController.resize_plate_proportional` (16px bottom-right corner handle). Focus is shown only by a 1px `Theme.accentCyan` border; unselected plates stay at opacity 1.0. PlateCard carries no window chrome except a faint `⇥` shelve glyph in the crown that calls `PlateCanvasController.shelve_plate(str)` (plate -> rail chip; no badge pill, AI, pin, or close buttons); plates dismiss via temporal decay, sweeps, or gestures.

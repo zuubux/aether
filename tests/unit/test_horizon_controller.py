@@ -64,3 +64,35 @@ def test_horizon_controller_refresh_identity(qapp):
     controller.refresh_identity()
     expected_identity = f"{getpass.getuser().upper()} · {platform.node().split('.')[0].upper()}"
     assert controller.identity == expected_identity
+
+
+def test_horizon_controller_refresh_diagnostics(qapp, tmp_path, monkeypatch):
+    import sqlite3
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+    db_dir = tmp_path / ".config" / "aether"
+    db_dir.mkdir(parents=True)
+    conn = sqlite3.connect(str(db_dir / "weaver_graph.db"))
+    conn.execute("CREATE TABLE nodes (id INTEGER PRIMARY KEY)")
+    conn.executemany("INSERT INTO nodes (id) VALUES (?)", [(1,), (2,), (3,)])
+    conn.commit()
+    conn.close()
+
+    bridge = SimpleNamespace(plate_controller=SimpleNamespace(plateCount=2, capacity=4))
+    controller = HorizonController(bridge=bridge)
+    emissions = []
+    controller.diagnosticsChanged.connect(lambda: emissions.append(True))
+    controller.refresh_diagnostics()
+
+    assert emissions == [True]
+    assert controller.hostname == platform.node().split(".")[0].upper()
+    assert controller.username == getpass.getuser().upper()
+    assert controller.osKernel == f"{platform.system()} {platform.release()}"
+    assert controller.memoryRss > 0
+    assert controller.weaverStatus == {
+        "is_connected": True,
+        "entity_count": 3,
+        "db_path": str(db_dir / "weaver_graph.db"),
+    }
+    assert controller.stageMetrics == {"active_count": 2, "capacity": 4}

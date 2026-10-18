@@ -116,6 +116,7 @@ Rectangle {
     // Crown: calm identity row (no window chrome)
     Item {
         id: titleBar
+        z: 2  // above cardHoverArea (z: 1) so the shelve glyph receives clicks; the row itself has no MouseArea
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
@@ -153,9 +154,35 @@ Rectangle {
             font.family: Theme.fontCode
             font.pixelSize: 11
             opacity: 0.35
+            anchors.right: shelveBtn.left
+            anchors.rightMargin: 10
+            anchors.verticalCenter: parent.verticalCenter
+        }
+
+        Text {
+            id: shelveBtn
+            text: "⇥"
+            font.family: Theme.fontCode
+            font.pixelSize: 13
+            color: shelveMouseArea.containsMouse ? Theme.accentFocus : Theme.textDimmed
+            opacity: shelveMouseArea.containsMouse ? 0.9 : 0.25
+            verticalAlignment: Text.AlignVCenter
             anchors.right: parent.right
             anchors.rightMargin: 14
             anchors.verticalCenter: parent.verticalCenter
+
+            MouseArea {
+                id: shelveMouseArea
+                anchors.fill: parent
+                anchors.margins: -4
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    if (typeof plateCanvasController !== "undefined" && plateCanvasController) {
+                        plateCanvasController.shelve_plate(String(root.plateId));
+                    }
+                }
+            }
         }
     }
 
@@ -377,7 +404,7 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         z: 1
-        cursorShape: Qt.PointingHandCursor
+        cursorShape: root.isPreview ? Qt.PointingHandCursor : Qt.ArrowCursor
 
         onClicked: {
             if (typeof plateCanvasController !== "undefined" && plateCanvasController && root.plateId > 0) {

@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import "."
 import "components"
 import "bar"
+import "hud"
 
 Window {
     id: mainRoot
@@ -66,15 +67,9 @@ Window {
         }
     }
 
-    Text {
+    Row {
         id: rightHorizonAnchor
         objectName: "rightHorizonAnchor"
-        text: mainRoot.liveDateText + ((typeof horizonController !== "undefined" && horizonController && horizonController.identity) ? (" // " + horizonController.identity) : "")
-        opacity: rightAnchorHover.containsMouse ? 0.80 : 0.35
-        color: Theme.textPrimary
-        font.family: Theme.fontSans
-        font.pixelSize: 13
-        font.weight: Font.Normal
         z: 90
 
         anchors.top: parent.top
@@ -82,17 +77,55 @@ Window {
         anchors.right: parent.right
         anchors.rightMargin: 32
 
-        Behavior on opacity {
-            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+        // Date / time segment: static calm opacity, not interactive
+        Text {
+            id: liveDateSegment
+            objectName: "liveDateSegment"
+            text: mainRoot.liveDateText + (identitySegment.text.length > 0 ? " // " : "")
+            opacity: 0.35
+            color: Theme.textPrimary
+            font.family: Theme.fontSans
+            font.pixelSize: 13
+            font.weight: Font.Normal
         }
 
-        MouseArea {
-            id: rightAnchorHover
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
+        // Identity segment (USER · HOSTNAME): the only hoverable / clickable part
+        Text {
+            id: identitySegment
+            objectName: "identitySegment"
+            text: (typeof horizonController !== "undefined" && horizonController && horizonController.identity) ? horizonController.identity : ""
+            opacity: rightAnchorHover.containsMouse ? 0.80 : 0.35
+            color: Theme.textPrimary
+            font.family: Theme.fontSans
+            font.pixelSize: 13
+            font.weight: Font.Normal
+
+            Behavior on opacity {
+                NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+            }
+
+            MouseArea {
+                id: rightAnchorHover
+                anchors.fill: parent
+                enabled: identitySegment.text.length > 0
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: diagnosticsOverlay.toggle()
+            }
         }
     }
+
+    // Telemetry dossier overlay (toggled by identity click or F3)
+    DiagnosticsOverlay {
+        id: diagnosticsOverlay
+        z: 500
+    }
+
+    Shortcut {
+        sequence: "F3"
+        onActivated: diagnosticsOverlay.toggle()
+    }
+
     // =========================================================================
     // 3. BOTTOM OMNIBAR SELF-MORPHING AMBIENT PILL & DYNAMIC DISPATCH
     // Self-morphs proportionally between an ambient pill and an expanded workspace.
@@ -116,11 +149,52 @@ Window {
         onActivated: summonOmniBar()
     }
 
+    // Unload confirmation modal (top-most layer; opened by Tier 5 of the Escape cascade)
+    UnloadModal {
+        id: unloadModal
+        objectName: "unloadModal"
+        anchors.fill: parent
+        z: 1000
+        onConfirmed: Qt.quit()
+        onCancelled: dismiss()
+    }
+
+    // Unified Escape cascade: Unload modal -> OmniBar -> Diagnostics -> Preview -> Focal plate -> Unload prompt
     Shortcut {
         sequence: "Escape"
-        enabled: omniBar.isExpanded
-        onActivated: {
+        onActivated: handleGlobalEscape()
+    }
+
+    function handleGlobalEscape() {
+        // Tier 0: Unload modal open -> Cancel exit
+        if (unloadModal && unloadModal.visible) {
+            unloadModal.dismiss();
+            return;
+        }
+        // Tier 1: OmniBar expanded or active
+        if (omniBar && omniBar.isExpanded) {
             omniBar.dismiss();
+            return;
+        }
+        // Tier 2: Diagnostics Dossier overlay visible
+        if (diagnosticsOverlay && diagnosticsOverlay.showDiagnostics) {
+            diagnosticsOverlay.toggle();
+            return;
+        }
+        // Tier 3: Transient search preview plate active
+        if (typeof plateCanvasController !== "undefined" && plateCanvasController && plateCanvasController.hasPreview) {
+            plateCanvasController.clear_preview();
+            return;
+        }
+        // Tier 4: Plate focused -> Return to Stage 0 Equilibrium
+        if (typeof plateCanvasController !== "undefined" && plateCanvasController && plateCanvasController.focalPlateId > 0) {
+            plateCanvasController.selectPlate(0);
+            return;
+        }
+        // Tier 5: Neutral equilibrium -> Prompt to Unload
+        if (unloadModal) {
+            unloadModal.open();
+            return;
         }
     }
 
@@ -147,8 +221,9 @@ Window {
         anchors.leftMargin: Math.max(24, Math.round(mainRoot.width * 0.02))
         anchors.right: parent.right
         anchors.rightMargin: Math.max(170, Math.round(mainRoot.width * 0.13))
-        anchors.bottom: omniBar.top
-        anchors.bottomMargin: Math.max(20, Math.round(mainRoot.height * 0.025))
+        // Decoupled from omniBar: constant clearance for the resting pill; drawers float over the stage
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: Math.max(68, Math.round(mainRoot.height * 0.075))
 
         clip: true
 
@@ -182,6 +257,22 @@ Window {
                 if (geom[String(nodeId)] !== undefined) return geom[String(nodeId)];
             }
             return null;
+        }
+
+        // Substrate click dismissal: empty stage void collapses transient focus (plates sit above)
+        MouseArea {
+            id: substrateClickArea
+            objectName: "substrateClickArea"
+            anchors.fill: parent
+            z: -1
+            onClicked: {
+                if (omniBar.isExpanded) {
+                    omniBar.dismiss();
+                }
+                if (typeof plateCanvasController !== "undefined" && plateCanvasController && plateCanvasController.focalPlateId > 0) {
+                    plateCanvasController.selectPlate(0);
+                }
+            }
         }
 
         // Active Plates Instantiator

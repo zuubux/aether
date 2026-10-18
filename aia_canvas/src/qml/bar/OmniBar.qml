@@ -174,10 +174,10 @@ Item {
     signal requestAscensionToSlate(var history)
     property var turnHistory: []
 
-    readonly property real baseBarHeight: parent ? Math.max(38, Math.round(parent.height * 0.045)) : 40
+    readonly property real baseBarHeight: parent ? (isExpanded ? Math.max(38, Math.round(parent.height * 0.042)) : Math.max(28, Math.round(parent.height * 0.026))) : 40
     property real radius: isExpanded ? Math.round((showOutputDrawer ? baseBarHeight : height) * 0.28) : Math.round(height * 0.5)
 
-    width: parent ? (isExpanded ? Math.min(Math.round(parent.width * 0.45), 840) : Math.max(Math.round(parent.width * 0.20), 320)) : 320
+    width: parent ? (isExpanded ? Math.min(Math.round(parent.width * 0.45), 840) : Math.max(210, Math.round(parent.width * 0.12))) : 210
     height: outputDrawerHeight + (showOutputDrawer ? 1 : 0) + baseBarHeight
     anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
     anchors.bottom: parent ? parent.bottom : undefined
@@ -388,7 +388,46 @@ Item {
         root.dismiss();
     }
 
+    function dismissOrphanedPreview() {
+        if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) previewDwellTimer.stop();
+        var pCtrl = (typeof plateCanvasController !== "undefined" && plateCanvasController)
+            ? plateCanvasController
+            : ((typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.plate_ctrl) ? canvasBridge.plate_ctrl : null);
+        if (pCtrl && pCtrl.hasPreview) {
+            pCtrl.clear_preview();
+        }
+    }
+
+    onResultsListChanged: {
+        if (root.modePrefix === "" && (!root.resultsList || root.resultsList.length === 0)) {
+            root.dismissOrphanedPreview();
+            return;
+        }
+        if (resultsList && resultsList.length > 0 && root.isStandardSearch) {
+            if (currentRibbonIndex < 0 || currentRibbonIndex >= resultsList.length) {
+                currentRibbonIndex = 0;
+            }
+            // Index may have stayed at 0 (no onCurrentRibbonIndexChanged), so re-arm dwell explicitly.
+            if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) {
+                previewDwellTimer.restart();
+            }
+        }
+    }
+
+    onCurrentQueryChanged: {
+        if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) previewDwellTimer.stop();
+    }
+
     onCurrentRibbonIndexChanged: {
+        if (currentRibbonIndex < 0) {
+            if (root.modePrefix === "") root.dismissOrphanedPreview();
+            else if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) previewDwellTimer.stop();
+            return;
+        }
+        if (!root.isStandardSearch) {
+            if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) previewDwellTimer.stop();
+            return;
+        }
         if (currentRibbonIndex >= 0 && resultsList && currentRibbonIndex < resultsList.length) {
             if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) previewDwellTimer.restart();
             var item = resultsList[currentRibbonIndex];
@@ -461,13 +500,10 @@ Item {
         anchors.fill: parent
         radius: root.radius
         color: Theme.surfaceGlass
-        border.width: 1
+        border.width: root.isExpanded ? 1.5 : 1
         border.color: {
-            if (root.isConversationalMode) return Theme.accentAI;
-            if (root.isShellMode) return Theme.accentShell;
-            if (root.isExpanded) return Theme.borderSubtle;
-            if (ambientPillMouseArea.containsMouse) return Theme.borderHover;
-            return Theme.borderSeamSubtle;
+            if (!root.isExpanded && !ambientPillMouseArea.containsMouse) return Theme.borderSubtle;
+            return Theme.getModeColor(root.modePrefix);
         }
         readonly property color borderColor: border.color
         Behavior on border.color { ColorAnimation { duration: Theme.animFadeInDuration ?? 160 } }
@@ -526,6 +562,7 @@ Item {
                     height: root.baseBarHeight
                     
                     isExpanded: root.isExpanded
+                    ambientHovered: ambientPillMouseArea.containsMouse
                     modePrefix: root.modePrefix
                     effectiveProvider: root.effectiveProvider
                     borderColor: barShell.borderColor
@@ -809,6 +846,7 @@ Item {
         interval: 150
         repeat: false
         onTriggered: {
+            if (!root.isStandardSearch) return;
             var resId = root.selectedResultId;
             if (resId !== null && resId !== undefined && resId !== "") {
                 var pCtrl = (typeof plateCanvasController !== "undefined" && plateCanvasController) 

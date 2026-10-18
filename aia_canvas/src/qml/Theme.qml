@@ -82,7 +82,8 @@ QtObject {
     // Conversational Design Tokens
     readonly property color accentGemini: "#38BDF8"
     readonly property color accentClaude: "#F97316"
-    readonly property color accentAI: "#38BDF8"
+    readonly property color accentAI: "#A855F7"
+    readonly property color accentSystem: "#10B981"
     readonly property color accentRed: "#EF4444"
     readonly property color surfaceDialogue: Qt.rgba(0.07, 0.08, 0.10, 0.85)
 
@@ -287,7 +288,14 @@ QtObject {
         var q = (query || "").trim();
         if (q.startsWith(">")) return accentShell; // Amber for Shell
         if (q.startsWith("?")) return accentAI; // Cyan/Indigo for LLM
-        if (q.startsWith("/")) return "#10B981"; // Emerald for System
+        if (q.startsWith("/")) return accentSystem; // Emerald for System
         return borderSubtle; // Neutral slate for Search
+    }
+
+    function getModeColor(prefix) {
+        if (prefix === ">") return accentShell;
+        if (prefix === "?") return accentAI;
+        if (prefix === "/") return accentSystem;
+        return accentFocus;
     }
 }

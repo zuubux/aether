@@ -6,124 +6,135 @@ Rectangle {
     id: diagnosticsRoot
     objectName: "diagnosticsOverlay"
     property bool showDiagnostics: false
+    readonly property bool hasHorizon: typeof horizonController !== "undefined" && horizonController !== null
+    readonly property var weaver: hasHorizon ? horizonController.weaverStatus : ({})
+    readonly property var stage: hasHorizon ? horizonController.stageMetrics : ({})
+
+    function toggle() {
+        showDiagnostics = !showDiagnostics;
+        if (showDiagnostics && typeof horizonController !== "undefined" && horizonController) {
+            horizonController.refresh_diagnostics();
+        }
+    }
+
     visible: showDiagnostics
-    width: 290
-    height: 380
+    width: 320
+    height: content.implicitHeight + 28
     anchors.top: parent ? parent.top : undefined
     anchors.right: parent ? parent.right : undefined
-    anchors.margins: 20
+    anchors.topMargin: 52
+    anchors.rightMargin: 32
     color: Theme.surfaceBackground
     border.color: Theme.borderSubtle
     border.width: 1
     radius: 8
-    opacity: 0.92
-    z: 9000
+    z: 500
 
-    Column {
-        anchors.fill: parent
+    component SectionTitle: Text {
+        color: Theme.textMuted
+        font.family: Theme.fontSans
+        font.pixelSize: 10
+        font.bold: true
+        font.letterSpacing: 1
+    }
+
+    component KeyText: Text {
+        color: Theme.textMuted
+        font.family: Theme.fontSans
+        font.pixelSize: 11
+        Layout.preferredWidth: 96
+    }
+
+    component ValueText: Text {
+        color: Theme.textPrimary
+        font.family: Theme.fontCode
+        font.pixelSize: 11
+        elide: Text.ElideMiddle
+        Layout.fillWidth: true
+    }
+
+    ColumnLayout {
+        id: content
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
         anchors.margins: 14
-        spacing: 10
+        spacing: 8
 
-        // Header Row: Title & FPS Badge
-        RowLayout {
-            width: parent.width
+        Text {
+            text: "SYSTEM DOSSIER"
+            color: Theme.textPrimary
+            font.family: Theme.fontCode
+            font.pixelSize: 12
+            font.bold: true
+        }
 
-            Text {
-                text: "AETHER DIAGNOSTICS"
-                color: Theme.textPrimary
-                font.family: Theme.fontCode
-                font.pixelSize: 12
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.borderSubtle }
+
+        SectionTitle { text: "HOST & SUBSTRATE" }
+        GridLayout {
+            columns: 2
+            columnSpacing: 8
+            rowSpacing: 4
+            Layout.fillWidth: true
+
+            KeyText { text: "Hostname" }
+            ValueText { text: diagnosticsRoot.hasHorizon ? horizonController.hostname : "" }
+            KeyText { text: "Username" }
+            ValueText { text: diagnosticsRoot.hasHorizon ? horizonController.username : "" }
+            KeyText { text: "Kernel" }
+            ValueText { text: diagnosticsRoot.hasHorizon ? horizonController.osKernel : "" }
+            KeyText { text: "Memory RSS" }
+            ValueText { text: (diagnosticsRoot.hasHorizon ? horizonController.memoryRss : 0).toFixed(1) + " MB" }
+        }
+
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.borderSubtle }
+
+        SectionTitle { text: "WEAVER METADATA" }
+        GridLayout {
+            columns: 2
+            columnSpacing: 8
+            rowSpacing: 4
+            Layout.fillWidth: true
+
+            KeyText { text: "Status" }
+            ValueText {
+                objectName: "weaverStatusText"
+                text: diagnosticsRoot.weaver.is_connected ? "CONNECTED" : "OFFLINE"
+                color: diagnosticsRoot.weaver.is_connected ? Theme.accentSuccess : Theme.textDimmed
                 font.bold: true
-                Layout.fillWidth: true
             }
-
-            Rectangle {
-                width: fpsText.implicitWidth + 12
-                height: 18
-                radius: 4
-                color: "#1e293b"
-                border.color: Theme.accentFocus
-                border.width: 1
-
-                Text {
-                    id: fpsText
-                    anchors.centerIn: parent
-                    text: (canvasBridge ? canvasBridge.renderFps.toFixed(0) : "120") + " FPS"
-                    color: Theme.accentFocus
-                    font.family: Theme.fontCode
-                    font.pixelSize: 10
-                    font.bold: true
-                }
-            }
+            KeyText { text: "Entities" }
+            ValueText { text: String(diagnosticsRoot.weaver.entity_count !== undefined ? diagnosticsRoot.weaver.entity_count : 0) }
+            KeyText { text: "DB Path" }
+            ValueText { text: diagnosticsRoot.weaver.db_path !== undefined ? diagnosticsRoot.weaver.db_path : "" }
         }
 
-        Rectangle { width: parent.width; height: 1; color: Theme.borderSubtle }
+        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.borderSubtle }
 
-        // ENGINE SECTION
-        Text {
-            text: "ENGINE"
-            color: Theme.textMuted
-            font.family: Theme.fontCode
-            font.pixelSize: 10
-            font.bold: true
-        }
-
-        Grid {
+        SectionTitle { text: "STAGE METRICS" }
+        GridLayout {
             columns: 2
-            spacing: 8
-            rowSpacing: 6
-            width: parent.width
+            columnSpacing: 8
+            rowSpacing: 4
+            Layout.fillWidth: true
 
-            Text { text: "Nodes:"; color: Theme.textMuted; font.family: Theme.fontCode; font.pixelSize: 11; width: 110 }
-            Text { text: canvasBridge ? canvasBridge.activeNodeCount : 0; color: Theme.accentFocus; font.family: Theme.fontCode; font.pixelSize: 11; font.bold: true }
-
-            Text { text: "Edges (Render):"; color: Theme.textMuted; font.family: Theme.fontCode; font.pixelSize: 11; width: 110 }
-            Text { text: canvasBridge ? canvasBridge.activeEdgeCount : 0; color: Theme.accentFocus; font.family: Theme.fontCode; font.pixelSize: 11; font.bold: true }
-        }
-
-        Rectangle { width: parent.width; height: 1; color: Theme.borderSubtle }
-
-        // PIPELINE / IPC SECTION
-        Text {
-            text: "PIPELINE / IPC"
-            color: Theme.textMuted
-            font.family: Theme.fontCode
-            font.pixelSize: 10
-            font.bold: true
-        }
-
-        Grid {
-            columns: 2
-            spacing: 8
-            rowSpacing: 6
-            width: parent.width
-
-            Text { text: "IPC RTT:"; color: Theme.textMuted; font.family: Theme.fontCode; font.pixelSize: 11; width: 110 }
-            Text { text: canvasBridge ? canvasBridge.ipcRttMs.toFixed(1) + " ms" : "0.0 ms"; color: Theme.textPrimary; font.family: Theme.fontCode; font.pixelSize: 11; font.bold: true }
-
-            Text { text: "DB Query:"; color: Theme.textMuted; font.family: Theme.fontCode; font.pixelSize: 11; width: 110 }
-            Text { text: canvasBridge ? canvasBridge.dbQueryMs.toFixed(1) + " ms" : "0.0 ms"; color: Theme.textPrimary; font.family: Theme.fontCode; font.pixelSize: 11; font.bold: true }
-
-            Text { text: "LLM TTFT:"; color: Theme.textMuted; font.family: Theme.fontCode; font.pixelSize: 11; width: 110 }
-            Text { text: canvasBridge ? canvasBridge.llmTtftMs.toFixed(1) + " ms" : "0.0 ms"; color: Theme.textPrimary; font.family: Theme.fontCode; font.pixelSize: 11; font.bold: true }
-
-            Text { text: "Backend Socket:"; color: Theme.textMuted; font.family: Theme.fontCode; font.pixelSize: 11; width: 110 }
-            Text {
-                text: (canvasBridge && canvasBridge.isConnected) ? "CONNECTED" : "OFFLINE"
-                color: (canvasBridge && canvasBridge.isConnected) ? Theme.accentSuccess : "#ef4444"
-                font.family: Theme.fontCode; font.pixelSize: 11; font.bold: true
+            KeyText { text: "Active Plates" }
+            ValueText { text: String(diagnosticsRoot.stage.active_count !== undefined ? diagnosticsRoot.stage.active_count : 0) }
+            KeyText { text: "Capacity" }
+            ValueText { text: String(diagnosticsRoot.stage.capacity !== undefined ? diagnosticsRoot.stage.capacity : 0) }
+            KeyText { text: "Viewport" }
+            ValueText {
+                text: (diagnosticsRoot.parent ? Math.round(diagnosticsRoot.parent.width) : 0) + " × " + (diagnosticsRoot.parent ? Math.round(diagnosticsRoot.parent.height) : 0)
             }
         }
 
-        Rectangle { width: parent.width; height: 1; color: Theme.borderSubtle }
-
         Text {
-            text: "Press F3 to dismiss overlay"
+            text: "F3 or click identity to dismiss"
             color: Theme.textDimmed
-            font.family: Theme.fontCode
+            font.family: Theme.fontSans
             font.pixelSize: 9
-            anchors.horizontalCenter: parent.horizontalCenter
+            Layout.alignment: Qt.AlignHCenter
         }
     }
 }
-

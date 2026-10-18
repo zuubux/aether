@@ -81,19 +81,23 @@ The master visual shell (`main.qml`) organizes the entire display into minimal, 
   - Borderless, floating text anchors rendered directly on the root window pinned to `parent.top` with `anchors.topMargin: 18`, `anchors.leftMargin: 32`, and `anchors.rightMargin: 32`.
   - Typography: 13px, `Theme.fontSans`, weight `Font.Normal` with calm baseline opacity (0.35) and smooth hover transitions (0.80).
   - Left anchor (`leftHorizonAnchor`): Bound to `horizonController.ambientStatus` with fallback to `""`, hidden if empty.
-  - Right anchor (`rightHorizonAnchor`): Bound to `mainRoot.liveDateText + (horizonController ? (" // " + horizonController.identity) : "")`, dynamically resolving username and hostname without hardcoded strings.
+  - Right anchor (`rightHorizonAnchor`, a `Row` of a static-opacity `liveDateSegment` and a hoverable `identitySegment`; only the identity brightens on hover): Bound to `mainRoot.liveDateText + (horizonController ? (" // " + horizonController.identity) : "")`, dynamically resolving username and hostname without hardcoded strings.
+  - Diagnostics HUD (`hud/DiagnosticsOverlay.qml`, `z: 500`): clicking the identity segment (`USER · HOSTNAME` only, not the date/time) of `rightHorizonAnchor` or pressing `F3` calls `DiagnosticsOverlay.toggle()`, which refreshes `HorizonController.refresh_diagnostics()` and shows HOST & SUBSTRATE, WEAVER METADATA (read-only SQLite probe of `~/.config/aether/weaver_graph.db`) and STAGE METRICS (active plates, capacity, viewport) groups.
 - **Active Stage (`stageContainer`):**
   - Primary interactive workspace hosting active `PlateCard` components arranged via spatial allocators.
   - Pinned with `anchors.top: parent.top` and `anchors.topMargin: 64` to maintain optical clearance and prevent active plates from colliding with the horizon anchors.
   - Strictly clipped (`clip: true`) and expands dynamically across the display without heavy framing or watermarks, leaving a clean void when vacant.
+  - **Layer Decoupling:** The stage bottom is anchored to `parent.bottom` with `anchors.bottomMargin: Math.max(68, Math.round(mainRoot.height * 0.075))`, never to `omniBar.top`. The OmniBar (`z: 100`) and its slideout drawers/ribbons float above the stage, so expanding them never resizes, shifts, or re-allocates plates.
+
   - Synchronizes dynamic dimensions directly to `PlateCanvasController.setViewportDimensions(width, height)`.
 - **Peripheral Feed (Right Perimeter Semantic Chips):**
   - Borderless, transparent column of floating semantic pill chips (`FeedHeaderAnchor.qml`) docked along the right edge.
-  - Renders icon + label + optional notification dot with swift GPU hover-to-grow scaling and 320ms dwell-to-preview popovers.
+  - Renders a clean text label at rest (no static glyph) with an optional 5px amber (`#F59E0B`) notification dot to its left, shown only when `hasNotification` / `is_notifying` / `has_dot` is set; swift GPU hover-to-grow scaling and 320ms dwell-to-preview flyouts.
+  - Flyout card (`z: 100`, chip lifted to `z: 100` while previewing) expands leftward (`anchors.right: parent.left`, 12px margin), vertically centered on the chip and clamped to window bounds; shows title + archetype badge (`[MD]`, `[PTY]`), temporal state (`Shelved 2m ago`) and a 2-line snippet.
 - **Self-Morphing OmniBar Ambient Pill & Dispatch Surface (Bottom Center):**
   - Sole consolidated component centered horizontally at the bottom viewport edge with proportional bottom margin (`Math.round(parent.height * 0.03)`).
-  - Resting Stage 0 ambient pill displaying subtle placeholder ("What are we doing?") with capsule geometry (`radius: Math.round(height * 0.5)`).
-  - Dynamically self-morphs proportionally into active workspace (`width: Math.min(Math.round(parent.width * 0.45), 840)`, `radius: Math.round(height * 0.28)`) upon click, focus, or `Ctrl+Space`.
+  - Resting Stage 0 ambient pill displaying a whisper-low-contrast placeholder ("What are we doing?", `Theme.textMuted` at 0.45 opacity, brightening to 1.0 together with the border on hover; font `max(11, round(height * 0.42))`) with compact capsule geometry (`width: max(210, round(parent.width * 0.12))`, `height: max(28, round(parent.height * 0.026))`, `radius: Math.round(height * 0.5)`).
+  - Dynamically self-morphs proportionally into active workspace (`width: Math.min(Math.round(parent.width * 0.45), 840)`, input row `height: max(38, round(parent.height * 0.042))`, `radius: Math.round(height * 0.28)`) upon click, focus, or `Ctrl+Space`.
   - Clean Focus State & Delayed Ambient Hints: When expanded/focused (`isExpanded === true`), inline placeholder text is eliminated to keep the input area clean with just the blinking cursor. After 8 seconds of idle focus while empty, subtle ambient hints (`? ask aether   > command   / system`) fade in along the right edge at 0.30 opacity over 600ms, instantly cutting to 0.0 without delay upon typing any character.
   - Pressing `Escape` clears text, unfocuses input, collapses open conversation drawers, and smoothly returns to the resting ambient capsule state.
 
@@ -239,6 +243,7 @@ graph LR
 - **Diagonal Corner Resizing:** `resize_plate_proportional(int nodeId, float deltaW, float deltaH)` (deltas are ratios of stage width/height). Width reuses `BentoAllocator.adjust_weight` (pinned neighbours are `protected`: the target is clamped so they keep `MIN_PLATE_RATIO`). **Last-plate rightward expansion:** on the LAST plate of a row, `adjust_weight` first calls `BentoAllocator._expand_last`: the left edge stays anchored and the right edge moves outward into the stage margin (the row may grow until it reaches the symmetric margin implied by `ROW_SPAN_MAX_RATIO`), with every plate's width persisted as a stage-width ratio in `weight_overrides` and the left-anchored row frame in `BentoAllocator.row_anchors` (replacing row centring; cleared on eviction/`clear_all`). Left neighbours keep their widths while headroom exists; only the overflow past the margin compresses the left neighbour via the usual floor/eviction path. Dragging inward shrinks the last plate down to `MIN_PLATE_RATIO` of the row. Intermediate plates still adjust the seam against their right neighbour. Height is stored per plate in `BentoAllocator.height_overrides` (ratio of stage height; each override applies to its own plate only via `adjust_height`; row neighbours keep their own heights and share the row's top baseline, while the row band is its tallest plate so rows stack top-down without overlap. Auto-sized rows are compressed toward `MIN_PLATE_HEIGHT_RATIO` (0.185 of stage height); when `rows_overflow` reports the stack no longer fits, the unpinned, non-target plate with the oldest `last_interaction_epoch` is evicted (history chip, `plateEvicted`) and Bento re-runs; if only pinned plates remain, `fit_height` clamps the target plate. `bentoGeometryChanged` and `activePlatesChanged` are emitted. `PlateCard.qml` exposes a 16x16 `Qt.SizeFDiagCursor` corner `MouseArea` (faint accent glyph on hover, `preventStealing`, above the card surface so selection/panning is suppressed) that calls the slot with stage-space drag deltas.
 - **Saccade Focus Equality:** Unselected plates are never dimmed or blurred (`opacity: 1.0`; only transient previews use 0.75). The focal plate is indicated solely by a 1px `Theme.accentCyan` border.
 - **Narrow-viewport safety:** `BentoAllocator` clamps column width to >= 1px so coordinates are never negative and plates never overlap.
+- `shelve_plate(string plateId)`: Manual "minimize" from the `⇥` crown glyph in `PlateCard.qml`; evicts a committed (non-preview) plate from the stage into a pinned `plate:<id>` history chip in `FeedController.headerAnchors` (via `add_history_chip`), re-runs Bento, and emits `activePlatesChanged` and `bentoGeometryChanged`. Clicking the chip calls `open_plate`, which restores the plate and clears the chip.
 - `clearAll()`: Purges all active plates and resets focal stage.
 
 ### 4.2 FeedController
@@ -318,3 +323,16 @@ graph LR
   - Header chrome displaying the command, file path, live status indicator, and pin/close controls.
 - **Canvas Invariant:** System logs and stdout streams are **NEVER** dumped as raw, uncontained text directly onto the open canvas. Monospace content is strictly isolated within card geometries to prevent visual fragmentation and preserve Stage 0 balance.
 
+
+### 5.4 Unified Escape Cascade & Substrate Click Contract
+- **Single Handler:** `main.qml` owns the only global `Shortcut { sequence: "Escape" }`, which calls `handleGlobalEscape()`. Each press dismisses exactly one tier, in order:
+  0. Unload modal visible -> `unloadModal.dismiss()` (cancels exit)
+  1. OmniBar expanded/active -> `omniBar.dismiss()`
+  2. Diagnostics dossier visible -> `diagnosticsOverlay.toggle()`
+  3. Transient search preview plate (`PlateCanvasController.hasPreview`) -> `clear_preview()`
+  4. Focal plate (`focalPlateId > 0`) -> `selectPlate(0)` (Stage 0 equilibrium)
+  5. Neutral equilibrium (nothing above active) -> `unloadModal.open()` ("Unload Aether?"). Enter/`Unload` emits `confirmed` -> `Qt.quit()`; Escape/`Cancel`/scrim click emits `cancelled` -> `dismiss()`. `UnloadModal` is mounted in `main.qml` at `z: 1000`.
+- **Non-destructive:** Committed plates are never closed by the cascade.
+- **Orphaned Preview Dismissal:** In standard search mode (no `>`/`?`/`/` prefix), `OmniBar` stops `previewDwellTimer` on every query change and calls `clear_preview()` (when `hasPreview`) as soon as `resultsList` becomes empty or `currentRibbonIndex < 0`, so a preview never outlives its ribbon candidate. When `resultsList` re-populates with ≥1 candidates, `onResultsListChanged` clamps `currentRibbonIndex` into range and explicitly restarts `previewDwellTimer` (the index may remain 0, so `onCurrentRibbonIndexChanged` would not fire), so the stage preview tracks the new top candidate. Prefixed modes keep the retained preview.
+- **Substrate Click:** A `MouseArea` (`substrateClickArea`, `z: -1`) inside `stageContainer`, beneath all plate cards, dismisses an expanded OmniBar and calls `selectPlate(0)` when a plate is focal. `DiagnosticsOverlay` stays open on substrate/plate clicks.
+- **Controller:** `selectPlate(0)` sets `focal_plate_id = 0` without touching any plate and emits `focalPlateChanged(0)` and `bentoGeometryChanged`. `hasPreview` is a read-only bool property (notify `activePlatesChanged`).

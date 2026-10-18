@@ -119,6 +119,11 @@ class PlateCanvasController(BaseController):
         """int: ID of the plate occupying focal stage (0 if none)."""
         return getattr(self, "_focal_plate_id", 0) or 0
 
+    @pyqtProperty(bool, notify=activePlatesChanged)
+    def hasPreview(self) -> bool:
+        """bool: True while a transient search preview plate is mounted."""
+        return any(getattr(p, "is_preview", False) for p in getattr(self, "_plates", {}).values())
+
     @pyqtProperty(int, notify=activePlatesChanged)
     def plateCount(self) -> int:
         """int: Total number of active plates on the canvas."""
@@ -487,6 +492,21 @@ class PlateCanvasController(BaseController):
             feed_ctrl.add_history_chip(payload)
         self.plateEvicted.emit(node_id)
 
+    @pyqtSlot(str)
+    def shelve_plate(self, plate_id: str) -> None:
+        """Manually shelves a committed stage plate to the peripheral rail as a chip."""
+        try:
+            nid = int(plate_id)
+        except (TypeError, ValueError):
+            return
+        plate = self._plates.get(nid)
+        if plate is None or plate.is_preview:
+            return
+        self._evict_plate(nid)
+        self.recalculate_bento()
+        self.activePlatesChanged.emit()
+        self.bentoGeometryChanged.emit()
+
     @pyqtSlot("QVariant")
     @pyqtSlot("QVariant", result=int)
     def preview_plate(self, target: Any) -> int:
@@ -675,6 +695,13 @@ class PlateCanvasController(BaseController):
     def selectPlate(self, node_id: int) -> None:
         """Focuses a plate on stage and refreshes its interaction timestamp."""
         nid = int(node_id)
+        if nid == 0:
+            # Stage 0 equilibrium: drop focus without touching any plate
+            if self._focal_plate_id != 0:
+                self._focal_plate_id = 0
+                self.focalPlateChanged.emit(0)
+                self.bentoGeometryChanged.emit()
+            return
         plate = self._plates.get(nid)
         if plate is None:
             return
