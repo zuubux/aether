@@ -94,6 +94,7 @@ The master visual shell (`main.qml`) organizes the entire display into minimal, 
   - Sole consolidated component centered horizontally at the bottom viewport edge with proportional bottom margin (`Math.round(parent.height * 0.03)`).
   - Resting Stage 0 ambient pill displaying subtle placeholder ("What are we doing?") with capsule geometry (`radius: Math.round(height * 0.5)`).
   - Dynamically self-morphs proportionally into active workspace (`width: Math.min(Math.round(parent.width * 0.45), 840)`, `radius: Math.round(height * 0.28)`) upon click, focus, or `Ctrl+Space`.
+  - Clean Focus State & Delayed Ambient Hints: When expanded/focused (`isExpanded === true`), inline placeholder text is eliminated to keep the input area clean with just the blinking cursor. After 8 seconds of idle focus while empty, subtle ambient hints (`? ask aether   > command   / system`) fade in along the right edge at 0.30 opacity over 600ms, instantly cutting to 0.0 without delay upon typing any character.
   - Pressing `Escape` clears text, unfocuses input, collapses open conversation drawers, and smoothly returns to the resting ambient capsule state.
 
 ### 2.2 Sizing & Scaling Invariants
@@ -225,7 +226,9 @@ graph LR
 - `togglePin(int nodeId) -> bool`: Convenience method inverting the current pin state.
 - `closePlate(int nodeId) -> bool`: Dismisses plate, triggers automatic Bento reflow, and emits `plateClosed(nodeId)`.
 - `getAiSummary(int nodeId) -> str` / `ai_summary(int nodeId) -> str`: Cache-first lookup into `metadata["ai_summary"]`. Falls back to `PlateSummaryEngine` 2-sentence extractive distillation, updates the cache, and emits `summaryUpdated(nodeId, summary)`.
-- `addPlate(variant payload) -> int` / `openPlate(variant payload) -> int`: Ingests plate payload with explicit `is not None` parsing, triggers Bento packing, and emits `plateOpened(nodeId)`.
+- `addPlate(variant payload) -> int` / `openPlate(variant target) -> int` / `open_plate(variant target) -> int`: Mounts and activates a plate from a node ID, file path, or payload dictionary (resolving full metadata from SQLite `weaver_graph.db` when given an ID or path, with 1KB file snippet fallback). Converts matching transient preview plates to committed (`is_preview=False`), triggers Bento packing, and emits `plateOpened(nodeId)`.
+- `previewPlate(variant target) -> int` / `preview_plate(variant target) -> int`: Hydrates and mounts a transient plate with `is_preview=True`, replacing any existing transient preview without stacking duplicates.
+- `clearPreview()` / `clear_preview()`: Purges any transient dwell preview plates (`is_preview == True`) from the active stage and triggers Bento recalculation.
 - `recalculateBento()`: Runs 2D occupancy grid packing across active plates.
 - `setViewportDimensions(real width, real height)`: Synchronizes viewport resolution with `BentoGridConfig` and initiates grid re-packing.
 - `selectPlate(int nodeId)`: Sets focal plate focus and emits `focalPlateChanged(nodeId)`.

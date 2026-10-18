@@ -81,26 +81,16 @@ def test_omnibar_key_events_and_shelf_expansion(qapp, qml_engine, canvas_qml_roo
     qapp.processEvents()
     assert omni_bar.property("currentRibbonIndex") == 0
 
-    # 2. Test Shelf expansion state transitions (Up / Down arrow)
-    assert not omni_bar.property("shelfExpanded")
-
-    # Press Up Arrow to expand
-    up_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Up, Qt.KeyboardModifier.NoModifier)
-    qapp.sendEvent(input_field, up_evt)
-    qtbot.waitUntil(lambda: omni_bar.property("shelfExpanded") and abs(ribbon_container.property("height") - 240) < 5.0, timeout=1000)
-
-    assert omni_bar.property("shelfExpanded")
-    assert abs(ribbon_container.property("height") - 240) < 5.0
-
-    # Down Arrow to navigate/collapse
-    down_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Down, Qt.KeyboardModifier.NoModifier)
-    qapp.sendEvent(input_field, down_evt)
+    # 2. Test Left/Right key navigation
+    right_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.KeyboardModifier.NoModifier)
+    qapp.sendEvent(input_field, right_evt)
     qapp.processEvents()
-    qapp.sendEvent(input_field, down_evt)
-    qtbot.waitUntil(lambda: not omni_bar.property("shelfExpanded") and abs(ribbon_container.property("height") - 52) < 5.0, timeout=1000)
+    assert omni_bar.property("currentRibbonIndex") == 1
 
-    assert not omni_bar.property("shelfExpanded")
-    assert abs(ribbon_container.property("height") - 52) < 5.0
+    left_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Left, Qt.KeyboardModifier.NoModifier)
+    qapp.sendEvent(input_field, left_evt)
+    qapp.processEvents()
+    assert omni_bar.property("currentRibbonIndex") == 0
 
     # 3. Test Esc key search dismissal
     esc_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
@@ -110,6 +100,190 @@ def test_omnibar_key_events_and_shelf_expansion(qapp, qml_engine, canvas_qml_roo
     qapp.processEvents()
 
     assert not omni_bar.property("active")
+
+
+def test_omnibar_horizontal_ribbon_and_selection(qapp, qml_engine, canvas_qml_root, qtbot, mock_bridge):
+    omni_bar = canvas_qml_root.findChild(object, "omniBar")
+    input_field = omni_bar.findChild(object, "inputField")
+    ribbon = omni_bar.findChild(object, "ribbonContainer")
+
+    assert ribbon is not None
+
+    omni_bar.open()
+    input_field.setProperty("text", "financial")
+    qapp.processEvents()
+
+    # Populate search results for standard search
+    results = [
+        {"id": "1", "node_id": "1", "title": "financial_q3_report.csv", "archetype": "document", "snippet": "Sheet: financial_q3_report.csv", "path": "/path/to/financial_q3_report.csv"},
+        {"id": "2", "node_id": "2", "title": "annual_budget.xlsx", "archetype": "table", "snippet": "Budget 2026", "path": "/path/to/annual_budget.xlsx"},
+    ]
+    omni_bar.setProperty("resultsList", results)
+    omni_bar.setProperty("currentRibbonIndex", 0)
+    qapp.processEvents()
+
+    # Ribbon becomes active and visible
+    assert ribbon.property("active") is True
+    assert ribbon.property("visible") is True
+    assert ribbon.property("height") == 52.0
+
+    # Right/Left key navigation with wraparound
+    # 0 -> Right -> 1
+    right_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.KeyboardModifier.NoModifier)
+    qapp.sendEvent(input_field, right_evt)
+    qapp.processEvents()
+    assert omni_bar.property("currentRibbonIndex") == 1
+
+    # 1 -> Right -> wraps to 0
+    qapp.sendEvent(input_field, right_evt)
+    qapp.processEvents()
+    assert omni_bar.property("currentRibbonIndex") == 0
+
+    # 0 -> Left -> wraps to 1 (results.length - 1)
+    left_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Left, Qt.KeyboardModifier.NoModifier)
+    qapp.sendEvent(input_field, left_evt)
+    qapp.processEvents()
+    assert omni_bar.property("currentRibbonIndex") == 1
+
+    # 1 -> Tab -> wraps to 0
+    tab_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Tab, Qt.KeyboardModifier.NoModifier)
+    qapp.sendEvent(input_field, tab_evt)
+    qapp.processEvents()
+    assert omni_bar.property("currentRibbonIndex") == 0
+
+    # Hook open_plate to verify targetId
+    opened_plates = []
+    mock_bridge.plate_ctrl.plateOpened.connect(lambda nid: opened_plates.append(nid))
+
+    # Enter key selects and mounts plate
+    enter_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    qapp.sendEvent(input_field, enter_evt)
+    qapp.processEvents()
+
+    # Plate opened with targetId "1"
+    assert len(opened_plates) == 1
+    assert opened_plates[0] == 1
+
+    # OmniBar collapses back to ambient capsule state
+    assert not omni_bar.property("isExpanded")
+
+
+def test_search_suggestion_ribbon_geometry_and_delegates(qapp, qml_engine, canvas_qml_root, qtbot, mock_bridge):
+    omni_bar = canvas_qml_root.findChild(object, "omniBar")
+    input_field = omni_bar.findChild(object, "inputField")
+    ribbon = omni_bar.findChild(object, "ribbonContainer")
+
+    assert ribbon is not None
+
+    # Verify horizontal ribbon list view is present
+    ribbon_list_view = ribbon.findChild(object, "ribbonListView")
+    assert ribbon_list_view is not None
+
+    omni_bar.open()
+    input_field.setProperty("text", "bmw")
+    qapp.processEvents()
+
+    results = [
+        {"id": "1", "node_id": "1", "title": "bmw_specs.pdf", "archetype": "document", "snippet": "Engine specs BMW M3", "path": "/docs/bmw_specs.pdf"}
+    ]
+    omni_bar.setProperty("resultsList", results)
+    qapp.processEvents()
+
+    assert ribbon.property("active") is True
+    assert ribbon.property("shelfExpanded") is False
+    assert ribbon.property("height") == 52.0
+
+    overflow_indicator = ribbon.findChild(object, "overflowIndicator")
+    assert overflow_indicator is not None
+
+    # Verify typing bmw with 5 results does NOT show +1 more ^ button
+    results_5 = [
+        {"id": str(i), "node_id": str(i), "title": f"bmw_{i}.pdf", "archetype": "document", "snippet": f"BMW {i}", "path": f"/docs/bmw_{i}.pdf"}
+        for i in range(1, 6)
+    ]
+    omni_bar.setProperty("resultsList", results_5)
+    qapp.processEvents()
+    assert ribbon.property("resultsCount") == 5
+    assert overflow_indicator.property("visible") is False
+
+    # 6 results also sits cleanly without overflow pill
+    results_6 = [
+        {"id": str(i), "node_id": str(i), "title": f"bmw_{i}.pdf", "archetype": "document", "snippet": f"BMW {i}", "path": f"/docs/bmw_{i}.pdf"}
+        for i in range(1, 7)
+    ]
+    omni_bar.setProperty("resultsList", results_6)
+    qapp.processEvents()
+    assert ribbon.property("resultsCount") == 6
+    assert overflow_indicator.property("visible") is False
+
+    # 7 results shows overflow indicator
+    results_7 = [
+        {"id": str(i), "node_id": str(i), "title": f"bmw_{i}.pdf", "archetype": "document", "snippet": f"BMW {i}", "path": f"/docs/bmw_{i}.pdf"}
+        for i in range(1, 8)
+    ]
+    omni_bar.setProperty("resultsList", results_7)
+    qapp.processEvents()
+    assert ribbon.property("resultsCount") == 7
+    assert overflow_indicator.property("visible") is True
+
+    # Clean up
+    omni_bar.dismiss()
+    qapp.processEvents()
+
+
+def test_search_dwell_plate_preview_projection_and_commit(qapp, qml_engine, canvas_qml_root, qtbot, mock_bridge):
+    omni_bar = canvas_qml_root.findChild(object, "omniBar")
+    mock_bridge.plate_ctrl.clear_all()
+    qapp.processEvents()
+    assert len(mock_bridge.plate_ctrl.activePlates) == 0
+
+    omni_bar.open()
+    results = [
+        {"id": 101, "node_id": 101, "title": "BMW_M3.pdf", "archetype": "document", "snippet": "BMW M3 Specs", "path": "/docs/m3.pdf"},
+        {"id": 102, "node_id": 102, "title": "BMW_M5.pdf", "archetype": "document", "snippet": "BMW M5 Specs", "path": "/docs/m5.pdf"},
+    ]
+    omni_bar.setProperty("resultsList", results)
+    omni_bar.setProperty("currentRibbonIndex", 0)
+    qapp.processEvents()
+
+    # Dwell >=150ms projects live preview onto stage with is_preview=True
+    qtbot.waitUntil(
+        lambda: len(mock_bridge.plate_ctrl.activePlates) == 1 and mock_bridge.plate_ctrl.activePlates[0]["is_preview"] is True,
+        timeout=1000,
+    )
+    assert mock_bridge.plate_ctrl.activePlates[0]["node_id"] == 101
+
+    # Arrowing to candidate 1 replaces transient preview plate rather than stacking
+    omni_bar.setProperty("currentRibbonIndex", 1)
+    qapp.processEvents()
+    qtbot.waitUntil(
+        lambda: len(mock_bridge.plate_ctrl.activePlates) == 1 and mock_bridge.plate_ctrl.activePlates[0]["node_id"] == 102,
+        timeout=1000,
+    )
+    assert mock_bridge.plate_ctrl.activePlates[0]["is_preview"] is True
+
+    # Pressing Enter (selectCurrentRibbonItem) commits preview plate to stage
+    omni_bar.selectCurrentRibbonItem()
+    qapp.processEvents()
+    assert len(mock_bridge.plate_ctrl.activePlates) == 1
+    assert mock_bridge.plate_ctrl.activePlates[0]["node_id"] == 102
+    assert mock_bridge.plate_ctrl.activePlates[0]["is_preview"] is False
+
+    # Opening OmniBar again, hovering over candidate 101 projects a new transient preview
+    omni_bar.open()
+    omni_bar.setProperty("resultsList", results)
+    omni_bar.setProperty("currentRibbonIndex", 0)
+    qapp.processEvents()
+    qtbot.waitUntil(lambda: len(mock_bridge.plate_ctrl.activePlates) == 2, timeout=1000)
+
+    # Pressing Escape clears transient preview while keeping committed plate
+    omni_bar.dismiss()
+    qapp.processEvents()
+    assert len(mock_bridge.plate_ctrl.activePlates) == 1
+    assert mock_bridge.plate_ctrl.activePlates[0]["node_id"] == 102
+    assert mock_bridge.plate_ctrl.activePlates[0]["is_preview"] is False
+
+
 
 
 def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root, qtbot):
@@ -150,7 +324,7 @@ def test_omnibar_mode_badges_and_sigils(qapp, qml_engine, canvas_qml_root, qtbot
     assert bar_shell.property("borderColor").name().lower() == "#38bdf8"
     assert mode_sigil.property("text") == "?"
     if search_shelf:
-        assert search_shelf.property("opacity") < 0.01
+        assert ribbon_container.property("visible") is False
 
     # Test Gemini provider badge dynamic identity
     omni_bar.setProperty("activeProvider", "gemini")
@@ -333,23 +507,23 @@ def test_omnibar_outer_border_and_viewport_clip(qapp, qml_engine, canvas_qml_roo
 
     assert bar_shell is not None
     assert bar_shell.property("clip") is False
-    assert bar_shell.property("radius") == 12
+    # Resting ambient pill: capsule geometry (radius == round(height * 0.5))
+    assert bar_shell.property("radius") == round(omni_bar.property("height") * 0.5)
 
     assert bar_viewport is not None
     assert bar_viewport.property("clip") is True
 
-    # Verify bottom anchor margin is 36
+    # Verify bottom anchor margin is 3% of the viewport height
     expr = QQmlExpression(qml_engine.rootContext(), omni_bar, "anchors.bottomMargin")
     val, undef = expr.evaluate()
     assert not undef
-    assert val == 36
+    assert val == round(canvas_qml_root.property("height") * 0.03)
 
 
 def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_root, qtbot):
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
     bar_shell = omni_bar.findChild(object, "barShell")
-    search_shelf = canvas_qml_root.findChild(object, "searchShelf")
     dialogue_drawer = omni_bar.findChild(object, "dialogueDrawer")
     provider_pill = omni_bar.findChild(object, "providerHeaderPill")
     ribbon_container = omni_bar.findChild(object, "ribbonContainer")
@@ -362,7 +536,6 @@ def test_omnibar_conversational_drawer_rendering(qapp, qml_engine, canvas_qml_ro
     qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode") and bar_shell.property("borderColor").name().lower() == "#38bdf8", timeout=1000)
 
     assert bar_shell.property("borderColor").name().lower() == "#38bdf8"
-    assert search_shelf.property("opacity") < 0.01
     assert ribbon_container.property("visible") is False
 
     # 2. Simulate streaming results arriving into resultsList
@@ -410,7 +583,7 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
     monkeypatch.setattr(ConversationController, "stream_prompt", lambda *args, **kwargs: None)
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
-    search_shelf = canvas_qml_root.findChild(object, "searchShelf")
+    ribbon_container = omni_bar.findChild(object, "ribbonContainer")
     debounce_timer = omni_bar.findChild(object, "debounceTimer")
     provider_pill = omni_bar.findChild(object, "providerHeaderPill")
 
@@ -431,7 +604,7 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
 
     # Verify search shelf opacity is 0, bridge searchActive is False (node highlights cleared), debounceTimer stopped, provider pill opacity 0.3
     assert omni_bar.property("isConversationalMode") is True
-    assert search_shelf.property("opacity") < 0.01
+    assert ribbon_container.property("visible") is False
     assert mock_bridge.searchActive is False
     assert debounce_timer is not None
     assert debounce_timer.property("running") is False
@@ -448,7 +621,7 @@ def test_omnibar_search_suppressed_during_conversational_query(qapp, qml_engine,
     qtbot.waitUntil(lambda: omni_bar.property("isShellMode") and not mock_bridge.searchActive, timeout=1000)
 
     assert omni_bar.property("isShellMode") is True
-    assert search_shelf.property("opacity") < 0.01
+    assert ribbon_container.property("visible") is False
     assert mock_bridge.searchActive is False
     assert debounce_timer.property("running") is False
 
@@ -597,7 +770,7 @@ def test_omnibar_cross_mode_state_isolation_and_cleanup(qapp, qml_engine, canvas
 
     assert omni_bar.property("isShellMode") is False
     assert omni_bar.property("isConversationalMode") is False
-    assert placeholder_text.property("text") == "Search nodes, content, or commands..."
+    assert placeholder_text.property("text") == ""
     assert omni_bar.property("showShellOutput") is False
     assert omni_bar.property("showDialogueOutput") is False
 
@@ -624,6 +797,10 @@ def test_omnibar_enter_key_triggers_conversation_execution(qapp, qml_engine, can
     # Press Enter key in AI mode
     enter_evt = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
     qapp.sendEvent(input_field, enter_evt)
+    qapp.processEvents()
+
+    # Stream a token from the (stubbed) conversation engine; the drawer opens as output arrives
+    mock_bridge.conversation.tokenReceived.emit("System is operational.")
     qtbot.waitUntil(lambda: omni_bar.property("showDialogueOutput") and dialogue_drawer.property("visible"), timeout=1000)
 
     # OmniBar must NOT close on Enter in AI mode
@@ -632,60 +809,34 @@ def test_omnibar_enter_key_triggers_conversation_execution(qapp, qml_engine, can
     assert dialogue_drawer.property("visible") is True
     assert input_field.property("text") == "? "
 
-    # Emit token signal from conversation engine
-    mock_bridge.conversation.tokenReceived.emit("System is operational.")
-    qapp.processEvents()
-
     full_text = omni_bar.property("dialogueFullText")
     assert "Ask AI:" not in full_text
     assert "System is operational." in full_text
 
 
-def test_focused_node_retained_and_lit_in_conversational_mode(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch, qtbot):
+def test_preview_plate_retained_in_conversational_mode(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch, qtbot):
     monkeypatch.setattr(ConversationController, "stream_prompt", lambda *args, **kwargs: None)
-    from store import Node
-    n1 = Node(id=1, file_path="/docs/aether.md", x=100.0, y=100.0, archetype="document")
-    n2 = Node(id=2, file_path="/src/main.py", x=300.0, y=300.0, archetype="code")
-    mock_bridge.store.upsert_node(n1)
-    mock_bridge.store.upsert_node(n2)
-    mock_bridge.nodesChanged.emit()
-    qapp.processEvents()
-
     omni_bar = canvas_qml_root.findChild(object, "omniBar")
     input_field = omni_bar.findChild(object, "inputField")
-
-    # 1. Select node 1
-    mock_bridge.node.select_node(1)
+    mock_bridge.plate_ctrl.clear_all()
     qapp.processEvents()
-    assert mock_bridge.focusedNodeId == "1"
+
+    # 1. Dwell on a SearchSuggestionRibbon candidate projects a transient preview plate
+    omni_bar.open()
+    results = [{"id": 101, "node_id": 101, "title": "BMW_M3.pdf", "archetype": "document", "snippet": "BMW M3 Specs", "path": "/docs/m3.pdf"}]
+    omni_bar.setProperty("resultsList", results)
+    omni_bar.setProperty("currentRibbonIndex", 0)
+    qtbot.waitUntil(lambda: len(mock_bridge.plate_ctrl.activePlates) == 1, timeout=1000)
 
     # 2. Transition into AI mode (?)
-    omni_bar.open()
-    input_field.setProperty("text", "? Tell me about this node")
+    input_field.setProperty("text", "? Tell me about this plate")
     qtbot.waitUntil(lambda: omni_bar.property("isConversationalMode"), timeout=1000)
 
-    # 3. Verify focusedNodeId is retained and not cleared
-    assert mock_bridge.focusedNodeId == "1"
-    assert omni_bar.property("isConversationalMode") is True
-
-    # 4. Verify target node has opacity == 1.0 and z == 20, unfocused node has opacity == 0.15 and z == 15
-    viewport = canvas_qml_root.findChild(object, "canvasViewport")
-    assert viewport is not None
-    node1 = viewport.getNode(1)
-    node2 = viewport.getNode(2)
-    assert node1 is not None
-    assert node2 is not None
-
-    assert node1.property("isSelected") is True
-    assert node1.property("isFocusedTarget") is True
-    assert node1.property("opacity") == 1.0
-    assert node1.property("z") == 20
-
-    assert node2.property("isFocusedTarget") is False
-    qtbot.waitUntil(lambda: abs(node2.property("opacity") - 0.15) < 0.02, timeout=1000)
-    assert abs(node2.property("opacity") - 0.15) < 0.02
-    assert node2.property("z") == 15
-
+    # 3. Ribbon is hidden, but the previewed plate stays mounted on the stage
+    ribbon_container = omni_bar.findChild(object, "ribbonContainer")
+    assert ribbon_container.property("visible") is False
+    assert len(mock_bridge.plate_ctrl.activePlates) == 1
+    assert mock_bridge.plate_ctrl.activePlates[0]["node_id"] == 101
 
 
 def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qml_root, mock_bridge, monkeypatch, qtbot):
@@ -778,3 +929,62 @@ def test_omnibar_ai_typography_and_status_dot_states(qapp, qml_engine, canvas_qm
     assert omni_bar.property("engineState") == "ERROR"
     assert status_dot.property("color").name().lower() == "#ef4444"
     assert status_dot.property("opacity") == 1.0
+
+def test_omnibar_clean_focus_and_ambient_idle_hints(qapp, qml_engine, canvas_qml_root, qtbot):
+    theme_comp = QQmlComponent(qml_engine, "aia_canvas/src/qml/Theme.qml")
+    theme_inst = theme_comp.create()
+
+    omni_bar = canvas_qml_root.findChild(object, "omniBar")
+    input_field = omni_bar.findChild(object, "inputField")
+    placeholder_text = input_field.findChild(object, "customPlaceholderText")
+    idle_timer = omni_bar.findChild(object, "ambientIdleTimer")
+    hints_row = omni_bar.findChild(object, "ambientHintsRow")
+    hints_text = omni_bar.findChild(object, "ambientHintsText")
+
+    assert idle_timer is not None
+    assert idle_timer.property("interval") == 8000
+    assert idle_timer.property("repeat") is False
+
+    assert hints_row is not None
+    assert hints_text is not None
+    assert hints_text.property("text") == "? ask aether   > command   / system"
+    assert hints_text.property("font").pixelSize() == 11
+    assert hints_text.property("color").name().lower() == theme_inst.property("textDimmed").name().lower()
+
+    # 1. Initially collapsed: placeholder is "What are we doing?", idle timer not running, hints opacity is 0.0
+    omni_bar.dismiss()
+    qapp.processEvents()
+    assert not omni_bar.property("isExpanded")
+    assert placeholder_text.property("text") == "What are we doing?"
+    assert not idle_timer.property("running")
+    assert hints_row.property("opacity") == 0.0
+
+    # 2. Open / expand while empty: clean focus state (no inline placeholder), timer starts
+    omni_bar.open()
+    qtbot.waitUntil(lambda: omni_bar.property("isExpanded"), timeout=1000)
+    assert placeholder_text.property("text") == ""
+    assert placeholder_text.property("visible") is False
+    assert idle_timer.property("running") is True
+    assert hints_row.property("opacity") == 0.0
+
+    # 3. Trigger 8-second ambient idle timer: opacity fades towards 0.30
+    idle_timer.stop()
+    # Trigger the timer slot
+    idle_timer.triggered.emit()
+    qtbot.waitUntil(lambda: hints_row.property("opacity") > 0.0, timeout=1000)
+    qtbot.waitUntil(lambda: abs(hints_row.property("opacity") - 0.30) < 0.02, timeout=1500)
+    assert abs(hints_row.property("opacity") - 0.30) < 0.02
+
+    # 4. Keystroke / character typed: instantly cuts to 0.0 without delay, timer stops
+    input_field.setProperty("text", "a")
+    qapp.processEvents()
+    assert hints_row.property("opacity") == 0.0
+    assert not idle_timer.property("running")
+
+    # 5. Collapse: resets state and stops timer
+    omni_bar.dismiss()
+    qapp.processEvents()
+    assert not omni_bar.property("isExpanded")
+    assert hints_row.property("opacity") == 0.0
+    assert not idle_timer.property("running")
+

@@ -66,6 +66,16 @@ Item {
     readonly property alias resultsModel: ribbonContainer.resultsModel
     readonly property var focalLensFrame: null
     readonly property int resultsCount: getListLength(resultsList)
+    readonly property var selectedResultId: {
+        if (root.resultsList && root.currentRibbonIndex >= 0 && root.currentRibbonIndex < root.resultsList.length) {
+            var item = root.resultsList[root.currentRibbonIndex];
+            if (item) {
+                var tid = item.node_id !== undefined ? item.node_id : (item.id !== undefined ? item.id : (item.nodeId !== undefined ? item.nodeId : null));
+                return tid !== undefined ? tid : null;
+            }
+        }
+        return null;
+    }
     readonly property string modePrefix: inputCapsule.text ? (inputCapsule.text.trim().startsWith(">") ? ">" : (inputCapsule.text.trim().startsWith("?") ? "?" : (inputCapsule.text.trim().startsWith("/") ? "/" : ""))) : ""
     readonly property bool isShellMode: modePrefix === ">"
     readonly property bool isConversationalMode: modePrefix === "?"
@@ -136,6 +146,27 @@ Item {
     readonly property bool showOutputDrawer: showShellOutput || showDialogueOutput
     readonly property real outputDrawerHeight: root.isShellMode ? shellDrawerHeight : (root.isConversationalMode ? dialogueDrawerHeight : 0)
 
+    readonly property bool isStandardSearch: !root.isShellMode && !root.isConversationalMode && !inputCapsule.text.trim().startsWith("?") && !inputCapsule.text.trim().startsWith(">") && !inputCapsule.text.trim().startsWith("/")
+
+    function highlightMatchingQuery(rawText, query) {
+        if (!rawText) return "";
+        if (!query) return rawText;
+        var q = query.trim();
+        if (q.startsWith(">") || q.startsWith("?") || q.startsWith("/")) {
+            q = q.substring(1).trim();
+        }
+        if (!q) return rawText;
+        var safe = String(rawText).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        var escapedQuery = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        try {
+            var regex = new RegExp("(" + escapedQuery + ")", "gi");
+            var highlightColor = (typeof Theme !== "undefined" && Theme.accentCyan) ? Theme.accentCyan : "#00E5FF";
+            return safe.replace(regex, "<span style='color: " + highlightColor + "; font-weight: bold;'>$1</span>");
+        } catch (e) {
+            return safe;
+        }
+    }
+
     signal querySubmitted(string text)
     signal dismissed()
     signal cancelQuery()
@@ -156,13 +187,37 @@ Item {
     Behavior on height { NumberAnimation { duration: 240; easing.type: Easing.OutQuint } }
     Behavior on radius { NumberAnimation { duration: 240; easing.type: Easing.OutQuint } }
 
+    onIsExpandedChanged: {
+        if (isExpanded) {
+            if (textInput && textInput.text.length === 0) {
+                ambientIdleTimer.restart();
+            } else {
+                resetAmbientHint();
+            }
+        } else {
+            resetAmbientHint();
+        }
+    }
+
+    function resetAmbientHint() {
+        if (typeof ambientIdleTimer !== "undefined" && ambientIdleTimer) ambientIdleTimer.stop();
+        if (typeof hintFadeInAnim !== "undefined" && hintFadeInAnim) hintFadeInAnim.stop();
+        if (ambientHintsRow) {
+            ambientHintsRow.opacity = 0.0;
+        }
+    }
+
     function open() {
         if (inputCapsule && inputCapsule.inputField) {
             inputCapsule.inputField.forceActiveFocus();
         }
+        if (textInput && textInput.text.length === 0) {
+            ambientIdleTimer.restart();
+        }
     }
 
     function dismiss() {
+        resetAmbientHint();
         if (inputCapsule && inputCapsule.inputField) {
             inputCapsule.inputField.focus = false;
         }
@@ -174,6 +229,7 @@ Item {
     }
 
     function clearTextAndCancel() {
+        resetAmbientHint();
         if (inputCapsule) {
             inputCapsule.text = "";
         }
@@ -182,6 +238,17 @@ Item {
         shelfExpanded = false;
         shellHistoryIndex = -1;
         lastExecutedPrompt = "";
+        if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) previewDwellTimer.stop();
+        var pCtrl = (typeof plateCanvasController !== "undefined" && plateCanvasController) 
+            ? plateCanvasController 
+            : ((typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.plate_ctrl) ? canvasBridge.plate_ctrl : null);
+        if (pCtrl) {
+            if (typeof pCtrl.clear_preview === "function") {
+                pCtrl.clear_preview();
+            } else if (typeof pCtrl.clearPreview === "function") {
+                pCtrl.clearPreview();
+            }
+        }
         if (typeof aiAutoSendTimer !== "undefined" && aiAutoSendTimer) aiAutoSendTimer.stop();
         if (typeof debounceTimer !== "undefined" && debounceTimer) debounceTimer.stop();
         if (searchShelf) searchShelf.isSearchActiveExplicit = false;
@@ -297,44 +364,44 @@ Item {
     }
 
     function selectCurrentRibbonItem() {
-        var len = getListLength(root.resultsList);
-        if (root.currentRibbonIndex >= 0 && len > root.currentRibbonIndex) {
-            var item = root.resultsList[root.currentRibbonIndex];
+        if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) previewDwellTimer.stop();
+        if (root.resultsList && root.resultsList.length > 0) {
+            var idx = (root.currentRibbonIndex >= 0 && root.currentRibbonIndex < root.resultsList.length) ? root.currentRibbonIndex : 0;
+            var item = root.resultsList[idx];
+            if (item) {
+                var targetId = item.node_id !== undefined ? item.node_id : (item.id !== undefined ? item.id : item.nodeId);
+                if (targetId !== undefined && targetId !== null && targetId !== "") {
+                    var pCtrl = (typeof plateCanvasController !== "undefined" && plateCanvasController) 
+                        ? plateCanvasController 
+                        : ((typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.plate_ctrl) ? canvasBridge.plate_ctrl : null);
+
+                    if (pCtrl) {
+                        if (typeof pCtrl.open_plate === "function") {
+                            pCtrl.open_plate(targetId);
+                        } else if (typeof pCtrl.openPlate === "function") {
+                            pCtrl.openPlate(targetId);
+                        }
+                    }
+                }
+            }
+        }
+        root.dismiss();
+    }
+
+    onCurrentRibbonIndexChanged: {
+        if (currentRibbonIndex >= 0 && resultsList && currentRibbonIndex < resultsList.length) {
+            if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) previewDwellTimer.restart();
+            var item = resultsList[currentRibbonIndex];
             var rawId = item.node_id !== undefined ? item.node_id : item.id;
             var nId = parseInt(rawId);
             if (!isNaN(nId) && nId > 0) {
                 var vp = searchShelf ? searchShelf.viewport : (typeof canvasViewport !== "undefined" ? canvasViewport : null);
-                if (vp) {
-                    vp.isCameraCached = false;
-                    if (typeof vp.steerCameraToNode === "function") {
-                        vp.steerCameraToNode(nId, true);
-                    }
-                }
-                if (typeof canvasBridge !== "undefined" && canvasBridge) {
-                    if (canvasBridge.node) canvasBridge.node.select_node(nId);
-                    if (canvasBridge.search) canvasBridge.search.clear_search();
-                }
-                if (searchShelf) {
-                    searchShelf.isSearchActiveExplicit = false;
+                if (vp && typeof vp.steerCameraToNode === "function") {
+                    vp.steerCameraToNode(nId);
                 }
             }
-            root.dismiss();
-        }
-    }
-
-    onCurrentRibbonIndexChanged: {
-        if (currentRibbonIndex >= 0) {
-            if (resultsList && currentRibbonIndex < resultsList.length) {
-                var item = resultsList[currentRibbonIndex];
-                var rawId = item.node_id !== undefined ? item.node_id : item.id;
-                var nId = parseInt(rawId);
-                if (!isNaN(nId) && nId > 0) {
-                    var vp = searchShelf ? searchShelf.viewport : (typeof canvasViewport !== "undefined" ? canvasViewport : null);
-                    if (vp && typeof vp.steerCameraToNode === "function") {
-                        vp.steerCameraToNode(nId);
-                    }
-                }
-            }
+        } else {
+            if (typeof previewDwellTimer !== "undefined" && previewDwellTimer) previewDwellTimer.stop();
         }
     }
 
@@ -364,17 +431,17 @@ Item {
         id: ribbonContainer
         objectName: "ribbonContainer"
         anchors.bottom: barShell.top
-        anchors.bottomMargin: 14
+        anchors.bottomMargin: 12
         anchors.left: parent.left
         anchors.right: parent.right
-        
-        active: root.isExpanded
+
+        active: root.isExpanded && root.isStandardSearch && (root.resultsList ? root.resultsList.length > 0 : false)
         isShellMode: root.isShellMode
         isConversationalMode: root.isConversationalMode
-        shelfExpanded: root.shelfExpanded
-        resultsList: root.resultsList
+        shelfExpanded: false
+        resultsList: root.resultsList || []
         currentRibbonIndex: root.currentRibbonIndex
-        
+
         onRibbonItemHovered: function(index) {
             root.currentRibbonIndex = index;
         }
@@ -386,6 +453,7 @@ Item {
             root.selectCurrentRibbonItem();
         }
     }
+
 
     Rectangle {
         id: barShell
@@ -467,8 +535,13 @@ Item {
                     shelfExpanded: root.shelfExpanded
                     engineState: root.engineState
                     isThinking: root.engineState === "STREAMING"
+
+                    onKeyPressed: {
+                        root.resetAmbientHint();
+                    }
                     
                     onInputTextChanged: {
+                        root.resetAmbientHint();
                         if (inputCapsule.text !== root.tabLastQuery) {
                             root.tabCompletions = [];
                             root.tabCompletionIndex = -1;
@@ -519,38 +592,44 @@ Item {
                     }
 
                     onTabPressed: function(shiftModifier) {
-                        var count = root.resultsList ? root.resultsList.length : 0;
-                        var maxIdx = root.shelfExpanded ? (count - 1) : (Math.min(16, count) - 1);
                         if (!shiftModifier) {
                             if (root.isShellMode) {
                                 root.handleShellTabCompletion();
-                            } else if (count > 0) {
-                                if (root.currentRibbonIndex < maxIdx) root.currentRibbonIndex++;
-                                else root.currentRibbonIndex = 0;
+                            } else if (root.resultsList && root.resultsList.length > 0) {
+                                if (root.currentRibbonIndex >= root.resultsList.length - 1) {
+                                    root.currentRibbonIndex = 0;
+                                } else {
+                                    root.currentRibbonIndex++;
+                                }
                             }
                         } else {
-                            if (count > 0) {
-                                if (root.currentRibbonIndex > 0) root.currentRibbonIndex--;
-                                else root.currentRibbonIndex = Math.max(0, maxIdx);
+                            if (root.resultsList && root.resultsList.length > 0) {
+                                if (root.currentRibbonIndex <= 0) {
+                                    root.currentRibbonIndex = root.resultsList.length - 1;
+                                } else {
+                                    root.currentRibbonIndex--;
+                                }
                             }
                         }
                     }
 
                     onLeftPressed: {
-                        var count = root.resultsList ? root.resultsList.length : 0;
-                        var maxIdx = root.shelfExpanded ? (count - 1) : (Math.min(16, count) - 1);
-                        if (count > 0) {
-                            if (root.currentRibbonIndex > 0) root.currentRibbonIndex--;
-                            else root.currentRibbonIndex = Math.max(0, maxIdx);
+                        if (root.resultsList && root.resultsList.length > 0) {
+                            if (root.currentRibbonIndex <= 0) {
+                                root.currentRibbonIndex = root.resultsList.length - 1;
+                            } else {
+                                root.currentRibbonIndex--;
+                            }
                         }
                     }
 
                     onRightPressed: {
-                        var count = root.resultsList ? root.resultsList.length : 0;
-                        var maxIdx = root.shelfExpanded ? (count - 1) : (Math.min(16, count) - 1);
-                        if (count > 0) {
-                            if (root.currentRibbonIndex < maxIdx) root.currentRibbonIndex++;
-                            else root.currentRibbonIndex = 0;
+                        if (root.resultsList && root.resultsList.length > 0) {
+                            if (root.currentRibbonIndex >= root.resultsList.length - 1) {
+                                root.currentRibbonIndex = 0;
+                            } else {
+                                root.currentRibbonIndex++;
+                            }
                         }
                     }
 
@@ -575,13 +654,11 @@ Item {
                                     inputCapsule.cursorPosition = inputCapsule.text.length;
                                 }
                             }
-                        } else {
-                            if (!root.shelfExpanded) {
-                                root.shelfExpanded = true;
+                        } else if (root.resultsList && root.resultsList.length > 0) {
+                            if (root.currentRibbonIndex <= 0) {
+                                root.currentRibbonIndex = root.resultsList.length - 1;
                             } else {
-                                var cols = 4;
-                                var count = root.resultsList ? root.resultsList.length : 0;
-                                if (count > 0 && root.currentRibbonIndex >= cols) root.currentRibbonIndex -= cols;
+                                root.currentRibbonIndex--;
                             }
                         }
                     }
@@ -609,15 +686,11 @@ Item {
                                     }
                                 }
                             }
-                        } else {
-                            var count = root.resultsList ? root.resultsList.length : 0;
-                            if (root.shelfExpanded) {
-                                var cols = 4;
-                                if (root.currentRibbonIndex + cols < count) {
-                                    root.currentRibbonIndex += cols;
-                                } else {
-                                    root.shelfExpanded = false;
-                                }
+                        } else if (root.resultsList && root.resultsList.length > 0) {
+                            if (root.currentRibbonIndex >= root.resultsList.length - 1) {
+                                root.currentRibbonIndex = 0;
+                            } else {
+                                root.currentRibbonIndex++;
                             }
                         }
                     }
@@ -627,7 +700,6 @@ Item {
                     }
 
                     onReturnPressed: function(shiftModifier) {
-                        var count = root.resultsList ? root.resultsList.length : 0;
                         debounceTimer.stop();
                         aiAutoSendTimer.stop();
                         if (shiftModifier && root.isConversationalMode) {
@@ -638,14 +710,31 @@ Item {
                             root.submitShellCommand();
                         } else if (root.isConversationalMode) {
                             root.submitConversationalQuery();
-                        } else if (root.currentRibbonIndex >= 0 && count > root.currentRibbonIndex) {
-                            root.selectCurrentRibbonItem();
-                        } else if (count > 0) {
-                            root.currentRibbonIndex = 0;
+                        } else if (root.isStandardSearch && root.resultsList && root.resultsList.length > 0) {
                             root.selectCurrentRibbonItem();
                         } else if (inputCapsule.text.trim().length > 0) {
                             root.querySubmitted(inputCapsule.text.trim());
                             root.dismiss();
+                        }
+                    }
+
+                    Row {
+                        id: ambientHintsRow
+                        objectName: "ambientHintsRow"
+                        anchors.right: parent.right
+                        anchors.rightMargin: 18
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 0
+                        opacity: 0.0
+                        visible: root.isExpanded
+
+                        Text {
+                            id: ambientHintsText
+                            objectName: "ambientHintsText"
+                            text: "? ask aether   > command   / system"
+                            font.family: Theme.fontCode
+                            font.pixelSize: 11
+                            color: Theme.textDimmed
                         }
                     }
                 }
@@ -715,6 +804,28 @@ Item {
     }
 
     Timer {
+        id: previewDwellTimer
+        objectName: "previewDwellTimer"
+        interval: 150
+        repeat: false
+        onTriggered: {
+            var resId = root.selectedResultId;
+            if (resId !== null && resId !== undefined && resId !== "") {
+                var pCtrl = (typeof plateCanvasController !== "undefined" && plateCanvasController) 
+                    ? plateCanvasController 
+                    : ((typeof canvasBridge !== "undefined" && canvasBridge && canvasBridge.plate_ctrl) ? canvasBridge.plate_ctrl : null);
+                if (pCtrl) {
+                    if (typeof pCtrl.preview_plate === "function") {
+                        pCtrl.preview_plate(resId);
+                    } else if (typeof pCtrl.previewPlate === "function") {
+                        pCtrl.previewPlate(resId);
+                    }
+                }
+            }
+        }
+    }
+
+    Timer {
         id: aiAutoSendTimer
         objectName: "aiAutoSendTimer"
         interval: 1200
@@ -724,6 +835,28 @@ Item {
                 root.submitConversationalQuery();
             }
         }
+    }
+
+    Timer {
+        id: ambientIdleTimer
+        objectName: "ambientIdleTimer"
+        interval: 8000
+        repeat: false
+        onTriggered: {
+            if (root.isExpanded && root.textInput && root.textInput.text.length === 0) {
+                hintFadeInAnim.restart();
+            }
+        }
+    }
+
+    NumberAnimation {
+        id: hintFadeInAnim
+        target: ambientHintsRow
+        property: "opacity"
+        from: 0.0
+        to: 0.30
+        duration: 600
+        easing.type: Easing.OutCubic
     }
 
     

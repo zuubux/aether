@@ -430,6 +430,7 @@ class PlateNodePayload:
     geometry: PlateGeometry = field(default_factory=PlateGeometry)
     mass: float = 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
+    is_preview: bool = False
 
     def __post_init__(self) -> None:
         if not self.file_name and self.file_path:
@@ -526,6 +527,8 @@ class PlateNodePayload:
             "isPinned": self.temporal.is_pinned,
             "is_user_placed": self.temporal.is_user_placed,
             "isUserPlaced": self.temporal.is_user_placed,
+            "is_preview": self.is_preview,
+            "isPreview": self.is_preview,
             "last_interaction_epoch": self.temporal.last_interaction_epoch,
             "lastInteractionEpoch": self.temporal.last_interaction_epoch,
             "metadata": dict(self.metadata),
@@ -587,6 +590,7 @@ class PlateNodePayload:
         mass = float(raw_mass) if raw_mass is not None else 1.0
 
         metadata = dict(d.get("metadata", {})) if isinstance(d.get("metadata"), dict) else {}
+        is_preview_val = d.get("is_preview") if d.get("is_preview") is not None else d.get("isPreview", False)
 
         return cls(
             node_id=node_id,
@@ -603,5 +607,6 @@ class PlateNodePayload:
             geometry=geometry,
             mass=mass,
             metadata=metadata,
+            is_preview=bool(is_preview_val),
         )
 

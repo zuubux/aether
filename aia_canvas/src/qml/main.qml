@@ -192,7 +192,6 @@ Window {
 
             delegate: PlateCard {
                 id: plateCardInstance
-                modelData: modelData
                 bentoAlloc: stageContainer.findPlateAllocation(
                     modelData ? (modelData.node_id !== undefined ? modelData.node_id : (modelData.nodeId !== undefined ? modelData.nodeId : modelData.id)) : 0
                 )
@@ -225,7 +224,6 @@ Window {
                 objectName: "anchorRepeater"
                 model: (typeof feedController !== "undefined" && feedController) ? feedController.headerAnchors : []
                 delegate: FeedHeaderAnchor {
-                    modelData: modelData
                     anchors.right: parent ? parent.right : undefined
                 }
             }

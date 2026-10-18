@@ -76,6 +76,8 @@ QtObject {
     readonly property color accentFocus: "#38BDF8"
     readonly property color accentSuccess: "#238636"
     readonly property color accentCyan: "#00F2FE"
+    readonly property color surfacePlate: "#1C1918"
+    readonly property color borderCream: Qt.rgba(0.902, 0.894, 0.875, 0.08)
 
     // Conversational Design Tokens
     readonly property color accentGemini: "#38BDF8"

@@ -28,6 +28,7 @@ Item {
     property alias cursorPosition: inputField.cursorPosition
     
     // Signals
+    signal keyPressed()
     signal tabLastQueryChanged(string newQuery)
     signal inputTextChanged()
     signal accepted()
@@ -158,9 +159,10 @@ Item {
                     if (root.modePrefix === ">") return "Run command...";
                     if (root.modePrefix === "?") return "Ask AI reasoning engine...";
                     if (root.modePrefix === "/") return "Execute system command...";
-                    return "Search nodes, commands (>), or ask Aether (?)...";
+                    return "";
                 }
                 visible: {
+                    if (text === "") return false;
                     if (inputField.text.length === 0) return true;
                     var q = inputField.text.trim();
                     if ((q === ">" || q === "?" || q === "/") && inputField.text.trim().length === 1) return true;
@@ -177,6 +179,7 @@ Item {
             }
 
             Keys.onPressed: function(event) {
+                root.keyPressed();
                 if (event.key === Qt.Key_Tab) {
                     root.tabPressed(event.modifiers & Qt.ShiftModifier);
                     event.accepted = true;

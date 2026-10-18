@@ -9,7 +9,7 @@
   Exposes the `qml` module containing `singleton Theme 1.0 Theme.qml` and `AetherMotion 1.0 AetherMotion.qml`, registered as both a QML import module and Python context property (`Theme`) during bootstrap.
 - **Component Subsystems:**
   - `aia_canvas/src/qml/components/`:
-    Layout delegates including `FeedHeaderAnchor.qml` (micro-pill ribbon with left unread dot, active border glow, hover-to-grow, dwell-to-preview), `FeedFlowItem.qml` (graduated 30-day temporal rolling stack scaling across `full`, `compact`, and `fading` tiers), and `PlateCard.qml` (ratio-based Bento container with monospace log card rendering, visual media, and single-key `ai_summary` extraction).
+    Layout delegates including `FeedHeaderAnchor.qml` (micro-pill ribbon with left unread dot, active border glow, hover-to-grow, dwell-to-preview), `FeedFlowItem.qml` (graduated 30-day temporal rolling stack scaling across `full`, `compact`, and `fading` tiers), and `PlateCard.qml` (ratio-based Bento container bound live to `display_title` and `snippet`/`preview_text` via a required delegate-injected `modelData`, with monospace log card rendering, visual media, and single-key `ai_summary` extraction).
   - `aia_canvas/src/qml/bar/`: 
     Input and command surfaces, including OmniBar, ShellDrawer, and file Drop targets.
   - `aia_canvas/src/qml/hud/`: 
@@ -25,7 +25,7 @@
   - `ConversationController`: Manages LLM turns and prompt assembly state boundaries.
   - `SearchController`: Bridges local UI query routing to external vector/title databases.
   - `WorkingSetController`: Manages active working set slates, coordinating Tier 1 focal focus and Tier 1.25 companion satellites with LRU capacity management.
-  - `PlateCanvasController`: Orchestrates active canvas plates, Bento grid spatial allocations, spatial manipulation (move, resize, pin, close), and single-key `ai_summary` access.
+  - `PlateCanvasController`: Orchestrates active canvas plates, Bento grid spatial allocations, spatial manipulation (move, resize, pin, close, elastic gutter resizing via `adjust_plate_weight(int, float)` with neighbour eviction below a 0.15 row-width floor, diagonal corner resizing via `resize_plate_proportional(int, float, float)` with oldest-unpinned eviction when width/height floors or the stage boundary are breached), and single-key `ai_summary` access.
   - `FeedController`: Bridges The Feed engine to UI surfaces, orchestrating header anchor micro-pills, graduated 30-day rolling flow stacks, and notification states.
 
 ### Domain Engines & Storage (Python 3.11+, NumPy, SQLite)
@@ -40,10 +40,10 @@
 
 ## 2. Core Component Registry
 
-### OmniBar & DialogueDrawer
-- **Path:** `aia_canvas/src/qml/bar/OmniBar.qml`, `aia_canvas/src/qml/bar/DialogueDrawer.qml`
-- **Responsibility:** Sole self-morphing ambient input component proportionally scaling between idle Stage 0 capsule pill ("What are we doing?") and expanded active workspace, quick-exec prefix detection (`?`, `>`), and smooth conversational surface expansion upon multi-turn engagement.
-- **Signal Boundary:** QML `accepted` trigger maps to `SearchController.submit_query(str)` and `ConversationController` dispatch.
+### OmniBar & Suggestion Ribbon
+- **Path:** `aia_canvas/src/qml/bar/OmniBar.qml`, `aia_canvas/src/qml/bar/SearchSuggestionRibbon.qml`, `aia_canvas/src/qml/bar/DialogueDrawer.qml`
+- **Responsibility:** Sole self-morphing ambient input component proportionally scaling between idle Stage 0 capsule pill ("What are we doing?") and expanded active workspace, quick-exec prefix detection (`?`, `>`), calm horizontal carousel suggestion ribbon (`SearchSuggestionRibbon.qml`) rendering SQLite candidates with chips and snippet previews directly above the bar with overflow threshold fixed at >6 items, keyboard navigation (Left/Right/Tab/Enter/Escape), 150ms dwell preview projection via `PlateCanvasController.preview_plate(...)`, plate projection and commitment via `PlateCanvasController.open_plate(...)` on Enter or Click, transient preview dismissal via `clear_preview()` on Escape or cancel, and smooth conversational surface expansion upon multi-turn engagement.
+- **Signal Boundary:** QML `accepted` / select triggers map to `SearchController.submit_query(str)`, `PlateCanvasController.preview_plate(...)`, `PlateCanvasController.clear_preview()`, `PlateCanvasController.open_plate(...)`, and `ConversationController` dispatch.
 
 ### SlateFrame
 - **Path:** `aia_canvas/src/qml/slate/SlateFrame.qml`
@@ -81,12 +81,13 @@
 
 ### PlateCanvasController
 - **Path:** `aia_canvas/src/controllers/plate_controller.py`
-- **Responsibility:** Domain controller bridging `PlateEngine` to QML; manages active plate registry, Bento grid layout calculations, single-key AI summary extraction (`ai_summary`), and spatial manipulation (move, resize, pin, close).
+- **Responsibility:** Domain controller bridging `PlateEngine` to QML; manages active plate registry, proportional archetype-weighted Bento layout (`BentoAllocator`: ~72% stage-height plates, centered 70-88% width cluster), single-key AI summary extraction (`ai_summary`), and spatial manipulation (move, resize, pin, close).
 - **Signal Boundary:** Coordinates with QML Canvas and Bento views; exposes `activePlates`, `bentoGeometry`, `focalPlateId`, `plateCount`; emits `activePlatesChanged`, `bentoGeometryChanged`, `plateMoved`, `plateResized`, `platePinned`, `plateClosed`, `plateOpened`, `summaryUpdated`.
 
 ### FeedController
 - **Path:** `aia_canvas/src/controllers/feed_controller.py`
 - **Responsibility:** Domain controller bridging `FeedEngine` to QML; manages header anchor micro-pills, graduated 30-day temporal flow stacks (`full`, `compact`, `fading`), notification states (glow/dot), and ring buffer pruning.
+- **Plate History Chips:** `add_history_chip(plate_data)` / `remove_history_chip(node_id)` collapse plates auto-evicted by `PlateCanvasController` (viewport capacity budget) into pinned `plate:<id>` chips and drop them on restoral via `open_plate`.
 - **Signal Boundary:** Coordinates with QML Feed surfaces; exposes `headerAnchors`, `flowStack`, `unreadCount`, `totalCount`; emits `headerAnchorsChanged`, `flowStackChanged`, `unreadCountChanged`, `feedRefreshed`, `itemNotificationChanged`, `itemPinnedChanged`, `itemAdded`, `itemRemoved`.
 
 ### HorizonController
@@ -103,10 +104,10 @@
 
 ### MainCanvasView (Root)
 - **Path:** `aia_canvas/src/qml/main.qml`
-- **Responsibility:** Master responsive QML layout shell organizing the canvas into ambient zones: Minimal Floating Horizon Anchors (`leftHorizonAnchor` bound to `horizonController.ambientStatus`, `rightHorizonAnchor` bound to `liveDateText // horizonController.identity`), Active Stage (`stageContainer`, center/left, 64px top margin clearance to prevent collision with horizon anchors), Peripheral Feed (floating semantic pill chips docked along right perimeter), and self-morphing OmniBar bottom ambient pill. Summons/focuses OmniBar via clicking the ambient pill or pressing `Ctrl+Space` with `AetherMotion`, dismissing smoothly back to ambient equilibrium with `Escape`. Coordinates dynamic viewport synchronization with `PlateCanvasController.setViewportDimensions`.
+- **Responsibility:** Master responsive QML layout shell organizing the canvas into ambient zones: Minimal Floating Horizon Anchors (`leftHorizonAnchor` bound to `horizonController.ambientStatus`, `rightHorizonAnchor` bound to `liveDateText // horizonController.identity`), Active Stage (`stageContainer`, center/left, 64px top margin clearance to prevent collision with horizon anchors), Peripheral Feed (floating semantic pill chips docked along right perimeter), and self-morphing OmniBar bottom ambient pill with clean focus state and 8-second right-docked ambient idle hints. Summons/focuses OmniBar via clicking the ambient pill or pressing `Ctrl+Space` with `AetherMotion`, dismissing smoothly back to ambient equilibrium with `Escape`. Coordinates dynamic viewport synchronization with `PlateCanvasController.setViewportDimensions`.
 - **Signal Boundary:** Bridges signals from `PlateCanvasController` (`activePlatesChanged`, `bentoGeometryChanged`, `focalPlateChanged`), `FeedController` (`headerAnchorsChanged`, `flowStackChanged`, `unreadCountChanged`), and `HorizonController` (`identityChanged`, `ambientStatusChanged`).
 
 ### FeedHeaderAnchor, FeedFlowItem & PlateCard Delegates
 - **Path:** `aia_canvas/src/qml/components/FeedHeaderAnchor.qml`, `aia_canvas/src/qml/components/FeedFlowItem.qml`, `aia_canvas/src/qml/components/PlateCard.qml`
 - **Responsibility:** Responsive presentation delegates for micro-pill ribbons (with left unread indicator and hover/dwell states), graduated temporal flow stack (with `full`, `compact`, `fading` view tiers), and Bento plate containers (with monospace log viewer, media cards, and single-key `ai_summary` synthesis drawers).
-- **Signal Boundary:** Emits interaction triggers to `FeedController.markSeen`, `FeedController.pinItem`, `PlateCanvasController.selectPlate`, `PlateCanvasController.togglePin`, and `PlateCanvasController.closePlate`.
+- **Signal Boundary:** Emits interaction triggers to `FeedController.markSeen`, `FeedController.pinItem`, `PlateCanvasController.selectPlate`, and `PlateCanvasController.adjust_plate_weight` (right-edge gutter drag handle), and `PlateCanvasController.resize_plate_proportional` (16px bottom-right corner handle). Focus is shown only by a 1px `Theme.accentCyan` border; unselected plates stay at opacity 1.0. PlateCard carries no window chrome (no badge pill, AI, pin, or close buttons); plates dismiss via temporal decay, sweeps, or gestures.

@@ -10,6 +10,20 @@ Rectangle {
 
     // Identity and tier extraction
     readonly property string itemId: modelData ? (modelData.id || modelData.itemId || "") : ""
+    readonly property int plateNodeId: {
+        if (modelData && modelData.node_id !== undefined && modelData.node_id !== null) return parseInt(modelData.node_id);
+        if (modelData && modelData.nodeId !== undefined && modelData.nodeId !== null) return parseInt(modelData.nodeId);
+        var p = modelData ? (modelData.content_payload || modelData.contentPayload || modelData.payload) : null;
+        if (p) {
+            var nid = p.node_id !== undefined ? p.node_id : p.nodeId;
+            if (nid !== undefined && nid !== null) return parseInt(nid);
+        }
+        if (root.itemId && root.itemId.indexOf("plate:") === 0) {
+            var parsed = parseInt(root.itemId.replace("plate:", ""));
+            if (!isNaN(parsed) && parsed > 0) return parsed;
+        }
+        return 0;
+    }
     readonly property string title: modelData ? (modelData.title || "Feed Item") : "Feed Item"
     readonly property string itemType: modelData ? (modelData.type || "item") : "item"
     readonly property real timestamp: modelData ? (modelData.timestamp || 0) : 0
@@ -224,6 +238,9 @@ Rectangle {
         onClicked: {
             if (typeof feedController !== "undefined" && feedController && root.itemId) {
                 feedController.markSeen(root.itemId);
+            }
+            if (root.plateNodeId > 0 && typeof plateCanvasController !== "undefined" && plateCanvasController) {
+                plateCanvasController.open_plate(root.plateNodeId);
             }
             root.clicked();
         }

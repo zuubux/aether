@@ -247,6 +247,55 @@ class FeedController(BaseController):
         """QML invokable slot to add an item."""
         return self.add_item(item_data)
 
+    @staticmethod
+    def _history_chip_id(node_id: Any) -> str:
+        return f"plate:{int(node_id)}"
+
+    def add_history_chip(self, plate_data: dict[str, Any]) -> str:
+        """
+        Collapses an evicted plate into a pinned peripheral feed chip. The full plate
+        payload is retained under content_payload["plate"] so it can be restored via open_plate.
+        """
+        raw_id = plate_data.get("node_id") if plate_data.get("node_id") is not None else plate_data.get("id")
+        node_id = int(raw_id)
+        title = (
+            plate_data.get("display_title")
+            or plate_data.get("title")
+            or plate_data.get("file_name")
+            or f"Plate {node_id}"
+        )
+        archetype = (plate_data.get("archetype") or "").lower()
+        ext = (plate_data.get("extension") or "").lower().lstrip(".")
+        icon = self._history_chip_icon(archetype, ext)
+        return self.add_item(
+            {
+                "id": self._history_chip_id(node_id),
+                "title": str(title),
+                "type": "plate",
+                "icon": icon,
+                "node_id": node_id,
+                "is_pinned": True,
+                "content_payload": {"node_id": node_id, "plate": dict(plate_data)},
+            }
+        )
+
+    @staticmethod
+    def _history_chip_icon(archetype: str, ext: str) -> str:
+        """Maps a plate archetype / file extension to a chip glyph."""
+        if archetype in ("video", "media") or ext in ("mkv", "mp4"):
+            return "🎬"
+        if archetype == "image" or ext in ("png", "jpg", "jpeg"):
+            return "🖼️"
+        if archetype == "table" or ext in ("csv", "xlsx"):
+            return "📊"
+        if archetype in ("code", "terminal"):
+            return "⚙️"
+        return "📄"
+
+    def remove_history_chip(self, node_id: int) -> bool:
+        """Removes the history chip of a plate that has been restored to the stage."""
+        return self.remove_item(self._history_chip_id(node_id))
+
     @pyqtSlot(str, result=bool)
     def remove_item(self, item_id: str) -> bool:
         """Removes an item by identifier."""

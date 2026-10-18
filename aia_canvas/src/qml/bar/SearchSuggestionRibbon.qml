@@ -105,11 +105,11 @@ Item {
             color: overflowMouseArea.containsMouse ? Theme.surfaceHovered : Theme.surfaceButton
             border.color: Theme.borderSubtle
             border.width: 1
-            visible: root.resultsCount > 4
+            visible: root.resultsCount > 6
 
             Text {
                 anchors.centerIn: parent
-                text: root.shelfExpanded ? "Collapse v" : ("+" + Math.max(0, root.resultsCount - 4) + " more ^")
+                text: root.shelfExpanded ? "Collapse v" : ("+" + Math.max(0, root.resultsCount - 6) + " more ^")
                 font.pixelSize: 10
                 font.bold: true
                 font.family: Theme.fontCode

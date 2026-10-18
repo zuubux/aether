@@ -120,12 +120,15 @@ class PlatePayloadParser:
             "temporal", "relationships", "geometry", "mass", "focus",
             "x", "y", "width", "height", "col_span", "row_span", "depth_z",
             "tier", "zone", "cluster_id", "clusterId", "is_pinned", "isPinned",
-            "is_user_placed", "isUserPlaced", "last_interaction_epoch",
+            "is_user_placed", "isUserPlaced", "is_preview", "isPreview",
+            "last_interaction_epoch",
             "lastInteractionEpoch", "edges",
         }
         meta = {k: v for k, v in data.items() if k not in known_keys}
         if "metadata" in data and isinstance(data["metadata"], dict):
             meta.update(data["metadata"])
+
+        is_preview_val = data.get("is_preview") if data.get("is_preview") is not None else data.get("isPreview", False)
 
         payload = PlateNodePayload(
             node_id=node_id,
@@ -141,6 +144,7 @@ class PlatePayloadParser:
             geometry=geometry,
             mass=mass,
             metadata=meta,
+            is_preview=bool(is_preview_val),
         )
 
         # Parse pre-existing relationships if embedded

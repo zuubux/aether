@@ -5,7 +5,8 @@ import ".."
 Rectangle {
     id: root
 
-    property var modelData: null
+    // Populated by the Repeater delegate injection (a plain `modelData: modelData` binding would self-reference)
+    required property var modelData
     property var bentoAlloc: null
     property bool isFocal: false
     signal clicked()
@@ -25,7 +26,9 @@ Rectangle {
         if (!modelData) return "Plate";
         if (modelData.display_title) return modelData.display_title;
         if (modelData.displayTitle) return modelData.displayTitle;
+        if (modelData.title) return modelData.title;
         if (fileName) return fileName;
+        if (filePath) return filePath.slice(filePath.lastIndexOf("/") + 1);
         return "Plate #" + plateId;
     }
     readonly property string extension: {
@@ -34,7 +37,7 @@ Rectangle {
         return "";
     }
     readonly property string archetype: modelData ? (modelData.archetype || "document") : "document"
-    readonly property string snippetText: modelData ? (modelData.snippet || "") : ""
+    readonly property string snippetText: modelData ? (modelData.snippet || modelData.preview_text || modelData.previewText || "") : ""
     readonly property string previewUrl: {
         if (!modelData) return "";
         if (modelData.preview_path) return modelData.preview_path;
@@ -44,11 +47,10 @@ Rectangle {
         return filePath;
     }
     readonly property string aiSummaryText: modelData ? (modelData.ai_summary || modelData.aiSummary || "") : ""
-    readonly property bool isPinned: {
+    readonly property bool isPreview: {
         if (!modelData) return false;
-        if (modelData.is_pinned !== undefined) return modelData.is_pinned;
-        if (modelData.isPinned !== undefined) return modelData.isPinned;
-        if (modelData.temporal && modelData.temporal.is_pinned !== undefined) return modelData.temporal.is_pinned;
+        if (modelData.is_preview !== undefined) return !!modelData.is_preview;
+        if (modelData.isPreview !== undefined) return !!modelData.isPreview;
         return false;
     }
 
@@ -70,6 +72,10 @@ Rectangle {
     readonly property real targetWidth: bentoAlloc ? bentoAlloc.width : (modelData && modelData.width !== undefined ? modelData.width : (parent ? parent.width * 0.45 : 360))
     readonly property real targetHeight: bentoAlloc ? bentoAlloc.height : (modelData && modelData.height !== undefined ? modelData.height : (parent ? parent.height * 0.40 : 240))
 
+    // Interior padding scales with the allocated card size
+    readonly property real padH: Math.max(8, Math.round(width * 0.035))
+    readonly property real padV: Math.max(8, Math.round(height * 0.03))
+
     x: targetX
     y: targetY
     width: targetWidth
@@ -80,14 +86,18 @@ Rectangle {
     Behavior on width { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
     Behavior on height { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
 
+    opacity: (modelData && (modelData.is_preview || modelData.isPreview)) ? 0.75 : 1.0
+    Behavior on opacity { NumberAnimation { duration: 180 } }
+
     z: isSelected ? 40 : 10
-    radius: Math.max(8, Math.round(Math.min(width, height) * 0.032))
+    radius: 16
     clip: true
 
     // Visual Card Shell
-    color: isSelected ? Qt.rgba(0.09, 0.13, 0.20, 0.95) : Qt.rgba(0.06, 0.08, 0.12, 0.88)
-    border.width: isSelected ? 2 : 1
-    border.color: isSelected ? Theme.accentFocus : (cardHoverArea.containsMouse ? Theme.borderHover : Theme.borderSubtle)
+    color: Theme.surfacePlate
+    border.width: 1
+    // Saccade Focus Equality: focus is signalled solely by a 1px cyan accent border (no dimming of neighbours)
+    border.color: isSelected ? Theme.accentCyan : Theme.borderCream
 
     readonly property color archetypeBadgeColor: Theme.getBadgeColor(extension, archetype)
 
@@ -102,184 +112,50 @@ Rectangle {
         var a = archetype.toLowerCase();
         return a === "image" || a === "media" || a === "video";
     }
-    // Title Bar
-    Rectangle {
+    readonly property bool hasImageSource: /\.(png|jpe?g|webp|svg|gif|bmp)(\?.*)?$/i.test(previewUrl)
+    // Crown: calm identity row (no window chrome)
+    Item {
         id: titleBar
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: Math.max(30, Math.min(44, Math.round(root.height * 0.13)))
-        color: Qt.rgba(0.04, 0.06, 0.10, 0.70)
+        height: 30
 
         Rectangle {
+            id: statusDot
+            width: 6
+            height: 6
+            radius: 3
+            color: root.isSelected ? Theme.accentCyan : root.archetypeBadgeColor
             anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            height: 1
-            color: Theme.borderSeamSubtle
+            anchors.leftMargin: 14
+            anchors.verticalCenter: parent.verticalCenter
         }
 
-        Row {
-            id: titleLeftRow
-            anchors.left: parent.left
-            anchors.leftMargin: Math.max(8, Math.round(titleBar.height * 0.28))
+        Text {
+            id: titleText
+            text: root.displayTitle
+            color: Theme.textDimmed
+            font.family: Theme.fontCode
+            font.pixelSize: 11
+            elide: Text.ElideMiddle
+            anchors.left: statusDot.right
+            anchors.leftMargin: 8
+            anchors.right: metaTag.left
+            anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Math.max(6, Math.round(titleBar.height * 0.22))
-            width: parent.width - titleRightRow.width - (anchors.leftMargin * 2)
-
-            Rectangle {
-                id: archetypePill
-                height: Math.max(16, Math.round(titleBar.height * 0.56))
-                width: Math.round(archetypeLabel.width + (height * 0.65))
-                radius: Math.round(height * 0.3)
-                color: Qt.rgba(root.archetypeBadgeColor.r, root.archetypeBadgeColor.g, root.archetypeBadgeColor.b, 0.18)
-                border.width: 1
-                border.color: root.archetypeBadgeColor
-                anchors.verticalCenter: parent.verticalCenter
-
-                Text {
-                    id: archetypeLabel
-                    anchors.centerIn: parent
-                    text: root.extension ? Theme.normalizeExt(root.extension) : root.archetype.toUpperCase()
-                    color: root.archetypeBadgeColor
-                    font.family: Theme.fontCode
-                    font.pixelSize: Math.max(8, Math.round(parent.height * 0.62))
-                    font.weight: Font.DemiBold
-                }
-            }
-
-            Text {
-                id: titleText
-                text: root.displayTitle
-                color: root.isSelected ? Theme.textPrimary : Theme.textSecondary
-                font.family: Theme.fontSans
-                font.pixelSize: Math.max(11, Math.round(titleBar.height * 0.38))
-                font.weight: Font.Medium
-                elide: Text.ElideRight
-                width: Math.max(40, parent.width - archetypePill.width - parent.spacing)
-                anchors.verticalCenter: parent.verticalCenter
-            }
         }
 
-        Row {
-            id: titleRightRow
+        Text {
+            id: metaTag
+            text: root.extension ? Theme.normalizeExt(root.extension) : root.archetype
+            color: Theme.textDimmed
+            font.family: Theme.fontCode
+            font.pixelSize: 11
+            opacity: 0.35
             anchors.right: parent.right
-            anchors.rightMargin: Math.max(8, Math.round(titleBar.height * 0.28))
+            anchors.rightMargin: 14
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Math.max(4, Math.round(titleBar.height * 0.16))
-
-            // Single-key AI summary badge / toggle
-            Rectangle {
-                id: aiSummaryBadge
-                height: Math.max(18, Math.round(titleBar.height * 0.60))
-                width: Math.round(aiSummaryRow.width + (height * 0.6))
-                radius: Math.round(height * 0.32)
-                color: (root.isSummaryOpen || root.aiSummaryText.length > 0)
-                    ? Qt.rgba(0.08, 0.22, 0.32, 0.85)
-                    : Qt.rgba(1.0, 1.0, 1.0, 0.05)
-                border.width: 1
-                border.color: (root.isSummaryOpen || root.aiSummaryText.length > 0)
-                    ? Theme.accentCyan
-                    : Theme.borderSeamSubtle
-                anchors.verticalCenter: parent.verticalCenter
-
-                Row {
-                    id: aiSummaryRow
-                    anchors.centerIn: parent
-                    spacing: 3
-
-                    Text {
-                        text: "✦"
-                        color: Theme.accentCyan
-                        font.pixelSize: Math.max(9, Math.round(parent.parent.height * 0.58))
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    Text {
-                        text: "AI"
-                        color: (root.isSummaryOpen || root.aiSummaryText.length > 0)
-                            ? Theme.aiVoiceGlacial
-                            : Theme.textDimmed
-                        font.family: Theme.fontSans
-                        font.pixelSize: Math.max(9, Math.round(parent.parent.height * 0.54))
-                        font.weight: Font.DemiBold
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (!root.aiSummaryText && typeof plateCanvasController !== "undefined" && plateCanvasController && root.plateId > 0) {
-                            plateCanvasController.getAiSummary(root.plateId);
-                        }
-                        root.isSummaryOpen = !root.isSummaryOpen;
-                    }
-                }
-            }
-            // Pin toggle button
-            Rectangle {
-                id: pinButton
-                height: Math.max(18, Math.round(titleBar.height * 0.60))
-                width: height
-                radius: Math.round(height * 0.3)
-                color: root.isPinned ? Qt.rgba(0.2, 0.6, 0.8, 0.2) : Qt.rgba(1.0, 1.0, 1.0, 0.05)
-                border.width: 1
-                border.color: root.isPinned ? Theme.accentCyan : Theme.borderSeamSubtle
-                anchors.verticalCenter: parent.verticalCenter
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "📌"
-                    font.pixelSize: Math.max(9, Math.round(parent.height * 0.55))
-                    opacity: root.isPinned ? 1.0 : 0.45
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (typeof plateCanvasController !== "undefined" && plateCanvasController && root.plateId > 0) {
-                            plateCanvasController.togglePin(root.plateId);
-                        }
-                    }
-                }
-            }
-
-            // Close button
-            Rectangle {
-                id: closeButton
-                height: Math.max(18, Math.round(titleBar.height * 0.60))
-                width: height
-                radius: Math.round(height * 0.3)
-                color: closeHoverArea.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.25) : Qt.rgba(1.0, 1.0, 1.0, 0.05)
-                border.width: 1
-                border.color: closeHoverArea.containsMouse ? Theme.accentRed : Theme.borderSeamSubtle
-                anchors.verticalCenter: parent.verticalCenter
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "✕"
-                    color: closeHoverArea.containsMouse ? Theme.accentRed : Theme.textDimmed
-                    font.pixelSize: Math.max(9, Math.round(parent.height * 0.50))
-                }
-
-                MouseArea {
-                    id: closeHoverArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (typeof plateCanvasController !== "undefined" && plateCanvasController && root.plateId > 0) {
-                            plateCanvasController.closePlate(root.plateId);
-                        }
-                    }
-                }
-            }
-
         }
     }
 
@@ -340,7 +216,9 @@ Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                anchors.margins: Math.max(6, Math.round(root.width * 0.025))
+                anchors.leftMargin: root.padH
+                anchors.rightMargin: root.padH
+                anchors.bottomMargin: root.padV
                 contentWidth: width
                 contentHeight: logText.implicitHeight
                 clip: true
@@ -374,7 +252,10 @@ Rectangle {
             Image {
                 id: previewImage
                 anchors.fill: parent
-                source: root.previewUrl
+                // Only decode genuine image sources; raw documents (.docx/.md/.csv) must never reach the image decoder
+                source: (root.isVisual && root.hasImageSource) ? root.previewUrl : ""
+                visible: root.isVisual && root.hasImageSource
+                enabled: root.isVisual && root.hasImageSource
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
                 clip: true
@@ -396,7 +277,10 @@ Rectangle {
 
             Flickable {
                 anchors.fill: parent
-                anchors.margins: Math.max(8, Math.round(root.width * 0.035))
+                anchors.leftMargin: root.padH
+                anchors.rightMargin: root.padH
+                anchors.topMargin: root.padV
+                anchors.bottomMargin: root.padV
                 contentWidth: width
                 contentHeight: docSnippet.implicitHeight
                 clip: true
@@ -405,6 +289,7 @@ Rectangle {
                     id: docSnippet
                     width: parent.width
                     text: root.snippetText ? root.snippetText : "Document content ready. Open in focal stage or trigger AI summary for distilled extraction."
+                    textFormat: Text.AutoText
                     color: Theme.textSecondary
                     font.family: root.archetype === "code" ? Theme.fontCode : Theme.fontSans
                     font.pixelSize: Math.max(9, Math.round(Math.min(root.width, root.height) * 0.044))
@@ -485,19 +370,132 @@ Rectangle {
 
     }
 
-    // Card Surface Click & Selection MouseArea
+    // Card Surface Click & Selection MouseArea (above the body so inner Flickables cannot swallow the press;
+    // wheel events still fall through to the snippet Flickables)
     MouseArea {
         id: cardHoverArea
         anchors.fill: parent
         hoverEnabled: true
-        z: -1
+        z: 1
         cursorShape: Qt.PointingHandCursor
 
         onClicked: {
             if (typeof plateCanvasController !== "undefined" && plateCanvasController && root.plateId > 0) {
-                plateCanvasController.selectPlate(root.plateId);
+                if (root.isPreview) {
+                    if (typeof plateCanvasController.open_plate === "function") {
+                        plateCanvasController.open_plate(root.plateId);
+                    } else if (typeof plateCanvasController.openPlate === "function") {
+                        plateCanvasController.openPlate(root.plateId);
+                    }
+                } else {
+                    plateCanvasController.selectPlate(root.plateId);
+                }
             }
             root.clicked();
+        }
+    }
+
+    // Elastic Gutter Handle: dragging yields neighbour width proportionally (adjust_plate_weight)
+    MouseArea {
+        id: gutterHandle
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.topMargin: root.radius
+        anchors.bottomMargin: root.radius
+        anchors.right: parent.right
+        width: 14
+        z: 50
+        hoverEnabled: true
+        preventStealing: true
+        acceptedButtons: Qt.LeftButton
+        cursorShape: Qt.SplitHCursor
+
+        property real lastStageX: 0
+
+        function stageX(mouse) {
+            return root.parent ? mapToItem(root.parent, mouse.x, mouse.y).x : mouse.x
+        }
+
+        Rectangle {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 1
+            color: Theme.accentCyan
+            opacity: (gutterHandle.containsMouse || gutterHandle.pressed) ? 0.35 : 0.0
+            Behavior on opacity { NumberAnimation { duration: 120 } }
+        }
+
+        onPressed: function(mouse) { lastStageX = stageX(mouse) }
+
+        onPositionChanged: function(mouse) {
+            if (!pressed || !root.parent || root.parent.width <= 0) return
+            var sx = stageX(mouse)
+            var deltaRatio = (sx - lastStageX) / root.parent.width
+            lastStageX = sx
+            if (deltaRatio !== 0 && typeof plateCanvasController !== "undefined" && plateCanvasController && root.plateId > 0) {
+                plateCanvasController.adjust_plate_weight(root.plateId, deltaRatio)
+            }
+        }
+    }
+
+    // Diagonal Corner Handle: dragging resizes width and height proportionally (resize_plate_proportional).
+    // Sits above the card surface so panning/selection never fires while the corner is dragged.
+    MouseArea {
+        id: cornerHandle
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        width: 16
+        height: 16
+        z: 60
+        hoverEnabled: true
+        preventStealing: true
+        acceptedButtons: Qt.LeftButton
+        cursorShape: Qt.SizeFDiagCursor
+
+        // Stage-space coordinates: the card itself moves/resizes under the cursor mid-drag
+        property real lastX: 0
+        property real lastY: 0
+
+        function stagePoint(mouse) {
+            return root.parent ? mapToItem(root.parent, mouse.x, mouse.y) : Qt.point(mouse.x, mouse.y)
+        }
+
+        Canvas {
+            id: cornerGlyph
+            anchors.fill: parent
+            opacity: (cornerHandle.containsMouse || cornerHandle.pressed) ? 0.6 : 0.0
+            Behavior on opacity { NumberAnimation { duration: 120 } }
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                ctx.strokeStyle = "" + Theme.accentCyan
+                ctx.lineWidth = 1
+                ctx.beginPath()
+                ctx.moveTo(width - 3, height * 0.45)
+                ctx.lineTo(width * 0.45, height - 3)
+                ctx.moveTo(width - 3, height * 0.75)
+                ctx.lineTo(width * 0.75, height - 3)
+                ctx.stroke()
+            }
+        }
+
+        onPressed: function(mouse) {
+            var p = stagePoint(mouse)
+            lastX = p.x
+            lastY = p.y
+        }
+
+        onPositionChanged: function(mouse) {
+            if (!pressed || !root.parent || root.parent.width <= 0 || root.parent.height <= 0) return
+            var p = stagePoint(mouse)
+            var deltaW = (p.x - lastX) / root.parent.width
+            var deltaH = (p.y - lastY) / root.parent.height
+            lastX = p.x
+            lastY = p.y
+            if ((deltaW !== 0 || deltaH !== 0) && typeof plateCanvasController !== "undefined" && plateCanvasController && root.plateId > 0) {
+                plateCanvasController.resize_plate_proportional(root.plateId, deltaW, deltaH)
+            }
         }
     }
 
